@@ -1,0 +1,6 @@
+# Player prefab: 4-frame (24x24) sprite sheet scaled up 3x, pixel art (filter: nearest).
+node Player {
+  Sprite { texture = @asset("a1f3c9e2")  size = [72, 72]  anchor = [0.5, 0.85] }   # sprites/player.png
+  SpriteAnimator { fps = 8  playing = false }
+  PlayerController { speed = 240 }
+}

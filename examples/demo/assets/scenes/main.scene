@@ -1,0 +1,64 @@
+node Main {
+  node Background {
+    position = [480, 270]
+    Sprite { texture = @asset("b8c1e2a3")  size = [960, 540] }
+  }
+  node World {
+    node Tree1 {
+      position = [220.3085, 137.6868]
+      rotation = 32
+      Sprite { texture = @asset("7b2e44f1")  anchor = [0.5, 0.9]  size = [96, 120] }
+    }
+    node Tree2 {
+      position = [276.5427, 381.5475]
+      Sprite { texture = @asset("7b2e44f1")  anchor = [0.5, 0.9]  size = [80, 100] }
+    }
+    node Tree3 {
+      position = [860, 150]
+      Sprite { texture = @asset("7b2e44f1")  anchor = [0.5, 0.9]  size = [96, 120]  flip_x = true }
+    }
+    node Crates {
+      position = [640, 190]
+      node A {
+        scale = [2.5, 2.5]
+        Sprite { texture = @asset("3e7d5a10") }
+      }
+      node B {
+        position = [62, 14]
+        rotation = 12
+        scale = [2.5, 2.5]
+        Sprite { texture = @asset("3e7d5a10") }
+      }
+      node C {
+        position = [30, -48]
+        rotation = -6
+        scale = [2, 2]
+        Sprite { texture = @asset("3e7d5a10") }
+      }
+    }
+    node Coins {
+      CoinSpawner { prefab = @asset("d2c8f1a9")  count = 10  area_min = [60, 90]  area_max = [900, 480] }
+    }
+    node BigCoin from @asset("6a5e3b90") {
+      position = [820, 430]
+    }
+    node BigCoin2 from @asset("6a5e3b90") {
+      position = [154.5617, 261.4367]
+      Pickup { value = 10 }
+    }
+    node Player from @asset("e4a1b7c2") {
+      position = [482.663, 205.8465]
+    }
+  }
+  node HUD {
+    node Score {
+      position = [20, 14]
+      Label { text = "Xu: 0"  size = 32 }
+      ScoreBoard {  }
+    }
+    node Help {
+      position = [20, 508]
+      Label { text = "Arrows / WASD: move    R: scatter more coins    F1: debug    Esc: quit"  size = 18  color = [255, 255, 255, 210] }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+# file build
+*.exe
+/demo
+/examples/demo/demo
+/tools/assetdb
+# import cache (to be used in a later stage)
+library/
+.DS_Store
+
+_to_delete
+docs

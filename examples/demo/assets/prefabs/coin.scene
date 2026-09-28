@@ -1,0 +1,8 @@
+# Coin prefab: 6-frame spinning sprite sheet + bobbing + collectible.
+# The image is referenced by ID (see sprites/coin.png.meta), so renaming/moving the image does not break the prefab.
+node Coin {
+  Sprite { texture = @asset("c0149b7d")  size = [32, 32] }          # sprites/coin.png
+  SpriteAnimator { fps = 10 }
+  Bob { amplitude = 4  speed = 3 }
+  Pickup { radius = 30  value = 1  effect = @asset("5d9a0c66") }     # sprites/sparkle.png
+}
