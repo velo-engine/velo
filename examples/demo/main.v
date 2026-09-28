@@ -12,7 +12,7 @@ fn main() {
 	assets_dir := os.join_path(os.dir(@FILE), 'assets')
 	if '--editor' in os.args {
 		mut ed := editor.new(
-			title:      'Safex Editor — coin collector demo'
+			title:      'Velo Editor — coin collector demo'
 			assets_dir: assets_dir
 			scene:      'scenes/main.scene'
 		) or {
@@ -24,7 +24,7 @@ fn main() {
 		return
 	}
 	mut game := app.new(
-		title:      'Safex Engine — coin collector demo'
+		title:      'Velo Engine — coin collector demo'
 		assets_dir: assets_dir
 		scene:      'scenes/main.scene'
 	) or {

@@ -6,7 +6,7 @@ import engine.assets
 // without the core module depending on the serialize module.
 pub type InstantiateFn = fn (key string) !&Node
 
-// Scene — a running node tree. In Safex, .scene files and prefabs are the SAME format:
+// Scene — a running node tree. In Velo, .scene files and prefabs are the SAME format:
 // a scene is simply a prefab chosen as the root when running.
 @[heap]
 pub struct Scene {

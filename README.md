@@ -1,4 +1,4 @@
-# V Safex Engine
+# Velo Engine
 
 A 2D game engine written in [V](https://vlang.io), with a **Node + Component** architecture like Unity / Cocos Creator,
 but with a simpler Scene/Prefab model and stricter asset management.
@@ -8,7 +8,6 @@ but with a simpler Scene/Prefab model and stricter asset management.
 ## Quick start
 
 ```bash
-cd v-safex-engine
 v run examples/demo          # coin collector demo: arrows/WASD, R scatters more coins, F1 debug, Esc quits
 v run examples/demo --editor # scene/prefab editor (see the "Editor" section)
 v test tests/                # unit tests for core, asset, serialize, scenedoc (no GPU needed)

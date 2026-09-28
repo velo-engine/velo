@@ -23,7 +23,7 @@ pub mut:
 }
 
 fn setup() (string, &serialize.SceneLoader) {
-	dir := os.join_path(os.temp_dir(), 'safex_ser_test_${time.now().unix_micro()}')
+	dir := os.join_path(os.temp_dir(), 'velo_ser_test_${time.now().unix_micro()}')
 	os.mkdir_all(dir) or { panic(err) }
 	os.write_file_array(os.join_path(dir, 'tex.png'), [u8(0x89), `P`, `N`, `G`, 13, 10, 26, 10,
 		0, 0, 0, 13, `I`, `H`, `D`, `R`, 0, 0, 0, 4, 0, 0, 0, 4]) or { panic(err) }

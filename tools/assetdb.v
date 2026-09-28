@@ -3,7 +3,7 @@ module main
 import os
 import engine.assets
 
-const usage = 'Safex Engine asset management tool
+const usage = 'Velo Engine asset management tool
 
 Usage:
   v run tools/assetdb.v <assets dir> <command> [args]

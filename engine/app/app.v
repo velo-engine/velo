@@ -9,7 +9,7 @@ import engine.render
 
 pub struct Config {
 pub:
-	title      string = 'Safex Engine'
+	title      string = 'Velo Engine'
 	width      int    = 960
 	height     int    = 540
 	assets_dir string = 'assets'
@@ -52,7 +52,7 @@ pub fn new(cfg Config) !&App {
 		loader:   serialize.new_loader(reg, db)
 		input:    &core.Input{}
 	}
-	println('[safex] ${db.len()} assets in ${db.root}')
+	println('[velo] ${db.len()} assets in ${db.root}')
 	return a
 }
 
@@ -73,7 +73,7 @@ pub fn (mut a App) load_scene(key string) ! {
 	if a.cfg.on_scene_loaded != unsafe { nil } {
 		a.cfg.on_scene_loaded(mut a)
 	}
-	println('[safex] loaded scene "${a.db.path_of(a.scene_id) or { key }}" (${a.scene.node_count()} nodes, ${a.db.loaded_count()} assets in memory)')
+	println('[velo] loaded scene "${a.db.path_of(a.scene_id) or { key }}" (${a.scene.node_count()} nodes, ${a.db.loaded_count()} assets in memory)')
 }
 
 pub fn (mut a App) run() {
@@ -93,7 +93,7 @@ pub fn (mut a App) run() {
 fn on_init(mut a App) {
 	a.renderer = render.new_renderer(a.ctx, a.db)
 	a.load_scene(a.cfg.scene) or {
-		eprintln('[safex] scene load error: ${err}')
+		eprintln('[velo] scene load error: ${err}')
 		exit(1)
 	}
 	a.last_ticks = time.ticks()

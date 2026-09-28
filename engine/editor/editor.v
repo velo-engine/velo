@@ -18,7 +18,7 @@ import engine.scenedoc
 // so the simplest approach is to give the game program an `--editor` flag (see examples/demo/main.v).
 pub struct Config {
 pub:
-	title       string = 'Safex Editor'
+	title       string = 'Velo Editor'
 	width       int    = 1440
 	height      int    = 860
 	assets_dir  string = 'assets'

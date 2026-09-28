@@ -12,7 +12,7 @@ fn fake_png(path string, w int, h int) {
 }
 
 fn setup() string {
-	dir := os.join_path(os.temp_dir(), 'safex_assets_test_${time.now().unix_micro()}')
+	dir := os.join_path(os.temp_dir(), 'velo_assets_test_${time.now().unix_micro()}')
 	os.mkdir_all(os.join_path(dir, 'sprites')) or { panic(err) }
 	os.mkdir_all(os.join_path(dir, 'prefabs')) or { panic(err) }
 	fake_png(os.join_path(dir, 'sprites/hero.png'), 64, 32)
