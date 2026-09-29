@@ -9,6 +9,13 @@ struct GpuImage {
 	version int
 }
 
+// DebugShape — a component with an outline to show in debug mode (F1) and in the editor, e.g. physics colliders.
+// Any component with these two methods qualifies; render does not depend on the component's module.
+pub interface DebugShape {
+	debug_outline() []core.Vec2 // closed polygon, node space
+	debug_color() core.Color
+}
+
 // Renderer walks the node tree in order (parent first, children after => children draw over the parent)
 // and draws Sprite/Label with gg (a 2D drawing layer on top of sokol: Metal / D3D11 / OpenGL).
 @[heap]
@@ -18,8 +25,10 @@ mut:
 	db  &assets.AssetDatabase
 	gpu map[string]GpuImage // texture ID -> GPU image
 pub mut:
-	debug      bool // F1: draw node bounds + center
-	draw_calls int
+	debug bool // F1: draw node bounds + center
+	// Draw DebugShape outlines (colliders) even when `debug` is off (the editor turns it on).
+	show_shapes bool
+	draw_calls  int
 	// Screen area the tree is drawn into (the editor's scene view); ScrollView clipping stays inside it.
 	// Zero size = the whole window.
 	base_clip Rect
@@ -85,6 +94,9 @@ fn (mut r Renderer) draw_node(n &core.Node, parent core.Affine2) {
 			r.draw_panel(c, m)
 		} else if c is ProgressBar {
 			r.draw_progress(c, m)
+		}
+		if (r.debug || r.show_shapes) && c is DebugShape {
+			r.draw_outline(m, c.debug_outline(), c.debug_color())
 		}
 	}
 	if r.debug {
@@ -163,6 +175,18 @@ fn (mut r Renderer) draw_quad_empty(m core.Affine2, rc Rect, c gg.Color) {
 	pts := quad_points(m, rc)
 	r.ctx.draw_poly_empty([pts[0].x, pts[0].y, pts[1].x, pts[1].y, pts[2].x, pts[2].y, pts[3].x,
 		pts[3].y], c)
+}
+
+fn (mut r Renderer) draw_outline(m core.Affine2, pts []core.Vec2, c core.Color) {
+	if pts.len < 2 {
+		return
+	}
+	mut prev := m.apply(pts[pts.len - 1])
+	for p in pts {
+		q := m.apply(p)
+		r.ctx.draw_line(prev.x, prev.y, q.x, q.y, to_gg(c))
+		prev = q
+	}
 }
 
 fn (mut r Renderer) draw_panel(p &Panel, m core.Affine2) {

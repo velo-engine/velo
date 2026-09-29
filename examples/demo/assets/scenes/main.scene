@@ -1,4 +1,5 @@
 node Main {
+  PhysicsWorld { gravity = [0, 0] }                                  # top-down: no gravity
   node Background {
     position = [480, 270]
     Sprite { texture = @asset("b8c1e2a3")  size = [960, 540] }
@@ -8,32 +9,41 @@ node Main {
       position = [220.3085, 137.6868]
       rotation = 32
       Sprite { texture = @asset("7b2e44f1")  anchor = [0.5, 0.9]  size = [96, 120] }
+      CircleCollider { radius = 12  offset = [0, -8] }                # trunk: static (no RigidBody)
     }
     node Tree2 {
       position = [276.5427, 381.5475]
       Sprite { texture = @asset("7b2e44f1")  anchor = [0.5, 0.9]  size = [80, 100] }
+      CircleCollider { radius = 12  offset = [0, -8] }                # trunk: static (no RigidBody)
     }
     node Tree3 {
       position = [860, 150]
       Sprite { texture = @asset("7b2e44f1")  anchor = [0.5, 0.9]  size = [96, 120]  flip_x = true }
+      CircleCollider { radius = 12  offset = [0, -8] }                # trunk: static (no RigidBody)
     }
     node Crates {
       position = [640, 190]
       node A {
         scale = [2.5, 2.5]
         Sprite { texture = @asset("3e7d5a10") }
+        RigidBody { linear_damping = 8  angular_damping = 8 }         # pushable crates
+        BoxCollider { size = [22, 22]  density = 2 }
       }
       node B {
         position = [62, 14]
         rotation = 12
         scale = [2.5, 2.5]
         Sprite { texture = @asset("3e7d5a10") }
+        RigidBody { linear_damping = 8  angular_damping = 8 }         # pushable crates
+        BoxCollider { size = [22, 22]  density = 2 }
       }
       node C {
         position = [30, -48]
         rotation = -6
         scale = [2, 2]
         Sprite { texture = @asset("3e7d5a10") }
+        RigidBody { linear_damping = 8  angular_damping = 8 }         # pushable crates
+        BoxCollider { size = [22, 22]  density = 2 }
       }
     }
     node Coins {
@@ -61,25 +71,27 @@ node Main {
       Label { text = "Arrows / WASD: move    R: scatter more coins    F1: debug    Esc: quit"  size = 18  color = [255, 255, 255, 210] }
     }
     node MoreCoins {
+      position = [694.9319, 46.0538]
       UITransform { size = [160, 40] }
       Widget { align_right = true  right = 16  align_top = true  top = 14 }
       Panel { color = [70, 130, 220, 255]  radius = 8  border_width = 1 }
-      Button { }
-      SpawnButton { }
+      Button {  }
+      SpawnButton {  }
       node Text {
         Label { text = "More coins"  size = 18  align = "center"  valign = "middle" }
       }
     }
     node Log {
+      position = [659.0886, 451.5474]
       UITransform { size = [180, 150] }
       Widget { align_right = true  right = 16  align_top = true  top = 66 }
       Panel { color = [0, 0, 0, 110]  radius = 6 }
-      ScrollView { }
-      PickupLog { }
+      ScrollView {  }
+      PickupLog {  }
       node Content {
         position = [-90, -75]
         UITransform { size = [180, 0]  anchor = [0, 0] }
-        Layout { padding = 6  spacing = [4, 2] }
+        Layout { spacing = [4, 2]  padding = 6 }
       }
     }
   }

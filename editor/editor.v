@@ -157,6 +157,7 @@ pub fn (mut e Editor) run() {
 
 fn on_init(mut e Editor) {
 	e.renderer = render.new_renderer(e.ctx, e.db)
+	e.renderer.show_shapes = true
 	if e.cfg.scene != '' {
 		e.open_doc(e.cfg.scene)
 	}

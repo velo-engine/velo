@@ -10,7 +10,7 @@ but with a simpler Scene/Prefab model and stricter asset management.
 ```bash
 v run examples/demo          # coin collector demo: arrows/WASD, R scatters more coins, F1 debug, Esc quits
 v run examples/demo --editor # scene/prefab editor (see the "Editor" section)
-v test tests/                # unit tests for core, asset, serialize, scenedoc (no GPU needed)
+v test tests/                # unit tests for core, asset, serialize, scenedoc, physics (no GPU needed)
 v run tools/assetdb.v examples/demo/assets list
 ```
 
@@ -30,6 +30,8 @@ The engine location is baked in when `velo` is built; set `VELO_HOME` to overrid
 
 Tested with V 0.5.2 (release and master). Graphics use V's built-in `gg` module
 (on top of sokol: Metal on macOS, D3D11 on Windows, OpenGL on Linux), nothing else to install.
+The optional `physics` module (used by the demo) needs [Box2D](https://box2d.org) v3.1+ as a system library:
+`brew install box2d` on macOS, or build and install it from source elsewhere.
 
 ## Structure
 
@@ -39,6 +41,7 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   assets/     AssetDatabase: .meta, stable IDs, AssetRef[T], reference counting, dependency graph, hot reload
   serialize/  .scene format, parser, reflection, Registry, SceneLoader (prefab + override), writer
   render/     Renderer (gg), Sprite, SpriteAnimator, Label, UI components (Button, ScrollView, Widget, Layout, ...)
+  physics/    Box2D v3 bindings: PhysicsWorld, RigidBody, Box/Circle/CapsuleCollider (optional, no GPU needed)
   app/        game loop, input, hot reload
   scenedoc/   scene/prefab editing model: undo/redo, prefab rules, diff-style saving (no GPU needed)
   editor/     editor UI (gg): Hierarchy, Scene view, Inspector, Assets, Play
@@ -48,8 +51,8 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
 ```
 
 Module dependency order (no cycles): `assets` ← `core` ← `serialize` ← `render` ← `app`,
-and `serialize` ← `scenedoc` ← `editor` (the editor also uses `render`).
-As a result `core`, `assets`, `serialize`, `scenedoc` run without a GPU (tests, tools, servers).
+and `serialize` ← `scenedoc` ← `editor` (the editor also uses `render`), and `serialize` ← `physics` (imported by the game only).
+As a result `core`, `assets`, `serialize`, `scenedoc`, `physics` run without a GPU (tests, tools, servers).
 
 ## Writing a component
 
@@ -154,6 +157,53 @@ The demo's HUD uses a Button (`SpawnButton`) and a ScrollView + Layout pickup lo
 Limits: overlapping buttons all receive the click (no event blocking yet); Widget/Layout run in `update`, so the editor
 shows them at their saved positions until you press Play; the anchor gizmo (Y) only edits Sprite anchors.
 
+## Physics
+
+2D physics with [Box2D](https://box2d.org) v3. It is opt-in: register the components with the game's own ones
+(`physics.register_builtins(mut r)`, see `examples/demo/main.v`), and the engine does not link Box2D unless you do.
+
+```
+node Main {
+  PhysicsWorld { gravity = [0, 980] }                 # on the root (or any ancestor of the bodies)
+  node Ground {
+    position = [480, 520]
+    BoxCollider { size = [960, 40] }                  # collider without a RigidBody = static
+  }
+  node Ball {
+    RigidBody { }                                     # dynamic by default
+    CircleCollider { radius = 16  restitution = 0.5 }
+  }
+}
+```
+
+| Component | What it does |
+|---|---|
+| `PhysicsWorld` | one Box2D world: `gravity` (pixels/s², y down), `pixels_per_meter` (default 50), `fixed_step`, `sub_steps`, `max_steps`. Steps in its own `update`, before its children update. `world.raycast(from, to)` returns the closest hit |
+| `RigidBody` | `body_type` dynamic/kinematic/static, `gravity_scale`, `linear_damping`, `angular_damping`, `fixed_rotation`, `bullet`. `velocity()`/`set_velocity`, `angular_velocity()`/`set_angular_velocity`, `apply_force`, `apply_impulse`, `apply_torque`, `mass()`, `set_body_type` |
+| `BoxCollider` / `CircleCollider` / `CapsuleCollider` | a shape (`size` or `radius`, `offset`) with `density`, `friction`, `restitution`, `sensor`. Becomes a shape of the RigidBody on the same node; without one it gets its own static body that follows the node |
+
+Everything is in world units (pixels) and degrees, like the rest of the engine; mass and density stay in Box2D units (kg, kg/m²).
+The body follows the node in world space, so bodies can live under moved/rotated parents, and setting `node.position`
+from code teleports the body. Collider shapes use the node's world scale when they load.
+
+Contacts are polled like `Button.clicked`: every collider has `touching` (current), `began` and `ended` (this frame only),
+each a `Contact` with the other `node`, a `normal` pointing toward it, a `point` and whether it was a `sensor` overlap.
+
+```v
+if col := p.node.get_component[physics.CircleCollider]() {
+	for c in col.began {
+		if c.node.name == 'Spikes' { p.node.destroy() }
+	}
+}
+```
+
+In debug mode (F1) and in the editor, colliders are outlined (green, sensors yellow): the renderer draws any component
+with `debug_outline()`/`debug_color()` (`render.DebugShape`). In the demo the crates are pushable bodies, the trees
+have static trunk colliders and the player moves with `set_velocity`.
+
+Limits: no joints, polygon/chain shapes, collision filtering or interpolation yet; shapes are built once (edit a collider's
+fields at runtime and they will not be rebuilt); colliders on child nodes do not join the parent's RigidBody.
+
 ## Asset management
 
 - **Stable IDs** in a `.meta` file next to each asset (created if missing). Scenes reference assets by ID,
@@ -224,7 +274,7 @@ if '--editor' in os.args {
 ## Current limitations and next steps
 
 - Scene hot reload **resets game state** (score, positions) because the whole tree is rebuilt.
-- Not yet available: audio (the `AudioClip` asset kind exists), physics/collision, camera, z-order sorting (currently drawn in tree order),
+- Not yet available: audio (the `AudioClip` asset kind exists), physics joints, camera, z-order sorting (currently drawn in tree order),
   removing prefab components via override, a `library/` directory caching import results, build packaging.
 - Editor: no copy/paste between scenes, multi-selection,
   save prompt when closing the window, or per-field "Revert" to the prefab value.

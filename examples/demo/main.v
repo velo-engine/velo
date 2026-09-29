@@ -3,6 +3,7 @@ module main
 import os
 import velo.app
 import velo.editor
+import velo.physics
 import velo.serialize
 
 // "Coin collector" demo: move the player to collect coins; big coins (a prefab variant) are worth more.
@@ -37,6 +38,7 @@ fn main() {
 
 // Each game component needs just one registration line to be usable in .scene files (and in the editor).
 fn register_components(mut r serialize.Registry) {
+	physics.register_builtins(mut r) // opt-in: PhysicsWorld, RigidBody, Box/Circle/CapsuleCollider
 	r.register[PlayerController]()
 	r.register[Bob]()
 	r.register[Pickup]()
