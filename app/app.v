@@ -52,8 +52,9 @@ pub fn new(config Config) !&App {
 	cfg := Config{
 		...config
 		assets_dir: runtime_assets_dir(config.assets_dir)!
-		hot_reload: config.hot_reload && !is_mobile() // packaged assets never change
+		hot_reload: config.hot_reload && !is_mobile() && !is_web() // packaged assets never change
 	}
+	setup_web_gc()
 	mut db := assets.open(cfg.assets_dir)!
 	mut reg := serialize.new_registry()
 	render.register_builtins(mut reg)
@@ -239,11 +240,14 @@ fn on_event(e &gg.Event, mut a App) {
 			a.input.mouse = core.vec2(e.mouse_x, e.mouse_y) // gg already divides by the dpi scale
 		}
 		.mouse_down {
+			// A click can arrive without a move before it (first click in a browser page, synthetic events).
+			a.input.mouse = core.vec2(e.mouse_x, e.mouse_y)
 			if e.mouse_button == .left {
 				a.input.mouse_press()
 			}
 		}
 		.mouse_up {
+			a.input.mouse = core.vec2(e.mouse_x, e.mouse_y)
 			if e.mouse_button == .left {
 				a.input.mouse_release()
 			}

@@ -21,11 +21,25 @@ pub fn is_mobile() bool {
 	}
 }
 
+// is_web reports whether this build runs in a browser (`velo build web`, Emscripten).
+pub fn is_web() bool {
+	$if emscripten ? {
+		return true
+	} $else {
+		return false
+	}
+}
+
+// Where `velo build web` preloads the project's assets/ in the browser's in-memory file system.
+const web_assets_dir = '/assets'
+
 // Written next to the assets by `velo build android`: "<size> <content hash> <path>" per file, packaged at the APK assets root.
 const apk_manifest = 'velo_assets.txt'
 
 fn runtime_assets_dir(configured string) !string {
-	$if android {
+	$if emscripten ? {
+		return web_assets_dir
+	} $else $if android {
 		return extract_apk_assets()
 	} $else $if ios {
 		return os.join_path(ios_bundle_dir(), 'assets')
@@ -98,6 +112,26 @@ fn system_font() string {
 		root := os.getenv('IPHONE_SIMULATOR_ROOT')
 		for f in ['Core/SFUI.ttf', 'CoreUI/SFUI.ttf', 'Core/CourierNew.ttf'] {
 			path := root + '/System/Library/Fonts/' + f
+			if os.is_file(path) {
+				return path
+			}
+		}
+	}
+	$if emscripten ? {
+		// A browser has no font files: use the first .ttf the game ships in assets/fonts/.
+		dir := os.join_path(web_assets_dir, 'fonts')
+		for f in os.ls(dir) or { []string{} } {
+			if f.ends_with('.ttf') {
+				return os.join_path(dir, f)
+			}
+		}
+	}
+	$if android {
+		// gg's fallback font covers ASCII only; the system Roboto/Noto fonts cover Latin extended
+		// (Vietnamese, ...), Greek and Cyrillic. Static fonts first: variable ones need a named instance.
+		for f in ['RobotoStatic-Regular.ttf', 'Roboto-Regular.ttf', 'NotoSans-Regular.ttf',
+			'DroidSans.ttf'] {
+			path := '/system/fonts/' + f
 			if os.is_file(path) {
 				return path
 			}

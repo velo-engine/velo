@@ -366,6 +366,31 @@ min_version = "14.0"
 simulator = "iPhone 17"
 ```
 
+## Web
+
+```bash
+velo build web                 # build/web/index.html + .js + .wasm + .data (upload the folder as is)
+velo build web --release       # emcc -O3
+velo run web                   # build, then serve on http://localhost:8080 and open the browser
+```
+
+Needs [Emscripten](https://emscripten.org) (`brew install emscripten`; `velo doctor` checks it). The project's
+`assets/` are preloaded at `/assets`, where `app.new` looks for them in a browser; hot reload is off. Browsers have
+no font files, so text uses the first `.ttf` in `assets/fonts/` — ship one that covers your language.
+
+How it works around V 0.5.2 + Emscripten (see `tools/velo/web.v` and `tools/velo/web/emcc.sh`):
+- V compiles through a small `emcc` wrapper that fixes the generated C's `stdin/stdout/stderr` declarations
+  for musl, uses a copy of `sokol_app.h` with its broken JavaScript operators repaired (`) = >`, `!= =`, `== =`),
+  and drops `gg`'s embedded example font when the V install does not ship it;
+- `-sGLOBAL_BASE=65536`: V's `vmemcpy` skips copies from addresses below 64 KiB, where wasm keeps static data;
+- Boehm GC from V's bundled sources, single-threaded, collecting only between frames from a JS timer
+  (`app/web_gc.h`): wasm locals are invisible to a conservative GC, so collecting inside a frame frees live objects;
+- no `-prod` (it crashes V maps on wasm) — `--release` only raises the emcc optimization level.
+
+Limits: no `velo.physics` yet (Box2D is not built for Emscripten); avoid closures that capture variables
+(`fn [x] () {}`) in code that runs every frame — V 0.5.2's closure runtime corrupts the wasm heap;
+files written at runtime (settings, saves) live in memory and are lost on reload.
+
 ## Current limitations and next steps
 
 - Scene hot reload **resets game state** (score, positions) because the whole tree is rebuilt.

@@ -346,3 +346,34 @@ fn test_widget_safe_area() {
 	s.update(0.016)
 	assert child.position.x == -365 + 5
 }
+
+fn test_press_and_release_in_one_frame_is_still_a_click() {
+	mut s := core.Scene.new('Test')
+	mut btn_node := ui_node('Btn', core.vec2(100, 100), core.vec2(80, 40))
+	btn := btn_node.add_component(&render.Button{})
+	s.add(mut btn_node)
+	// mouse: both events arrive before the frame runs (synthetic clicks, very fast clicks)
+	s.input.mouse = core.vec2(100, 100)
+	s.input.mouse_press()
+	s.input.mouse_release()
+	assert s.input.mouse_down // the release waits for the next frame
+	s.update(0.016)
+	s.input.end_frame()
+	assert !btn.clicked
+	s.update(0.016)
+	assert btn.clicked
+	s.input.end_frame()
+	assert !s.input.mouse_down
+	// touch: a tap that begins and ends within one frame
+	s.input.touch_begin(5, core.vec2(100, 100))
+	s.input.touch_end(5, core.vec2(100, 100), false)
+	assert s.input.touch(5)?.phase == .began
+	s.update(0.016)
+	s.input.end_frame()
+	assert s.input.touch(5)?.phase == .ended
+	s.update(0.016)
+	assert btn.clicked
+	s.input.end_frame()
+	assert s.input.touches.len == 0
+	assert !s.input.mouse_down
+}

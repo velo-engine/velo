@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>{{TITLE}}</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1d2b24; overflow: hidden; }
+  #canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; outline: none; }
+  #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+             justify-content: center; gap: 14px; color: #f2e6c4; font: 16px system-ui, sans-serif; }
+  #bar { width: min(360px, 70vw); height: 8px; border-radius: 4px; background: #0004; overflow: hidden; }
+  #fill { width: 0; height: 100%; background: #f2c14e; transition: width .2s; }
+</style>
+</head>
+<body>
+<canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<div id="loading"><div>{{TITLE}}</div><div id="bar"><div id="fill"></div></div><div id="status"></div></div>
+<script>
+  var Module = {
+    canvas: document.getElementById("canvas"),
+    setStatus: function (text) {
+      var m = text.match(/\((\d+(\.\d+)?)\/(\d+)\)/);
+      if (m) document.getElementById("fill").style.width = (100 * m[1] / m[3]) + "%";
+      if (!text) document.getElementById("loading").style.display = "none";
+    },
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.warn(t); },
+  };
+  window.addEventListener("error", function (e) {
+    document.getElementById("status").textContent = "Error: " + e.message + " (see the browser console)";
+  });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

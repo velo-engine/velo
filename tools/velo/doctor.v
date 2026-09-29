@@ -74,6 +74,13 @@ fn doctor(home string) int {
 		}
 	}
 
+	println('\nWeb')
+	if emcc := os.find_abs_path_of_executable('emcc') {
+		ok('Emscripten ${os.execute('${os.quoted_path(emcc)} --version').output.all_before('\n').all_after_last(') ').trim_space()} (velo build web)')
+	} else {
+		warn('Emscripten not found — only needed for `velo build web`: `brew install emscripten`')
+	}
+
 	println('\niOS')
 	$if macos {
 		xcode := os.execute('xcodebuild -version')

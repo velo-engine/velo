@@ -34,6 +34,12 @@ pub mut:
 	phase TouchPhase
 }
 
+struct PendingTouchEnd {
+	id        u64
+	pos       Vec2
+	cancelled bool
+}
+
 pub fn (t Touch) is_up() bool {
 	return t.phase in [.ended, .cancelled]
 }
@@ -51,6 +57,10 @@ mut:
 	// The touch that drives the mouse fields (the first finger down), see touch_begin.
 	mouse_touch u64
 	mouse_start Vec2
+	// A release that arrived in the same frame as its press is applied next frame, so the press is
+	// seen for one frame (synthetic clicks and very quick taps would otherwise be lost).
+	release_pending bool
+	ends_pending    []PendingTouchEnd
 pub mut:
 	mouse      Vec2
 	mouse_down bool
@@ -122,6 +132,10 @@ pub fn (mut i Input) mouse_press() {
 }
 
 pub fn (mut i Input) mouse_release() {
+	if i.mouse_down && i.mouse_pressed {
+		i.release_pending = true // pressed this frame: release next frame
+		return
+	}
 	if i.mouse_down {
 		i.mouse_released = true
 	}
@@ -185,6 +199,16 @@ pub fn (mut i Input) end_frame() {
 	if !i.mouse_down {
 		i.mouse_from_touch = false
 	}
+	// Releases that came in the same frame as their press happen now, at the start of the next frame.
+	if i.release_pending {
+		i.release_pending = false
+		i.mouse_release()
+	}
+	ends := i.ends_pending.clone()
+	i.ends_pending.clear()
+	for e in ends {
+		i.touch_end(e.id, e.pos, e.cancelled)
+	}
 }
 
 // touch_begin: a finger went down. The first finger down also acts as the left mouse button until it is lifted.
@@ -215,6 +239,18 @@ pub fn (mut i Input) touch_move(id u64, pos Vec2) {
 
 // touch_end: a finger was lifted (or cancelled by the system). It stays in `touches` until end_frame.
 pub fn (mut i Input) touch_end(id u64, pos Vec2, cancelled bool) {
+	for t in i.touches {
+		if t.id == id && t.phase == .began {
+			// went down this frame: keep it down for this frame, lift it next frame
+			i.ends_pending << PendingTouchEnd{id, pos, cancelled}
+			for mut tt in i.touches {
+				if tt.id == id {
+					tt.pos = pos
+				}
+			}
+			return
+		}
+	}
 	for mut t in i.touches {
 		if t.id == id {
 			t.pos = pos
