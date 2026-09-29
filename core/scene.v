@@ -21,6 +21,9 @@ pub mut:
 	instantiate_fn  InstantiateFn = unsafe { nil }
 	// Size of the game screen, in world units (UI Widgets without a sized parent align to it). Set by App/editor.
 	view_size Vec2 = Vec2{960, 540}
+	// How far in from each screen edge the safe area starts (notches, rounded corners, system bars), in world units.
+	// Set by App on phones; zero on desktop. Widgets aligned to the screen stay inside it (see render.Widget.safe_area).
+	safe_insets Insets
 }
 
 pub fn Scene.new(name string) &Scene {

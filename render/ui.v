@@ -120,7 +120,7 @@ pub mut:
 
 pub type ClickHandler = fn (mut b Button)
 
-// Button — clickable rectangle (the node's UITransform or Sprite). Tints the Panel/Sprite of `target`
+// Button — clickable (or tappable, with any finger) rectangle (the node's UITransform or Sprite). Tints the Panel/Sprite of `target`
 // by state: the colors multiply the target's own color, so white = unchanged.
 //
 //   if mut btn := node.get_component[render.Button]() {
@@ -138,6 +138,7 @@ pub mut:
 	disabled_color core.Color = core.rgba(140, 140, 140, 180)
 	hovered        bool           @[hide]
 	pressed        bool           @[hide]
+	pointer        u64            @[hide] // the pointer (Input.pointers) holding the button down
 	clicked        bool           @[hide]
 	handlers       []ClickHandler @[hide]
 	base_color     core.Color     @[hide] // the target's color before tinting
@@ -162,26 +163,40 @@ pub fn (mut b Button) update(dt f32) {
 		return
 	}
 	input := b.input()
-	inside := hit_test(b.node, input.mouse)
-	b.hovered = inside
-	if input.mouse_pressed && inside {
-		b.pressed = true
+	b.hovered = hit_test(b.node, input.mouse)
+	// Any pointer (the mouse or any finger) can press the button; the one that pressed it must also release it.
+	if !b.pressed {
+		for p in input.pointers() {
+			if p.phase == .began && hit_test(b.node, p.pos) {
+				b.pressed = true
+				b.pointer = p.id
+				break
+			}
+		}
 	}
 	if b.pressed && in_dragged_scroll_view(b.node) {
 		b.pressed = false
 	}
-	if input.mouse_released || !input.mouse_down {
-		if b.pressed && inside && input.mouse_released {
-			b.clicked = true
-			for h in b.handlers {
-				h(mut b)
+	mut inside := false
+	if b.pressed {
+		if p := input.pointer(b.pointer) {
+			inside = hit_test(b.node, p.pos)
+			if p.is_up() {
+				b.pressed = false
+				if inside && p.phase == .ended {
+					b.clicked = true
+					for h in b.handlers {
+						h(mut b)
+					}
+				}
 			}
+		} else {
+			b.pressed = false
 		}
-		b.pressed = false
 	}
 	b.set_tint(if b.pressed && inside {
 		b.pressed_color
-	} else if inside {
+	} else if b.hovered || inside {
 		b.hover_color
 	} else {
 		b.normal_color
@@ -432,11 +447,117 @@ pub fn (mut s ScrollView) scroll_to_bottom() {
 	s.velocity = core.Vec2{}
 }
 
+// ---------- Joystick ----------
+
+// Joystick — on-screen thumb stick. A pointer (finger or mouse) going down inside the node's UITransform
+// rectangle grabs it; while held, the `knob` child follows it, up to `radius` away from the `base` child.
+//
+//   node Stick {
+//     UITransform { size = [240, 240] }       # where a thumb can grab the stick
+//     Joystick { radius = 50 }
+//     node Base {
+//       UITransform { size = [120, 120] }  Panel { color = [255, 255, 255, 40]  radius = 60 }
+//       node Knob { UITransform { size = [56, 56] }  Panel { color = [255, 255, 255, 160]  radius = 28 } }
+//     }
+//   }
+//
+// Read `value` (-1..1 per axis, y down, length <= 1) from the game's components.
+pub struct Joystick {
+	core.Component
+pub mut:
+	radius    f32    = 50   // how far the knob travels from the base's center, in node space
+	dead_zone f32    = 0.1  // values shorter than this read as zero
+	floating  bool   = true // the base jumps under the thumb where it lands, and goes back when released
+	base      string = 'Base'
+	knob      string = 'Base/Knob'
+	value     core.Vec2 @[hide]
+	held      bool      @[hide]
+	pointer   u64       @[hide]
+	rest      core.Vec2 @[hide] // the base's position when the stick is not held
+	has_rest  bool      @[hide]
+}
+
+pub fn (mut j Joystick) start() {
+	if base := j.node.find(j.base) {
+		j.rest = base.position
+		j.has_rest = true
+	}
+}
+
+pub fn (mut j Joystick) on_destroy() {
+	j.release() // leave the knob/base where they were authored (matters in the editor)
+}
+
+pub fn (mut j Joystick) update(dt f32) {
+	input := j.input()
+	if !j.held {
+		for p in input.pointers() {
+			if p.phase == .began && hit_test(j.node, p.pos) {
+				j.held = true
+				j.pointer = p.id
+				if j.floating {
+					if mut base := j.node.find(j.base) {
+						base.position = j.to_local(p.pos)
+					}
+				}
+				break
+			}
+		}
+	}
+	if !j.held {
+		return
+	}
+	p := input.pointer(j.pointer) or {
+		j.release()
+		return
+	}
+	if p.is_up() {
+		j.release()
+		return
+	}
+	center := if base := j.node.find(j.base) { base.position } else { core.Vec2{} }
+	mut d := j.to_local(p.pos) - center
+	if j.radius > 0 && d.length() > j.radius {
+		d = d.normalized().mul(j.radius)
+	}
+	if mut knob := j.node.find(j.knob) {
+		knob.position = d
+	}
+	v := if j.radius > 0 { d.mul(1 / j.radius) } else { core.Vec2{} }
+	j.value = if v.length() < j.dead_zone { core.Vec2{} } else { v }
+}
+
+// release lets go of the stick: value back to zero, knob recentered, base back to its rest position.
+pub fn (mut j Joystick) release() {
+	j.held = false
+	j.value = core.Vec2{}
+	if j.node == unsafe { nil } {
+		return
+	}
+	if mut knob := j.node.find(j.knob) {
+		knob.position = core.Vec2{}
+	}
+	if j.floating && j.has_rest {
+		if mut base := j.node.find(j.base) {
+			base.position = j.rest
+		}
+	}
+}
+
+fn (j &Joystick) to_local(p core.Vec2) core.Vec2 {
+	return j.node.world_matrix().inverse().apply(p)
+}
+
 // ---------- Widget ----------
 
 // Widget — keeps the node aligned to the edges/center of its parent's rectangle (the parent's UITransform,
 // or the screen if the parent has none). Aligning both left and right (or top and bottom) stretches
 // the node's UITransform. Distances are in the parent's space.
+//
+// On phones the screen's edges can be hidden by a notch, rounded corners or system bars: with `safe_area`
+// (the default) a Widget aligned to the screen stays inside the safe area (Scene.safe_insets); turn it off for
+// things that should reach the real edges, like a full-screen background. A Widget aligned to a parent's
+// UITransform ignores `safe_area` — it follows the parent, which can itself be a safe-area Widget.
 pub struct Widget {
 	core.Component
 pub mut:
@@ -453,6 +574,7 @@ pub mut:
 	align_center_y bool
 	center_y       f32
 	always         bool = true // re-align every frame (false = only once, on start)
+	safe_area      bool = true // aligning to the screen: stay inside the safe area instead of the full screen
 }
 
 pub fn (mut w Widget) start() {
@@ -477,10 +599,12 @@ fn (w &Widget) parent_rect() ?Rect {
 	if w.node.scene == unsafe { nil } {
 		return none
 	}
-	// the screen, brought into the parent's space (ignores parent rotation)
+	// the screen (or its safe area), brought into the parent's space (ignores parent rotation)
 	inv := p.world_matrix().inverse()
-	a := inv.apply(core.Vec2{})
-	b := inv.apply(w.node.scene.view_size)
+	sc := w.node.scene
+	ins := if w.safe_area { sc.safe_insets } else { core.Insets{} }
+	a := inv.apply(core.vec2(ins.left, ins.top))
+	b := inv.apply(core.vec2(sc.view_size.x - ins.right, sc.view_size.y - ins.bottom))
 	return Rect{math.min(a.x, b.x), math.min(a.y, b.y), math.abs(b.x - a.x), math.abs(b.y - a.y)}
 }
 

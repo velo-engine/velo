@@ -1,6 +1,7 @@
 module app
 
 import gg
+import sokol.sapp
 import time
 import velo.core
 import velo.assets
@@ -34,12 +35,13 @@ pub mut:
 	input    &core.Input
 	renderer &render.Renderer = unsafe { nil }
 	scene_id string
+	// The safe area insets in world units (see core.Scene.safe_insets), refreshed twice a second.
+	safe_insets core.Insets
 mut:
 	last_ticks   i64
 	reload_timer f32
 	fps          f32
-	touch_id     u64
-	touching     bool
+	safe_timer   f32
 }
 
 // new opens the AssetDatabase and registers built-in components. Call app.register[T]() for the game's components,
@@ -76,6 +78,7 @@ pub fn (mut a App) load_scene(key string) ! {
 	mut next := a.loader.load_scene(key)!
 	next.input = a.input
 	next.view_size = a.view_size()
+	next.safe_insets = a.safe_insets
 	if a.scene != unsafe { nil } {
 		a.scene.unload()
 	}
@@ -130,7 +133,19 @@ fn on_frame(mut a App) {
 	if a.input.was_pressed(.f1) {
 		a.renderer.debug = !a.renderer.debug
 	}
+	a.fit_scale()
+	a.safe_timer -= dt
+	if a.safe_timer <= 0 {
+		a.safe_timer = 0.5 // cheap, but not free on Android (JNI); insets only change on rotation
+		if insets := query_safe_insets(a.ctx.scale) {
+			if insets != a.safe_insets {
+				a.safe_insets = insets
+				println('[velo] safe area insets: left ${insets.left} top ${insets.top} right ${insets.right} bottom ${insets.bottom}')
+			}
+		}
+	}
 	a.scene.view_size = a.view_size()
+	a.scene.safe_insets = a.safe_insets
 	a.scene.update(dt)
 	a.input.end_frame()
 
@@ -163,8 +178,23 @@ fn (a &App) view_size() core.Vec2 {
 	if a.ctx == unsafe { nil } {
 		return core.vec2(a.cfg.width, a.cfg.height)
 	}
-	sz := gg.window_size()
+	sz := a.ctx.window_size() // gg.window_size() assumes the dpi scale, which Android does not use
 	return core.vec2(sz.width, sz.height)
+}
+
+// fit_scale: on Android gg scales the configured width (portrait) or height (landscape) to the screen, but only
+// at startup — a resize (rotation) resets it to the dpi scale. Re-applying it every frame keeps world units stable.
+fn (mut a App) fit_scale() {
+	$if android {
+		w, h := sapp.width(), sapp.height()
+		s := if w <= h { f32(w) / a.cfg.width } else { f32(h) / a.cfg.height }
+		if s > 0.1 && s != a.ctx.scale {
+			a.ctx.scale = s
+			if a.ctx.ft != unsafe { nil } {
+				a.ctx.ft.scale = s
+			}
+		}
+	}
 }
 
 // check_hot_reload: texture changed -> draw the new image; scene/prefab changed -> reload the current scene.
@@ -227,22 +257,20 @@ fn on_event(e &gg.Event, mut a App) {
 	}
 }
 
-// on_touch: on touch screens the first finger down acts as the left mouse button until it is lifted.
+// on_touch forwards every finger that changed to Input (which also emulates the mouse with the first one).
 fn (mut a App) on_touch(e &gg.Event) {
 	scale := if a.ctx.scale > 0 { a.ctx.scale } else { f32(1) }
 	for i in 0 .. e.num_touches {
 		t := e.touches[i]
-		if !a.touching && e.typ == .touches_began && t.changed {
-			a.touching = true
-			a.touch_id = t.identifier
-			a.input.mouse = core.vec2(t.pos_x / scale, t.pos_y / scale)
-			a.input.mouse_press()
-		} else if a.touching && t.identifier == a.touch_id {
-			a.input.mouse = core.vec2(t.pos_x / scale, t.pos_y / scale)
-			if t.changed && e.typ in [.touches_ended, .touches_cancelled] {
-				a.touching = false
-				a.input.mouse_release()
-			}
+		if !t.changed {
+			continue
+		}
+		pos := core.vec2(t.pos_x / scale, t.pos_y / scale)
+		match e.typ {
+			.touches_began { a.input.touch_begin(t.identifier, pos) }
+			.touches_moved { a.input.touch_move(t.identifier, pos) }
+			.touches_ended { a.input.touch_end(t.identifier, pos, false) }
+			else { a.input.touch_end(t.identifier, pos, true) }
 		}
 	}
 }

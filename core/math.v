@@ -54,6 +54,19 @@ pub fn (a Vec2) str() string {
 	return '(${a.x}, ${a.y})'
 }
 
+// Insets — distances in from each edge of a rectangle.
+pub struct Insets {
+pub mut:
+	left   f32
+	top    f32
+	right  f32
+	bottom f32
+}
+
+pub fn (i Insets) is_zero() bool {
+	return i.left == 0 && i.top == 0 && i.right == 0 && i.bottom == 0
+}
+
 // Color — 8-bit RGBA color.
 pub struct Color {
 pub mut:

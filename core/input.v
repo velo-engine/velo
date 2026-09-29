@@ -17,13 +17,40 @@ pub enum Key {
 	f1     = 290
 }
 
-// Input — keyboard/mouse state for the current frame.
+pub enum TouchPhase {
+	began      // went down this frame
+	moved      // moved this frame
+	stationary // down, did not move this frame
+	ended      // lifted this frame (still listed until end_frame)
+	cancelled  // taken away by the system this frame (still listed until end_frame)
+}
+
+// Touch — one finger on the screen (or the mouse, see Input.pointers).
+pub struct Touch {
+pub mut:
+	id    u64
+	pos   Vec2 // current position, world units
+	start Vec2 // where it went down
+	phase TouchPhase
+}
+
+pub fn (t Touch) is_up() bool {
+	return t.phase in [.ended, .cancelled]
+}
+
+// The id of the mouse in Input.pointers.
+pub const mouse_pointer_id = u64(0xffff_ffff_ffff_ffff)
+
+// Input — keyboard/mouse/touch state for the current frame.
 @[heap]
 pub struct Input {
 mut:
 	down     map[int]bool
 	pressed  map[int]bool
 	released map[int]bool
+	// The touch that drives the mouse fields (the first finger down), see touch_begin.
+	mouse_touch u64
+	mouse_start Vec2
 pub mut:
 	mouse      Vec2
 	mouse_down bool
@@ -31,6 +58,10 @@ pub mut:
 	mouse_pressed  bool
 	mouse_released bool
 	scroll         Vec2 // wheel delta this frame (y > 0 = wheel up)
+	// Fingers currently down, plus the ones lifted this frame. Set through touch_begin / touch_move / touch_end.
+	touches []Touch
+	// True while the mouse fields are emulated by a touch, so mouse-only code keeps working on touch screens.
+	mouse_from_touch bool
 }
 
 pub fn (i &Input) is_down(k Key) bool {
@@ -85,6 +116,7 @@ pub fn (mut i Input) key_up(code int) {
 pub fn (mut i Input) mouse_press() {
 	if !i.mouse_down {
 		i.mouse_pressed = true
+		i.mouse_start = i.mouse
 	}
 	i.mouse_down = true
 }
@@ -100,12 +132,99 @@ pub fn (mut i Input) mouse_scroll(dx f32, dy f32) {
 	i.scroll = i.scroll + Vec2{dx, dy}
 }
 
+// touch returns the finger with this id, if it is down or was lifted this frame.
+pub fn (i &Input) touch(id u64) ?Touch {
+	for t in i.touches {
+		if t.id == id {
+			return t
+		}
+	}
+	return none
+}
+
+// pointers: every finger plus the mouse while its left button is down (id mouse_pointer_id), without
+// counting a touch twice. Code written against pointers works the same with a mouse and with several fingers.
+pub fn (i &Input) pointers() []Touch {
+	mut out := i.touches.clone()
+	if !i.mouse_from_touch && (i.mouse_down || i.mouse_released) {
+		phase := if i.mouse_released {
+			TouchPhase.ended
+		} else if i.mouse_pressed {
+			TouchPhase.began
+		} else {
+			TouchPhase.moved
+		}
+		out << Touch{mouse_pointer_id, i.mouse, i.mouse_start, phase}
+	}
+	return out
+}
+
+// pointer returns the pointer with this id (see pointers).
+pub fn (i &Input) pointer(id u64) ?Touch {
+	if id == mouse_pointer_id {
+		for p in i.pointers() {
+			if p.id == id {
+				return p
+			}
+		}
+		return none
+	}
+	return i.touch(id)
+}
+
 pub fn (mut i Input) end_frame() {
 	i.pressed.clear()
 	i.released.clear()
 	i.mouse_pressed = false
 	i.mouse_released = false
 	i.scroll = Vec2{}
+	i.touches = i.touches.filter(!it.is_up())
+	for mut t in i.touches {
+		t.phase = .stationary
+	}
+	if !i.mouse_down {
+		i.mouse_from_touch = false
+	}
+}
+
+// touch_begin: a finger went down. The first finger down also acts as the left mouse button until it is lifted.
+pub fn (mut i Input) touch_begin(id u64, pos Vec2) {
+	i.touches = i.touches.filter(it.id != id)
+	i.touches << Touch{id, pos, pos, .began}
+	if !i.mouse_down {
+		i.mouse_touch = id
+		i.mouse_from_touch = true
+		i.mouse = pos
+		i.mouse_press()
+	}
+}
+
+pub fn (mut i Input) touch_move(id u64, pos Vec2) {
+	for mut t in i.touches {
+		if t.id == id && !t.is_up() {
+			t.pos = pos
+			if t.phase == .stationary {
+				t.phase = .moved
+			}
+		}
+	}
+	if i.mouse_from_touch && i.mouse_touch == id {
+		i.mouse = pos
+	}
+}
+
+// touch_end: a finger was lifted (or cancelled by the system). It stays in `touches` until end_frame.
+pub fn (mut i Input) touch_end(id u64, pos Vec2, cancelled bool) {
+	for mut t in i.touches {
+		if t.id == id {
+			t.pos = pos
+			t.phase = if cancelled { TouchPhase.cancelled } else { TouchPhase.ended }
+		}
+	}
+	if i.mouse_from_touch && i.mouse_touch == id && i.mouse_down {
+		i.mouse = pos
+		i.mouse_release()
+	}
 }
 
 fn clamp1(v f32) f32 {

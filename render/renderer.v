@@ -44,6 +44,12 @@ pub fn new_renderer(ctx &gg.Context, db &assets.AssetDatabase) &Renderer {
 
 pub fn (mut r Renderer) draw_scene(scene &core.Scene) {
 	r.draw_tree(scene.root, core.Affine2.identity())
+	ins := scene.safe_insets
+	if r.debug && !ins.is_zero() {
+		sz := scene.view_size
+		r.ctx.draw_rect_empty(ins.left, ins.top, sz.x - ins.left - ins.right, sz.y - ins.top -
+			ins.bottom, gg.Color{255, 80, 80, 200})
+	}
 }
 
 // draw_tree draws the node tree through the `view` matrix (used by the editor to pan/zoom the scene view).
@@ -52,7 +58,7 @@ pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2) {
 	r.clip = if r.base_clip.w > 0 && r.base_clip.h > 0 {
 		r.base_clip
 	} else {
-		sz := gg.window_size()
+		sz := r.ctx.window_size()
 		Rect{0, 0, sz.width, sz.height}
 	}
 	r.draw_node(root, view)

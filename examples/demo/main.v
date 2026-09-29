@@ -47,4 +47,5 @@ fn register_components(mut r serialize.Registry) {
 	r.register[FadeAway]()
 	r.register[SpawnButton]()
 	r.register[PickupLog]()
+	r.register[TouchMarkers]()
 }

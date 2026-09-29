@@ -61,14 +61,22 @@ node Main {
     }
   }
   node HUD {
-    node Score {
+    node TopBar {                                                     # reaches the real screen edges, under a notch
+      position = [480, 30]
+      UITransform { size = [960, 60] }
+      Widget { align_left = true  align_right = true  align_top = true  safe_area = false }
+      Panel { color = [0, 0, 0, 90] }
+    }
+    node Score {                                                      # kept inside the safe area (the default)
       position = [20, 14]
       Label { text = "Coin: 0"  size = 32 }
+      Widget { align_left = true  left = 20  align_top = true  top = 14 }
       ScoreBoard {  }
     }
     node Help {
-      position = [20, 508]
-      Label { text = "Arrows / WASD: move    R: scatter more coins    F1: debug    Esc: quit"  size = 18  color = [255, 255, 255, 210] }
+      position = [20, 526]
+      Label { text = "Arrows / WASD / joystick: move    R: scatter more coins    F1: debug    Esc: quit"  size = 18  color = [255, 255, 255, 210]  valign = "bottom" }
+      Widget { align_left = true  left = 20  align_bottom = true  bottom = 14 }
     }
     node MoreCoins {
       position = [694.9319, 46.0538]
@@ -93,6 +101,23 @@ node Main {
         UITransform { size = [180, 0]  anchor = [0, 0] }
         Layout { spacing = [4, 2]  padding = 6 }
       }
+    }
+    node Joystick {
+      position = [140, 380]
+      UITransform { size = [240, 240] }
+      Widget { align_left = true  left = 16  align_bottom = true  bottom = 40 }
+      Joystick { radius = 50 }
+      node Base {
+        UITransform { size = [120, 120] }
+        Panel { color = [255, 255, 255, 40]  radius = 60  border_color = [255, 255, 255, 120]  border_width = 2 }
+        node Knob {
+          UITransform { size = [56, 56] }
+          Panel { color = [255, 255, 255, 170]  radius = 28 }
+        }
+      }
+    }
+    node Touches {
+      TouchMarkers {  }
     }
   }
 }

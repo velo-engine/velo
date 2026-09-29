@@ -17,6 +17,7 @@ pub fn register_builtins(mut r serialize.Registry) {
 	r.register[ScrollView]()
 	r.register[Widget]()
 	r.register[Layout]()
+	r.register[Joystick]()
 }
 
 // Sprite — draws a texture (or one frame of a sprite sheet) at the node's position.

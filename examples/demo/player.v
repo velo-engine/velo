@@ -4,7 +4,7 @@ import velo.core
 import velo.physics
 import velo.render
 
-// PlayerController — moves with the keyboard, flips the sprite by direction, plays the animation while walking.
+// PlayerController — moves with the keyboard or the on-screen joystick (analog: a small push walks slowly), flips the sprite by direction, plays the animation while walking.
 // With a RigidBody it moves by velocity, so it pushes crates and stops at trees instead of walking through them.
 pub struct PlayerController {
 	core.Component
@@ -12,11 +12,19 @@ pub mut:
 	speed      f32       = 220
 	bounds_min core.Vec2 = core.Vec2{24, 60}
 	bounds_max core.Vec2 = core.Vec2{936, 530}
+	joystick   string    = 'HUD/Joystick' // node with a render.Joystick ('' = keyboard only)
 }
 
 pub fn (mut p PlayerController) update(dt f32) {
 	input := p.input()
-	dir := core.vec2(input.axis_x(), input.axis_y()).normalized()
+	mut dir := core.vec2(input.axis_x(), input.axis_y()).normalized()
+	if dir.length() == 0 && p.joystick != '' {
+		if stick_node := p.scene().find(p.joystick) {
+			if stick := stick_node.get_component[render.Joystick]() {
+				dir = stick.value
+			}
+		}
+	}
 	moving := dir.length() > 0
 
 	mut pos := p.node.position
