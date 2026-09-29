@@ -1,6 +1,5 @@
 module core
 
-// Node — an element of the scene tree (equivalent to a GameObject in Unity, cc.Node in Cocos).
 // A Node only holds a transform + the parent/child tree + a component list; all behavior lives in components.
 @[heap]
 pub struct Node {

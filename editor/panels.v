@@ -181,7 +181,7 @@ fn (mut e Editor) handle_scene_view_input(r Rect) {
 }
 
 // pick: the topmost node (drawn last) whose sprite contains the point `world`.
-// Clicking a child of a prefab instance selects the instance root (like Unity).
+// Clicking a child of a prefab instance selects the instance root.
 fn (mut e Editor) pick(world core.Vec2) ?&core.Node {
 	mut hits := []&core.Node{}
 	collect_hits(e.doc.scene.root, world, mut hits)

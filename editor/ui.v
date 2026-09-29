@@ -30,7 +30,7 @@ fn (r Rect) intersect(o Rect) Rect {
 	return Rect{x0, y0, if x1 > x0 { x1 - x0 } else { 0 }, if y1 > y0 { y1 - y0 } else { 0 }}
 }
 
-// Color palette (dark, similar to Unity/Cocos).
+// Color palette (dark).
 const c_bg = gg.Color{38, 38, 42, 255}
 const c_panel = gg.Color{50, 50, 56, 255}
 const c_header = gg.Color{62, 62, 70, 255}
