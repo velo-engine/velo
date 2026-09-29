@@ -4,15 +4,23 @@ import math
 import velo.core
 
 // Bindings for the parts of Box2D v3 (C API) the physics components use.
-// Box2D is linked as a system library: `brew install box2d` (macOS), or build/install it from
+// Desktop: Box2D is linked as a system library: `brew install box2d` (macOS), or build/install it from
 // https://github.com/erincatto/box2d (v3.1+) so that <box2d/box2d.h> and libbox2d are on the default paths.
+// Android/iOS (or `-d box2d_source` anywhere): Box2D is compiled from source into the game, from
+// thirdparty/box2d (`velo deps` downloads it; `velo build android|ios` does so automatically).
 
-#flag darwin -I/opt/homebrew/include
-#flag darwin -L/opt/homebrew/lib
-#flag darwin -I/usr/local/include
-#flag darwin -L/usr/local/lib
-#flag -lbox2d
-#include <box2d/box2d.h>
+$if android || ios || box2d_source ? {
+	#flag -I @VMODROOT/thirdparty/box2d/include
+	#include <box2d/box2d.h>
+	#include "@VMODROOT/physics/box2d_source.c"
+} $else {
+	#flag darwin -I/opt/homebrew/include
+	#flag darwin -L/opt/homebrew/lib
+	#flag darwin -I/usr/local/include
+	#flag darwin -L/usr/local/lib
+	#flag -lbox2d
+	#include <box2d/box2d.h>
+}
 
 @[typedef]
 pub struct C.b2Vec2 {

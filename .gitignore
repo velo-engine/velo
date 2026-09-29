@@ -6,3 +6,7 @@
 # import cache (to be used in a later stage)
 library/
 .DS_Store
+# downloaded by `velo deps`
+/thirdparty/
+# mobile/desktop build output of `velo build`
+build/

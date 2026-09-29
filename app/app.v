@@ -15,7 +15,8 @@ pub:
 	assets_dir string = 'assets'
 	scene      string // path (within assets) or asset ID of the startup scene
 	background core.Color = core.rgba(30, 30, 40, 255)
-	hot_reload bool       = true
+	hot_reload bool       = true // always off on Android/iOS
+	font_path  string // .ttf used for text; empty = the platform default
 	// Set this hook to run code after each time the scene is (re)loaded.
 	on_scene_loaded fn (mut a App) = unsafe { nil }
 }
@@ -37,11 +38,20 @@ mut:
 	last_ticks   i64
 	reload_timer f32
 	fps          f32
+	touch_id     u64
+	touching     bool
 }
 
 // new opens the AssetDatabase and registers built-in components. Call app.register[T]() for the game's components,
 // then app.run().
-pub fn new(cfg Config) !&App {
+//
+// On Android/iOS, assets_dir is ignored: the assets packaged by `velo build android|ios` are used instead.
+pub fn new(config Config) !&App {
+	cfg := Config{
+		...config
+		assets_dir: runtime_assets_dir(config.assets_dir)!
+		hot_reload: config.hot_reload && !is_mobile() // packaged assets never change
+	}
 	mut db := assets.open(cfg.assets_dir)!
 	mut reg := serialize.new_registry()
 	render.register_builtins(mut reg)
@@ -83,6 +93,7 @@ pub fn (mut a App) run() {
 		width:        a.cfg.width
 		height:       a.cfg.height
 		window_title: a.cfg.title
+		font_path:    if a.cfg.font_path != '' { a.cfg.font_path } else { system_font() }
 		init_fn:      on_init
 		frame_fn:     on_frame
 		event_fn:     on_event
@@ -204,6 +215,29 @@ fn on_event(e &gg.Event, mut a App) {
 		.mouse_scroll {
 			a.input.mouse_scroll(e.scroll_x, e.scroll_y)
 		}
+		.touches_began, .touches_moved, .touches_ended, .touches_cancelled {
+			a.on_touch(e)
+		}
 		else {}
+	}
+}
+
+// on_touch: on touch screens the first finger down acts as the left mouse button until it is lifted.
+fn (mut a App) on_touch(e &gg.Event) {
+	scale := if a.ctx.scale > 0 { a.ctx.scale } else { f32(1) }
+	for i in 0 .. e.num_touches {
+		t := e.touches[i]
+		if !a.touching && e.typ == .touches_began && t.changed {
+			a.touching = true
+			a.touch_id = t.identifier
+			a.input.mouse = core.vec2(t.pos_x / scale, t.pos_y / scale)
+			a.input.mouse_press()
+		} else if a.touching && t.identifier == a.touch_id {
+			a.input.mouse = core.vec2(t.pos_x / scale, t.pos_y / scale)
+			if t.changed && e.typ in [.touches_ended, .touches_cancelled] {
+				a.touching = false
+				a.input.mouse_release()
+			}
+		}
 	}
 }

@@ -19,9 +19,10 @@ v run tools/assetdb.v examples/demo/assets list
 Install the `velo` CLI once (any directory on your `PATH`), then use it from anywhere:
 
 ```bash
-v -o ~/.local/bin/velo tools/velo.v
+v -o ~/.local/bin/velo tools/velo
 velo new mygame && cd mygame
 velo editor        # or: velo run, velo build, velo assets list
+velo run ios-sim   # or: velo run android — see "Android and iOS"
 ```
 
 `velo` runs `v -path "@vlib|<parent of the repo>|@vmodules" ...`, so projects find `velo.*` without symlinks or copies
@@ -31,7 +32,8 @@ The engine location is baked in when `velo` is built; set `VELO_HOME` to overrid
 Tested with V 0.5.2 (release and master). Graphics use V's built-in `gg` module
 (on top of sokol: Metal on macOS, D3D11 on Windows, OpenGL on Linux), nothing else to install.
 The optional `physics` module (used by the demo) needs [Box2D](https://box2d.org) v3.1+ as a system library:
-`brew install box2d` on macOS, or build and install it from source elsewhere.
+`brew install box2d` on macOS, or build and install it from source elsewhere
+(or build with `-d box2d_source` after `velo deps`, which compiles Box2D into the game — mobile builds always do this).
 
 ## Structure
 
@@ -46,7 +48,7 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   scenedoc/   scene/prefab editing model: undo/redo, prefab rules, diff-style saving (no GPU needed)
   editor/     editor UI (gg): Hierarchy, Scene view, Inspector, Assets, Play
   examples/demo/  sample game + assets (sprites, prefabs, scenes)
-  tools/          velo CLI (velo.v) and asset tool (assetdb.v)
+  tools/          velo CLI (velo/) and asset tool (assetdb.v)
   tests/          unit tests
 ```
 
@@ -271,11 +273,63 @@ if '--editor' in os.args {
   keeping unsaved overrides.
 - All editing logic lives in `scenedoc.Document` (no graphics dependency) and is unit tested; `editor/` is just the UI.
 
+## Android and iOS
+
+`velo build <target>` packages the game, `velo run <target>` also installs and starts it (and shows its log):
+
+```bash
+velo doctor                              # which targets this machine can build, and what is missing
+velo run ios-sim                         # iOS Simulator (macOS + Xcode)
+velo run android                         # first connected device / running emulator
+velo build ios --release                 # signed .app + .ipa for devices
+velo build android --release --aab       # Android App Bundle for Google Play
+```
+
+Output goes to `build/<target>/` in the project. Games need no code changes: on a phone `app.new` ignores
+`assets_dir` and uses the packaged assets, the first finger acts as the left mouse button (so UI buttons, scroll views
+and `input.mouse` work), and hot reload is off. The window is the whole screen: `scene.view_size` is the screen size in
+points, which is not the desktop window size, so anchor UI with `UITransform` rather than fixed positions.
+
+- **Android** is built with [vab](https://github.com/vlang/vab) (`v install vab && v -prod ~/.vmodules/vab`),
+  plus the Android SDK, NDK and a JDK. Android Studio installs all three; velo uses its bundled JDK when `JAVA_HOME` is unset.
+  The APK contains `assets/` and a file list (`velo_assets.txt`); on first launch after an install they are copied
+  to the app's internal storage, because the asset database works on real files.
+  Debug builds are signed with a debug key; set `android.keystore` in `velo.toml` for release signing.
+- **iOS** needs macOS with Xcode. velo compiles the C that V generates with the Xcode toolchain (V's own iOS
+  step targets 32-bit ARM), bundles `<name>.app` with `assets/` inside, and signs it: ad hoc for the simulator; for devices
+  with your "Apple Development" identity and a provisioning profile for `app.id` (Xcode creates both once you sign in
+  with your Apple ID under Settings > Accounts; `ios.identity` / `ios.provisioning_profile` pick specific ones).
+- **Physics**: phones have no system Box2D, so mobile builds compile it from source. The sources are cloned into
+  `thirdparty/box2d` in the engine directory the first time a game that imports `velo.physics` is built (or by `velo deps`).
+- Asset IDs must be stable, so the build first runs `velo assets check`, which also creates missing `.meta` files — commit them.
+
+App settings live in `velo.toml` (created by `velo new`; every key is optional, defaults come from the directory name):
+
+```toml
+[app]
+name = "My Game"            # name under the icon
+id = "com.example.mygame"   # bundle / package ID
+version = "1.0.0"
+build = 1                   # increase for every store upload
+orientation = "landscape"   # landscape | portrait | any (iOS only for now)
+icon = "icon.png"           # square PNG, 1024x1024
+
+[android]
+keystore = "release.keystore"   # passwords: VAB_KS_PASS / VAB_KS_ALIAS_PASS environment variables
+keystore_alias = "release"
+
+[ios]
+min_version = "14.0"
+simulator = "iPhone 17"
+```
+
 ## Current limitations and next steps
 
 - Scene hot reload **resets game state** (score, positions) because the whole tree is rebuilt.
 - Not yet available: audio (the `AudioClip` asset kind exists), physics joints, camera, z-order sorting (currently drawn in tree order),
-  removing prefab components via override, a `library/` directory caching import results, build packaging.
+  removing prefab components via override, a `library/` directory caching import results.
+- Mobile: Android ignores `app.orientation` (it follows the device), there is no screen-size scaling (the game sees the
+  screen size in points), and the iOS build patches two V 0.5.2 issues in the generated C (see `tools/velo/ios.v`).
 - Editor: no copy/paste between scenes, multi-selection,
   save prompt when closing the window, or per-field "Revert" to the prefab value.
 - Small note about `gg` 0.5.x: creating an image mid-frame leaves the cached image not yet uploaded to the GPU;
