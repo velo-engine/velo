@@ -1,6 +1,7 @@
 module main
 
 import os
+import hash.fnv1a
 
 // Android builds are compiled and packaged by vab (https://github.com/vlang/vab), V's Android tool:
 // it cross-compiles for every ABI with the NDK, then packages, signs and deploys the APK/AAB.
@@ -69,7 +70,9 @@ fn build_android(home string, p Project, o MobileOptions) {
 	os.mkdir_all(extra) or { fail(err.msg()) }
 	mut manifest := []string{}
 	for rel in packaged_assets(p) {
-		manifest << '${os.file_size(os.join_path(p.assets_dir(), rel))} ${rel}'
+		// the hash makes the manifest (and so the app's re-extraction check) change whenever any file does
+		data := os.read_bytes(os.join_path(p.assets_dir(), rel)) or { fail(err.msg()) }
+		manifest << '${data.len} ${fnv1a.sum64(data).hex()} ${rel}'
 	}
 	os.write_file(os.join_path(extra, 'velo_assets.txt'), manifest.join('\n') + '\n') or {
 		fail(err.msg())
@@ -113,8 +116,8 @@ fn build_android(home string, p Project, o MobileOptions) {
 		}
 	}
 	if o.run {
-		// vab installs, launches and then streams the device log until Ctrl+C.
-		args << ['--device', if o.device != '' { o.device } else { 'auto' }, '--log']
+		// `vab ... run <dir>` installs, launches and then streams the device log until Ctrl+C.
+		args << ['--device', if o.device != '' { o.device } else { 'auto' }, '--log', 'run']
 	}
 	args << p.dir
 	step('building ${p.name} for Android (${if o.release { 'release' } else { 'debug' }})')

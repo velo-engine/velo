@@ -21,7 +21,7 @@ pub fn is_mobile() bool {
 	}
 }
 
-// Written next to the assets by `velo build android`: "<size> <path>" per file, packaged at the APK assets root.
+// Written next to the assets by `velo build android`: "<size> <content hash> <path>" per file, packaged at the APK assets root.
 const apk_manifest = 'velo_assets.txt'
 
 fn runtime_assets_dir(configured string) !string {
@@ -55,7 +55,11 @@ fn extract_apk_assets() !string {
 		os.rmdir_all(root) or {}
 		mut count := 0
 		for line in manifest.bytestr().split_into_lines() {
-			size_str, rel := line.split_once(' ') or { continue }
+			fields := line.split_nth(' ', 3)
+			if fields.len < 3 {
+				continue
+			}
+			size_str, rel := fields[0], fields[2]
 			dst := os.join_path(root, rel)
 			os.mkdir_all(os.dir(dst))!
 			// read_apk_asset never returns for empty files, so they are created directly.

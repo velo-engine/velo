@@ -99,6 +99,11 @@ pub fn (mut a App) run() {
 		event_fn:     on_event
 		user_data:    a
 	)
+	$if android {
+		// sokol asks for GLES 3.1 by default, which emulators and older devices lack; gg only needs 3.0.
+		a.ctx.window.gl.major_version = 3
+		a.ctx.window.gl.minor_version = 0
+	}
 	a.ctx.run()
 }
 
