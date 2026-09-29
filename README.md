@@ -160,7 +160,7 @@ if '--editor' in os.args {
 |---|---|
 | Hierarchy | select, add/duplicate/delete, reorder; drag and drop to reparent (dropping on the top/bottom edge of a row = insert before/after). Prefab instances are shown in blue |
 | Scene view | click to select (clicking a child of a prefab selects the instance root), drag the body to move freely, right/middle mouse or Alt+drag: pan, mouse wheel: zoom, F: frame all |
-| Gizmos | **W** Move (drag an arrow to move along one axis, the square to move freely), **E** Rotate (drag the ring), **R** Scale (drag a box to scale one axis, the center box for uniform scale), **T** toggles local/global move axes. Shift snaps (10px / 15° / 0.1), Esc cancels the drag, each drag is one undo step. Also available as toolbar buttons |
+| Gizmos | **W** Move (drag an arrow to move along one axis, the square to move freely), **E** Rotate (drag the ring), **R** Scale (drag a box to scale one axis, the center box for uniform scale), **Y** Anchor (drag the pivot circle to move the Sprite's anchor, or click one of the 9 dots on its corners/edges/center; the sprite and children stay in place, only the pivot used by rotate/scale moves), **T** toggles local/global move axes. Shift snaps (10px / 15° / 0.1 / 0.1), Esc cancels the drag, each drag is one undo step. Also available as toolbar buttons |
 | Inspector | generated from the `Registry` (no editor code needed per component). Fields overridden relative to the prefab are highlighted in yellow. Add/remove components, assign assets, "Create prefab from this node", "Unpack prefab", "Open prefab" |
 | Assets | double-click a scene/prefab to open it; drag prefabs/images into the Scene view or Hierarchy to add them (image -> node with a `Sprite`) |
 | Toolbar | New, Save (Ctrl/Cmd+S), Save as (Ctrl+Shift+S), Undo/Redo (Ctrl+Z / Ctrl+Y), Play/Stop (Ctrl+P) |
@@ -179,7 +179,7 @@ if '--editor' in os.args {
 - Scene hot reload **resets game state** (score, positions) because the whole tree is rebuilt.
 - Not yet available: audio (the `AudioClip` asset kind exists), physics/collision, camera, z-order sorting (currently drawn in tree order),
   removing prefab components via override, a `library/` directory caching import results, build packaging.
-- Editor: no copy/paste between scenes, multi-selection, a pivot/anchor gizmo,
+- Editor: no copy/paste between scenes, multi-selection,
   save prompt when closing the window, or per-field "Revert" to the prefab value.
 - Small note about `gg` 0.5.x: creating an image mid-frame leaves the cached image not yet uploaded to the GPU;
   `render/renderer.v` handles this (see `image_for`).

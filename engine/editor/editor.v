@@ -76,20 +76,24 @@ mut:
 	drag_asset     string
 	drop_indicator Rect
 	// transform gizmo (see gizmo.v)
-	tool              GizmoTool
-	tool_local        bool // move axes follow the node's rotation
-	gizmo_handle      GizmoHandle
-	gizmo_origin      core.Vec2 // node position on screen when the drag started
-	gizmo_ax          core.Vec2 // gizmo axes when the drag started
-	gizmo_ay          core.Vec2
-	gizmo_start_pos   core.Vec2 // world position
-	gizmo_start_local core.Vec2 // local position (restored on cancel)
-	gizmo_start_rot   f32
-	gizmo_start_scale core.Vec2
-	gizmo_start_angle f32 // radians, mouse angle around the node
-	gizmo_last_angle  f32
-	gizmo_turn        f32 // accumulated rotation (radians)
-	gizmo_ratio       f32 = 1 // current scale factor
+	tool               GizmoTool
+	tool_local         bool // move axes follow the node's rotation
+	gizmo_handle       GizmoHandle
+	gizmo_origin       core.Vec2 // node position on screen when the drag started
+	gizmo_ax           core.Vec2 // gizmo axes when the drag started
+	gizmo_ay           core.Vec2
+	gizmo_start_pos    core.Vec2 // world position
+	gizmo_start_local  core.Vec2 // local position (restored on cancel)
+	gizmo_start_rot    f32
+	gizmo_start_scale  core.Vec2
+	gizmo_start_angle  f32 // radians, mouse angle around the node
+	gizmo_last_angle   f32
+	gizmo_turn         f32 // accumulated rotation (radians)
+	gizmo_ratio        f32 = 1 // current scale factor
+	gizmo_start_world  core.Affine2 // node's world matrix when the drag started
+	gizmo_start_anchor core.Vec2    // Sprite anchor when the drag started
+	gizmo_child_world  []core.Vec2  // children kept in place while the anchor moves
+	gizmo_child_local  []core.Vec2  // restored on cancel
 	// panel
 	collapsed      map[string]bool // keyed by node path (survives undo)
 	hier_rows      []HierRow
@@ -364,6 +368,9 @@ fn (mut e Editor) on_key_down(key gg.KeyCode) {
 		}
 		.r {
 			e.set_tool(.scale)
+		}
+		.y {
+			e.set_tool(.anchor)
 		}
 		.t {
 			e.tool_local = !e.tool_local
@@ -807,11 +814,12 @@ fn (mut e Editor) draw_toolbar(r Rect) {
 		}
 	}
 	x += 96
-	for t in [GizmoTool.move, .rotate, .scale] {
+	for t in [GizmoTool.move, .rotate, .scale, .anchor] {
 		label, key, bw := match t {
 			.move { 'Move', 'W', f32(64) }
 			.rotate { 'Rotate', 'E', f32(72) }
 			.scale { 'Scale', 'R', f32(64) }
+			.anchor { 'Anchor', 'Y', f32(74) }
 		}
 
 		if e.ui.toggle_button(Rect{x, y, bw, h}, '${label} ${key}', e.tool == t, c_select) {
@@ -827,7 +835,7 @@ fn (mut e Editor) draw_toolbar(r Rect) {
 	x += 86
 	e.ui.text_in(Rect{x, r.y, 300, r.h}, e.doc.title(),
 		if e.doc.dirty { c_override } else { c_text }, 0)
-	hint := 'Shift snap · Esc cancel · Ctrl+S save · Ctrl+Z/Y · Ctrl+D dup · F frame'
+	hint := 'Shift snap · Esc cancel · Ctrl+Z/Y · Ctrl+D dup · F frame'
 	e.ui.ctx.draw_text(int(r.x + r.w - 10), int(r.y + r.h / 2), hint,
 		color:          c_dim
 		size:           12

@@ -157,6 +157,11 @@ fn (mut e Editor) handle_scene_view_input(r Rect) {
 	// gizmo handles of the selected node take priority over picking
 	if n := e.gizmo_target() {
 		h := e.gizmo_hit(n, e.ui.mouse)
+		if h == .anchor_preset {
+			mut sel := e.doc.selected
+			e.click_anchor_preset(mut sel)
+			return
+		}
 		if h != .none {
 			e.begin_transform_drag(.gizmo, n, h)
 			return
@@ -594,7 +599,7 @@ fn (mut e Editor) draw_inspector(r Rect) {
 		y += 24
 		e.ui.text(x, y, 'Right/middle mouse: pan view · wheel: zoom', c_dim)
 		y += 20
-		e.ui.text(x, y, 'W move · E rotate · R scale · T local/global axes', c_dim)
+		e.ui.text(x, y, 'W move · E rotate · R scale · Y anchor · T local/global', c_dim)
 		y += 20
 		e.ui.text(x, y, 'Shift while dragging: snap · Esc: cancel the drag', c_dim)
 		e.ui.reset_clip()

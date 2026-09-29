@@ -3,14 +3,18 @@ module editor
 import gg
 import math
 import engine.core
+import engine.render
 
-// Transform gizmos for the scene view: Move (W), Rotate (E), Scale (R).
+// Transform gizmos for the scene view: Move (W), Rotate (E), Scale (R), Anchor (Y).
 //
 //   Move:   drag the red/green arrow to move along one axis, the square to move freely.
 //   Rotate: drag the ring.
 //   Scale:  drag the red/green box to scale one axis, the center box to scale uniformly.
+//   Anchor: drag the pivot circle to move the Sprite's anchor, or click one of the 9 dots on the
+//           sprite's edges. The sprite and the children stay where they are: the node's position is
+//           adjusted so only the pivot (used by rotate/scale) moves. Snaps to the dots when close.
 //
-// Shift snaps (move: 10px, rotate: 15°, scale: 0.1). Esc while dragging cancels.
+// Shift snaps (move: 10px, rotate: 15°, scale: 0.1, anchor: 0.1). Esc while dragging cancels.
 // Move axes follow the node's rotation in Local mode, the world axes in Global mode;
 // scale axes are always local. Handles keep a constant size on screen whatever the zoom.
 
@@ -18,6 +22,7 @@ enum GizmoTool {
 	move
 	rotate
 	scale
+	anchor
 }
 
 enum GizmoHandle {
@@ -29,6 +34,8 @@ enum GizmoHandle {
 	scale_x
 	scale_y
 	scale_xy
+	anchor        // the pivot circle (Anchor tool)
+	anchor_preset // one of the 9 dots on the sprite's edges
 }
 
 const gizmo_len = f32(72) // axis length (screen pixels)
@@ -36,6 +43,8 @@ const gizmo_ring = f32(62) // rotate ring radius
 const gizmo_grab = f32(7) // pick tolerance around a handle
 const gizmo_square = f32(22) // move-both-axes square, drawn in the +x/+y quadrant
 const gizmo_box = f32(6) // half size of the scale boxes
+const gizmo_pivot = f32(8) // radius of the anchor pivot circle
+const anchor_presets = [f32(0), 0.5, 1]
 
 const c_axis_x = gg.Color{230, 80, 80, 255}
 const c_axis_y = gg.Color{90, 200, 90, 255}
@@ -108,6 +117,18 @@ fn (e &Editor) gizmo_hit(n &core.Node, m core.Vec2) GizmoHandle {
 				return .scale_y
 			}
 		}
+		.anchor {
+			sp := n.get_component[render.Sprite]() or { return .none }
+			if sp.display_size().x <= 0 || sp.display_size().y <= 0 {
+				return .none
+			}
+			if d.length() <= gizmo_pivot + 3 {
+				return .anchor
+			}
+			if _ := e.anchor_preset_at(n, m) {
+				return .anchor_preset
+			}
+		}
 	}
 
 	return .none
@@ -147,12 +168,11 @@ fn (e &Editor) draw_gizmo(n &core.Node) {
 			e.draw_arrow(c, ay, ax.mul(-1), col(.move_y, c_axis_y))
 		}
 		.rotate {
-			mut ring := []core.Vec2{cap: 64}
-			for i in 0 .. 64 {
-				a := f64(i) / 64.0 * 2 * math.pi
-				ring << c + core.vec2(f32(math.cos(a)), f32(math.sin(a))).mul(gizmo_ring)
-			}
-			e.draw_polyline(ring, true, col(.rotate, c_axis_xy), if hot == .rotate { 3 } else { 2 })
+			e.draw_polyline(circle_points(c, gizmo_ring, 64), true, col(.rotate, c_axis_xy), if hot == .rotate {
+				3
+			} else {
+				2
+			})
 			// current orientation of the node's x axis
 			e.thick_line(c, c + ax.mul(gizmo_ring), c_axis_x, 2)
 			if e.drag == .gizmo && e.drag_active {
@@ -176,11 +196,48 @@ fn (e &Editor) draw_gizmo(n &core.Node) {
 			}
 			e.draw_box(c, ax, ay, gizmo_box, col(.scale_xy, c_text))
 		}
+		.anchor {
+			e.draw_anchor_gizmo(n, c, hot)
+		}
 	}
 
 	e.ui.ctx.draw_circle_filled(c.x, c.y, 3, c_override)
 	if e.drag == .gizmo && e.drag_active {
 		e.draw_gizmo_readout(n)
+	}
+}
+
+fn (e &Editor) draw_anchor_gizmo(n &core.Node, c core.Vec2, hot GizmoHandle) {
+	sp := n.get_component[render.Sprite]() or {
+		e.ui.text(c.x + 10, c.y + 6, 'no Sprite: nothing to anchor', c_dim)
+		return
+	}
+	if sp.display_size().x <= 0 || sp.display_size().y <= 0 {
+		e.ui.text(c.x + 10, c.y + 6, 'Sprite has no size', c_dim)
+		return
+	}
+	hot_preset := if hot == .anchor_preset {
+		e.anchor_preset_at(n, e.ui.mouse) or { core.vec2(-1, -1) }
+	} else {
+		core.vec2(-1, -1)
+	}
+	for py in anchor_presets {
+		for px in anchor_presets {
+			p := e.anchor_point_screen(n, sp, core.vec2(px, py))
+			if px == hot_preset.x && py == hot_preset.y {
+				e.ui.ctx.draw_circle_filled(p.x, p.y, 5, c_gizmo_hot)
+			} else {
+				e.ui.ctx.draw_circle_filled(p.x, p.y, 3.5, gg.Color{20, 20, 24, 220})
+				e.ui.ctx.draw_circle_empty(p.x, p.y, 3.5, c_axis_xy)
+			}
+		}
+	}
+	pc := if hot == .anchor { c_gizmo_hot } else { c_axis_xy }
+	e.draw_polyline(circle_points(c, gizmo_pivot, 24), true, pc, 2)
+	e.thick_line(c - core.vec2(gizmo_pivot + 5, 0), c + core.vec2(gizmo_pivot + 5, 0), pc, 1)
+	e.thick_line(c - core.vec2(0, gizmo_pivot + 5), c + core.vec2(0, gizmo_pivot + 5), pc, 1)
+	if hot in [.anchor, .anchor_preset] && e.drag == .none {
+		e.ui.text(e.ui.mouse.x + 14, e.ui.mouse.y + 12, e.anchor_label(n), c_text)
 	}
 }
 
@@ -190,6 +247,7 @@ fn (e &Editor) draw_gizmo_readout(n &core.Node) {
 		.move_x, .move_y, .move_xy { 'position ${fmt_f(n.position.x)}, ${fmt_f(n.position.y)}' }
 		.rotate { 'rotation ${fmt_f(n.rotation)}°' }
 		.scale_x, .scale_y, .scale_xy { 'scale ${fmt_f(n.scale.x)}, ${fmt_f(n.scale.y)}' }
+		.anchor, .anchor_preset { e.anchor_label(n) }
 		.none { '' }
 	}
 
@@ -199,9 +257,44 @@ fn (e &Editor) draw_gizmo_readout(n &core.Node) {
 	e.ui.text_in(r, label, c_text, 6)
 }
 
+fn (e &Editor) anchor_label(n &core.Node) string {
+	sp := n.get_component[render.Sprite]() or { return '' }
+	return 'anchor ${fmt_f(sp.anchor.x)}, ${fmt_f(sp.anchor.y)}'
+}
+
+// anchor_point_screen: where the anchor value `a` lies on screen (the sprite's rect doesn't depend on
+// the anchor once drawn: its corner is at -anchor * size in node space).
+fn (e &Editor) anchor_point_screen(n &core.Node, sp &render.Sprite, a core.Vec2) core.Vec2 {
+	local := (a - sp.anchor) * sp.display_size()
+	return e.view_matrix().mul(n.world_matrix()).apply(local)
+}
+
+// anchor_preset_at: the preset anchor (0 / 0.5 / 1 on each axis) whose dot is under the screen point `m`.
+fn (e &Editor) anchor_preset_at(n &core.Node, m core.Vec2) ?core.Vec2 {
+	sp := n.get_component[render.Sprite]() or { return none }
+	for py in anchor_presets {
+		for px in anchor_presets {
+			a := core.vec2(px, py)
+			if e.anchor_point_screen(n, sp, a).distance(m) <= gizmo_grab {
+				return a
+			}
+		}
+	}
+	return none
+}
+
 fn fmt_f(v f32) string {
 	s := '${v:.2f}'
 	return s.trim_right('0').trim_right('.')
+}
+
+fn circle_points(c core.Vec2, radius f32, segments int) []core.Vec2 {
+	mut pts := []core.Vec2{cap: segments}
+	for i in 0 .. segments {
+		a := f64(i) / f64(segments) * 2 * math.pi
+		pts << c + core.vec2(f32(math.cos(a)), f32(math.sin(a))).mul(radius)
+	}
+	return pts
 }
 
 fn (e &Editor) thick_line(a core.Vec2, b core.Vec2, c gg.Color, thickness f32) {
@@ -252,6 +345,14 @@ fn (mut e Editor) begin_transform_drag(kind DragKind, n &core.Node, handle Gizmo
 	e.gizmo_start_local = n.position
 	e.gizmo_start_rot = n.rotation
 	e.gizmo_start_scale = n.scale
+	e.gizmo_start_world = n.world_matrix()
+	e.gizmo_start_anchor = if sp := n.get_component[render.Sprite]() {
+		sp.anchor
+	} else {
+		core.vec2(0.5, 0.5)
+	}
+	e.gizmo_child_world = n.children.map(it.world_position())
+	e.gizmo_child_local = n.children.map(it.position)
 	e.gizmo_origin = e.gizmo_center(n)
 	e.gizmo_ax, e.gizmo_ay = e.gizmo_axes(n)
 	d := e.ui.mouse - e.gizmo_origin
@@ -326,8 +427,60 @@ fn (mut e Editor) apply_gizmo() {
 			n.scale = core.vec2(scale_value(s.x * e.gizmo_ratio, snap),
 				scale_value(s.y * e.gizmo_ratio, snap))
 		}
-		.none {}
+		.anchor {
+			mut sp := n.get_component[render.Sprite]() or { return }
+			sz := sp.display_size()
+			if sz.x <= 0 || sz.y <= 0 {
+				return
+			}
+			// the mouse in the node's space as it was when the drag started (origin = old pivot)
+			q := e.gizmo_start_world.inverse().apply(e.screen_to_world(m))
+			mut a := core.vec2(e.gizmo_start_anchor.x + q.x / sz.x, e.gizmo_start_anchor.y +
+				q.y / sz.y)
+			if snap {
+				a = core.vec2(snap_to(a.x, 0.1), snap_to(a.y, 0.1))
+			} else {
+				// magnet: stick to the corner/edge/center dots when close to them
+				to_screen := e.view_matrix().mul(e.gizmo_start_world)
+				for py in anchor_presets {
+					for px in anchor_presets {
+						p := core.vec2(px, py)
+						if to_screen.apply((p - e.gizmo_start_anchor) * sz).distance(m) <= gizmo_grab {
+							a = p
+						}
+					}
+				}
+			}
+			e.set_anchor_keep_visual(mut n, mut sp, a)
+		}
+		.anchor_preset, .none {}
 	}
+}
+
+// set_anchor_keep_visual changes the Sprite's anchor and moves the node so the sprite and the children
+// stay in place: only the pivot moves. Relative to the state saved by begin_transform_drag.
+fn (mut e Editor) set_anchor_keep_visual(mut n core.Node, mut sp render.Sprite, a core.Vec2) {
+	n.set_world_position(e.gizmo_start_world.apply((a - e.gizmo_start_anchor) * sp.display_size()))
+	sp.anchor = a
+	for i, mut ch in n.children {
+		if i < e.gizmo_child_world.len {
+			ch.set_world_position(e.gizmo_child_world[i])
+		}
+	}
+}
+
+// click_anchor_preset: clicking one of the 9 dots moves the anchor there (one undo step).
+fn (mut e Editor) click_anchor_preset(mut n core.Node) {
+	a := e.anchor_preset_at(n, e.ui.mouse) or { return }
+	mut sp := n.get_component[render.Sprite]() or { return }
+	e.begin_transform_drag(.none, n, .none)
+	e.drag_node = unsafe { nil }
+	e.doc.checkpoint() or {
+		e.report(err)
+		return
+	}
+	e.set_anchor_keep_visual(mut n, mut sp, a)
+	e.set_status(e.anchor_label(n), false)
 }
 
 // scale_value snaps to 0.1 steps (Shift) and keeps the scale away from 0 (a zero scale can't be inverted).
@@ -349,6 +502,16 @@ fn (mut e Editor) cancel_transform_drag() bool {
 		n.position = e.gizmo_start_local
 		n.rotation = e.gizmo_start_rot
 		n.scale = e.gizmo_start_scale
+		if e.gizmo_handle == .anchor {
+			if mut sp := n.get_component[render.Sprite]() {
+				sp.anchor = e.gizmo_start_anchor
+			}
+			for i, mut ch in n.children {
+				if i < e.gizmo_child_local.len {
+					ch.position = e.gizmo_child_local[i]
+				}
+			}
+		}
 		e.set_status('cancelled', false)
 	}
 	e.drag = .none
