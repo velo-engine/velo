@@ -50,6 +50,18 @@ node Main {
         BoxCollider { size = [22, 22]  density = 2 }
       }
     }
+    node CrateWall {                                                  # one tiled Sprite repeating the crate
+      position = [430, 330]
+      Sprite { texture = @asset("3e7d5a10")  size = [144, 36]  draw_mode = "tiled"  pixel_scale = 1.5 }
+      BoxCollider { size = [144, 36] }
+    }
+    node Sign {                                                       # 9-slice: the frame keeps its thickness at any size
+      position = [760, 300]
+      Sprite { texture = @asset("9a51ce07")  size = [150, 56]  draw_mode = "sliced"  border_left = 8  border_top = 8  border_right = 8  border_bottom = 8  pixel_scale = 2 }
+      node Text {
+        Label { text = "Collect!"  size = 20  color = [70, 44, 26, 255]  align = "center"  valign = "middle" }
+      }
+    }
     node Coins {
       CoinSpawner { prefab = @asset("d2c8f1a9")  count = 10  area_min = [60, 90]  area_max = [900, 480] }
     }

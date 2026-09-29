@@ -12,7 +12,7 @@ import velo.core
 pub struct RigidBody {
 	core.Component
 pub mut:
-	body_type       string = 'dynamic' // 'dynamic' | 'kinematic' | 'static'
+	body_type       string = 'dynamic' @[choices: 'dynamic|kinematic|static']
 	gravity_scale   f32    = 1
 	linear_damping  f32
 	angular_damping f32

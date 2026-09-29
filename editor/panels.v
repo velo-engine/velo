@@ -59,6 +59,7 @@ fn (mut e Editor) draw_scene_view(r Rect) {
 
 	if e.play == unsafe { nil } && e.doc.has_selection() {
 		e.draw_selection(e.doc.selected, view)
+		e.draw_slice_guides(e.doc.selected, view)
 		if n := e.gizmo_target() {
 			e.draw_gizmo(n)
 		}
@@ -286,6 +287,12 @@ fn (mut e Editor) finish_drag() {
 		.paint {
 			if e.doc.contains(e.drag_node) && e.ui.mouse_down {
 				e.continue_tile_stroke()
+				return
+			}
+		}
+		.slice {
+			if e.doc.contains(e.drag_node) && e.ui.mouse_down {
+				e.drag_slice_border()
 				return
 			}
 		}
@@ -629,7 +636,8 @@ fn (mut e Editor) draw_inspector(r Rect) {
 		y += 24
 		e.ui.text(x, y, 'Right/middle mouse: pan view · wheel: zoom', c_dim)
 		y += 20
-		e.ui.text(x, y, 'W move · E rotate · R scale · Y anchor · T local/global', c_dim)
+		e.ui.text(x, y, 'W move · E rotate · R scale · Y anchor · U size · T local/global',
+			c_dim)
 		y += 20
 		e.ui.text(x, y, 'Shift while dragging: snap · Esc: cancel the drag', c_dim)
 		y += 20
@@ -724,6 +732,8 @@ fn (mut e Editor) draw_inspector(r Rect) {
 		}
 		if c is render.TileMap {
 			y = e.draw_tile_palette(x, y + 2, w, n, ro)
+		} else if c is render.Sprite {
+			y = e.draw_slice_editor(x, y + 2, w, n, ro)
 		}
 		y += 6
 	}
@@ -829,6 +839,9 @@ fn (mut e Editor) field_row(x f32, y f32, w f32, id string, n &core.Node, comp i
 			return e.number_row(x, y, w, id, n, comp, f.name, v, ro)
 		}
 		string {
+			if f.choices.len > 0 {
+				return e.choice_row(x, y, w, n, comp, f, v, ro)
+			}
 			e.prop_label(x, y, f.name, e.is_overridden(n, comp, f.name, ro))
 			fid := '${id}/${comp}/${f.name}'
 			if e.ui.draw_field(fid, Rect{x + label_w, y, w - label_w, row_h}, v, c_text, !ro) {
@@ -867,6 +880,43 @@ fn (mut e Editor) field_row(x f32, y f32, w f32, id string, n &core.Node, comp i
 			return y + row_h + 3
 		}
 	}
+}
+
+// choice_row: a string field with @[choices] — one button per value, or (when the labels don't fit)
+// a single button that cycles to the next value.
+fn (mut e Editor) choice_row(x f32, y f32, w f32, n &core.Node, comp int, f serialize.FieldInfo, v string, ro bool) f32 {
+	mut nn := unsafe { n }
+	e.prop_label(x, y, f.name, e.is_overridden(n, comp, f.name, ro))
+	fw := w - label_w
+	bw := (fw - f32(f.choices.len - 1) * 2) / f32(f.choices.len)
+	mut fits := true
+	for c in f.choices {
+		if e.ui.text_width(c) + 8 > bw {
+			fits = false
+		}
+	}
+	mut picked := ''
+	if fits {
+		for i, c in f.choices {
+			r := Rect{x + label_w + f32(i) * (bw + 2), y, bw, row_h}
+			if ro {
+				e.ui.fill(r, if c == v { c_select } else { c_field })
+				e.ui.text_center(r, c, if c == v { c_text } else { c_dim })
+			} else if e.ui.toggle_button(r, c, c == v, c_select) && c != v {
+				picked = c
+			}
+		}
+	} else {
+		r := Rect{x + label_w, y, fw, row_h}
+		if e.ui.button(r, '${v}  ▸', !ro) {
+			i := f.choices.index(v)
+			picked = f.choices[(i + 1) % f.choices.len]
+		}
+	}
+	if picked != '' {
+		e.doc.set_field(mut nn, comp, f.name, serialize.Value(picked)) or { e.report(err) }
+	}
+	return y + row_h + 3
 }
 
 fn (mut e Editor) asset_row(x f32, y f32, w f32, id string, n &core.Node, comp int, f serialize.FieldInfo, asset_id string, ro bool) f32 {

@@ -23,16 +23,29 @@ pub fn register_builtins(mut r serialize.Registry) {
 }
 
 // Sprite — draws a texture (or one frame of a sprite sheet) at the node's position.
+// `draw_mode` picks how the frame fills `size` (see sprite_modes.v):
+//   'simple'  stretches the whole frame
+//   'sliced'  9-slice: the `border_*` edges keep their size, the edges/center stretch (panels, buttons)
+//   'tiled'   repeats the frame (or, with borders, its edges/center between fixed corners)
 pub struct Sprite {
 	core.Component
 pub mut:
-	texture assets.AssetRef[assets.Texture]
-	color   core.Color = core.white
-	anchor  core.Vec2  = core.Vec2{0.5, 0.5} // (0,0) top-left corner, (0.5,0.5) center
-	size    core.Vec2 // 0 = use the texture's frame size
-	frame   int
-	flip_x  bool
-	flip_y  bool
+	texture   assets.AssetRef[assets.Texture]
+	color     core.Color = core.white
+	anchor    core.Vec2  = core.Vec2{0.5, 0.5} // (0,0) top-left corner, (0.5,0.5) center
+	size      core.Vec2 // 0 = use the texture's frame size
+	frame     int
+	flip_x    bool
+	flip_y    bool
+	draw_mode string = 'simple' @[choices: 'simple|sliced|tiled']
+	// 9-slice borders in texture pixels, measured inward from the frame's edges.
+	border_left   int
+	border_top    int
+	border_right  int
+	border_bottom int
+	fill_center   bool = true // false: sliced/tiled draw only the border ring (frames, outlines)
+	// World units per texture pixel for the borders and the tile repeat (2 = twice as thick / big).
+	pixel_scale f32 = 1
 	// Loaded texture (runtime, not serialized).
 	tex    &assets.Texture = unsafe { nil } @[hide]
 	loaded string          @[hide]
@@ -147,8 +160,8 @@ pub mut:
 	text   string
 	size   int        = 20
 	color  core.Color = core.white
-	align  string     = 'left' // 'left' | 'center' | 'right'
-	valign string     = 'top'  // 'top' | 'middle' | 'bottom'
+	align  string     = 'left' @[choices: 'left|center|right']
+	valign string     = 'top' @[choices: 'top|middle|bottom']
 }
 
 // text_point: where the text is anchored, in node space (for the given align/valign).

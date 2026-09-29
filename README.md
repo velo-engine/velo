@@ -205,6 +205,28 @@ Click inside its orange emission outline to select it. Any component can preview
 
 Limits: no sub-emitters, collisions, color/size curves beyond start→end, or sorting against other nodes (drawn in tree order).
 
+## Sliced and tiled sprites
+
+`Sprite.draw_mode` picks how the frame fills `size`:
+
+| draw_mode | |
+|---|---|
+| `simple` (default) | stretches the whole frame |
+| `sliced` | 9-slice: `border_left/top/right/bottom` (texture pixels) cut the frame into a 3x3 grid; corners keep their size, edges and center stretch — panels, buttons, speech bubbles at any size |
+| `tiled` | repeats the frame to fill `size` (the last row/column is cropped); with borders, the corners stay fixed and the edges/center repeat |
+
+```
+Sprite { texture = @asset("9a51ce07")  size = [150, 56]  draw_mode = "sliced"
+         border_left = 8  border_top = 8  border_right = 8  border_bottom = 8  pixel_scale = 2 }
+Sprite { texture = @asset("3e7d5a10")  size = [144, 36]  draw_mode = "tiled"  pixel_scale = 1.5 }
+```
+
+`pixel_scale` is world units per texture pixel for the borders and the tile repeat; `fill_center = false` draws only
+the border ring. When `size` is smaller than two borders they shrink proportionally. Sliced/tiled sprites are drawn as one
+batch of quads, so they rotate, scale, flip and tint (Button) like any Sprite; `sprite.quads()` returns the pieces.
+In the editor, the Inspector shows the frame with its border lines (drag them to set the borders), the scene view
+draws the lines on the selected sprite, and the **U** Size tool resizes it. The demo's `Sign` and `CrateWall` use them.
+
 ## Tile maps
 
 `TileMap` (built in) draws a grid of tiles cut from one tileset. The tileset is an ordinary sprite sheet: the
@@ -386,8 +408,8 @@ if '--editor' in os.args {
 |---|---|
 | Hierarchy | select, add/duplicate/delete, reorder; drag and drop to reparent (dropping on the top/bottom edge of a row = insert before/after). Prefab instances are shown in blue |
 | Scene view | click to select (Sprite or UITransform rectangle) (clicking a child of a prefab selects the instance root), drag the body to move freely, right/middle mouse or Alt+drag: pan, mouse wheel: zoom, F: frame all |
-| Gizmos | **W** Move (drag an arrow to move along one axis, the square to move freely), **E** Rotate (drag the ring), **R** Scale (drag a box to scale one axis, the center box for uniform scale), **Y** Anchor (drag the pivot circle to move the Sprite's anchor, or click one of the 9 dots on its corners/edges/center; the sprite and children stay in place, only the pivot used by rotate/scale moves), **T** toggles local/global move axes. Shift snaps (10px / 15° / 0.1 / 0.1), Esc cancels the drag, each drag is one undo step. Also available as toolbar buttons |
-| Inspector | generated from the `Registry` (no editor code needed per component). Fields overridden relative to the prefab are highlighted in yellow. Add/remove components, assign assets, "Create prefab from this node", "Unpack prefab", "Open prefab" |
+| Gizmos | **W** Move (drag an arrow to move along one axis, the square to move freely), **E** Rotate (drag the ring), **R** Scale (drag a box to scale one axis, the center box for uniform scale), **Y** Anchor (drag the pivot circle to move the Sprite's anchor, or click one of the 9 dots on its corners/edges/center; the sprite and children stay in place, only the pivot used by rotate/scale moves), **U** Size (drag a corner/edge handle to resize the UITransform, or the Sprite's `size`; the opposite side stays put), **T** toggles local/global move axes. Shift snaps (10px / 15° / 0.1 / 0.1 / 10), Esc cancels the drag, each drag is one undo step. Also available as toolbar buttons |
+| Inspector | generated from the `Registry` (no editor code needed per component). Fields overridden relative to the prefab are highlighted in yellow. String fields with fixed values (`draw_mode`, `align`, `body_type`, ... tagged `@[choices: 'a|b']`) show one button per value. A sliced/tiled Sprite shows its frame with draggable 9-slice border lines. Add/remove components, assign assets, "Create prefab from this node", "Unpack prefab", "Open prefab" |
 | Assets | double-click a scene/prefab to open it; drag prefabs/images into the Scene view or Hierarchy to add them (image -> node with a `Sprite`) |
 | Toolbar | New, Save (Ctrl/Cmd+S), Save as (Ctrl+Shift+S), Undo/Redo (Ctrl+Z / Ctrl+Y), Play/Stop (Ctrl+P) |
 

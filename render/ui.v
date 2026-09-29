@@ -267,8 +267,9 @@ fn (mut t Toggle) sync() {
 pub struct ProgressBar {
 	core.Component
 pub mut:
-	progress   f32    = 0.5
-	direction  string = 'horizontal' // 'horizontal' | 'vertical' (fills bottom to top)
+	progress f32 = 0.5
+	// 'vertical' fills bottom to top
+	direction  string = 'horizontal' @[choices: 'horizontal|vertical']
 	reverse    bool // fill right to left / top to bottom
 	fill_color core.Color = core.rgba(90, 200, 120, 255)
 	back_color core.Color = core.rgba(0, 0, 0, 120)
@@ -657,10 +658,11 @@ pub fn (mut w Widget) align() {
 pub struct Layout {
 	core.Component
 pub mut:
-	kind        string    = 'vertical' // 'vertical' | 'horizontal' | 'grid'
-	spacing     core.Vec2 = core.Vec2{8, 8}
-	padding     f32
-	child_align string = 'start' // cross-axis alignment for rows/columns: 'start' | 'center' | 'end'
+	kind    string    = 'vertical' @[choices: 'vertical|horizontal|grid']
+	spacing core.Vec2 = core.Vec2{8, 8}
+	padding f32
+	// cross-axis alignment for rows/columns
+	child_align string = 'start' @[choices: 'start|center|end']
 	columns     int // grid: 0 = as many as fit the width
 	resize      bool = true // grow/shrink this node's UITransform to fit the children (along the layout direction)
 }

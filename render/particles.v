@@ -47,7 +47,7 @@ pub mut:
 	gravity       core.Vec2 // world units / s²
 	damping       f32       // fraction of the velocity lost per second (0..1+)
 	// Where particles are born, around the node: 'point' | 'circle' (radius = shape_size.x) | 'box' (w, h).
-	shape        string = 'point'
+	shape        string = 'point' @[choices: 'point|circle|box']
 	shape_size   core.Vec2
 	start_size   f32 = 16
 	end_size     f32 = 16

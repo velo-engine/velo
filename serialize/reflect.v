@@ -10,6 +10,10 @@ import velo.assets
 // Fields of other types (pointers, maps, ...) are skipped automatically. Hide a field with the @[hide] attribute:
 //
 //   velocity core.Vec2 @[hide]
+//
+// A string field limited to a few values lists them with @[choices] (checked on load, a picker in the editor):
+//
+//   draw_mode string = 'simple' @[choices: 'simple|sliced|tiled']
 
 // set_fields assigns values from the scene file into the struct. Unknown field -> error (catches typos).
 pub fn set_fields[T](mut obj T, props map[string]Value) ! {
@@ -27,7 +31,12 @@ pub fn set_fields[T](mut obj T, props map[string]Value) ! {
 				} $else $if field.typ is bool {
 					obj.$(field.name) = v.as_bool()!
 				} $else $if field.typ is string {
-					obj.$(field.name) = v.as_string()!
+					str := v.as_string()!
+					allowed := choices_of(field.attrs)
+					if allowed.len > 0 && str !in allowed {
+						return error('${core.short_type_name(T.name)}.${field.name} must be one of ${allowed.join(' | ')}, not "${str}"')
+					}
+					obj.$(field.name) = str
 				} $else $if field.typ is []int {
 					obj.$(field.name) = v.as_number_list()!.map(int(it))
 				} $else $if field.typ is core.Vec2 {
@@ -105,13 +114,27 @@ pub:
 	type_name  string
 	asset_kind assets.AssetKind // asset kind accepted by an AssetRef[...] field (.unknown if not an AssetRef)
 	is_list    bool             // a []int field (any length, so not a Vec2/Color even with 2 or 4 values)
+	choices    []string         // allowed values of a string field (@[choices: 'a|b']), empty = any text
+}
+
+// choices_of reads the values of a `@[choices: 'a|b|c']` attribute (empty without one).
+fn choices_of(attrs []string) []string {
+	for a in attrs {
+		if a.starts_with('choices:') {
+			return a.all_after(':').trim_space().trim('\'"').split('|').map(it.trim_space())
+		}
+	}
+	return []
 }
 
 pub fn describe_fields[T]() []FieldInfo {
 	mut kinds := map[string]assets.AssetKind{}
 	mut lists := map[string]bool{}
+	mut choices := map[string][]string{}
 	$for field in T.fields {
-		$if field.typ is []int {
+		$if field.typ is string {
+			choices[field.name] = choices_of(field.attrs)
+		} $else $if field.typ is []int {
 			lists[field.name] = true
 		} $else $if field.typ is assets.AssetRef[assets.Texture] {
 			kinds[field.name] = .texture
@@ -131,6 +154,7 @@ pub fn describe_fields[T]() []FieldInfo {
 			type_name:  v.type_name()
 			asset_kind: kinds[k] or { assets.AssetKind.unknown }
 			is_list:    lists[k]
+			choices:    choices[k] or { []string{} }
 		}
 	}
 	return out

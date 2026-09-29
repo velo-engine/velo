@@ -50,6 +50,7 @@ enum DragKind {
 	asset     // dragging an asset from the Assets panel
 	gizmo     // dragging a move/rotate/scale gizmo handle
 	paint     // painting tiles on a TileMap (see tilemap.v)
+	slice     // dragging a 9-slice border line in the Inspector (see sprite.v)
 }
 
 @[heap]
@@ -95,10 +96,17 @@ mut:
 	gizmo_start_anchor core.Vec2    // Sprite anchor when the drag started
 	gizmo_child_world  []core.Vec2  // children kept in place while the anchor moves
 	gizmo_child_local  []core.Vec2  // restored on cancel
+	gizmo_start_rect   render.Rect  // Size tool: the rectangle (node space) when the drag started
+	gizmo_start_size   core.Vec2    // restored on cancel
+	gizmo_edge         []int = [0, 0] // Size tool: dragged side per axis (-1 / 0 / 1)
 	// tile painting (see tilemap.v)
 	tile_tool  TileTool
 	tile_brush int
 	tile_last  []int // cell painted last during a stroke: [col, row]
+	// 9-slice border editing (see sprite.v)
+	slice_edge   int       // border being dragged: 0 left, 1 top, 2 right, 3 bottom
+	slice_origin core.Vec2 // screen position of the preview frame's top-left corner
+	slice_k      f32       // preview scale (screen pixels per texture pixel)
 	// panel
 	collapsed      map[string]bool // keyed by node path (survives undo)
 	hier_rows      []HierRow
@@ -412,6 +420,9 @@ fn (mut e Editor) on_key_down(key gg.KeyCode) {
 		}
 		.y {
 			e.set_tool(.anchor)
+		}
+		.u {
+			e.set_tool(.size)
 		}
 		.t {
 			e.tool_local = !e.tool_local
@@ -871,12 +882,13 @@ fn (mut e Editor) draw_toolbar(r Rect) {
 		}
 	}
 	x += 96
-	for t in [GizmoTool.move, .rotate, .scale, .anchor] {
+	for t in [GizmoTool.move, .rotate, .scale, .anchor, .size] {
 		label, key, bw := match t {
 			.move { 'Move', 'W', f32(64) }
 			.rotate { 'Rotate', 'E', f32(72) }
 			.scale { 'Scale', 'R', f32(64) }
 			.anchor { 'Anchor', 'Y', f32(74) }
+			.size { 'Size', 'U', f32(60) }
 		}
 
 		if e.ui.toggle_button(Rect{x, y, bw, h}, '${label} ${key}', e.tool == t, c_select) {

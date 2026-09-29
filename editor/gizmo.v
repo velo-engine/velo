@@ -5,7 +5,7 @@ import math
 import velo.core
 import velo.render
 
-// Transform gizmos for the scene view: Move (W), Rotate (E), Scale (R), Anchor (Y).
+// Transform gizmos for the scene view: Move (W), Rotate (E), Scale (R), Anchor (Y), Size (U).
 //
 //   Move:   drag the red/green arrow to move along one axis, the square to move freely.
 //   Rotate: drag the ring.
@@ -13,8 +13,10 @@ import velo.render
 //   Anchor: drag the pivot circle to move the Sprite's anchor, or click one of the 9 dots on the
 //           sprite's edges. The sprite and the children stay where they are: the node's position is
 //           adjusted so only the pivot (used by rotate/scale) moves. Snaps to the dots when close.
+//   Size:   drag a corner/edge handle of the rectangle to resize the UITransform (or, without one, the
+//           Sprite's `size`, e.g. a sliced/tiled sprite) while the opposite side stays put. Whole units.
 //
-// Shift snaps (move: 10px, rotate: 15°, scale: 0.1, anchor: 0.1). Esc while dragging cancels.
+// Shift snaps (move: 10px, rotate: 15°, scale: 0.1, anchor: 0.1, size: 10). Esc while dragging cancels.
 // Move axes follow the node's rotation in Local mode, the world axes in Global mode;
 // scale axes are always local. Handles keep a constant size on screen whatever the zoom.
 
@@ -23,6 +25,7 @@ enum GizmoTool {
 	rotate
 	scale
 	anchor
+	size
 }
 
 enum GizmoHandle {
@@ -36,6 +39,7 @@ enum GizmoHandle {
 	scale_xy
 	anchor        // the pivot circle (Anchor tool)
 	anchor_preset // one of the 9 dots on the sprite's edges
+	resize        // a corner/edge handle of the Size tool (which one: gizmo_edge)
 }
 
 const gizmo_len = f32(72) // axis length (screen pixels)
@@ -61,7 +65,11 @@ fn snap_to(v f32, step f32) f32 {
 
 // gizmo_axes: unit x/y axis directions on screen (the view has no rotation, so screen = world directions).
 fn (e &Editor) gizmo_axes(n &core.Node) (core.Vec2, core.Vec2) {
-	deg := if e.tool == .scale || e.tool_local { n.world_matrix().rotation_deg() } else { f32(0) }
+	deg := if e.tool in [.scale, .size] || e.tool_local {
+		n.world_matrix().rotation_deg()
+	} else {
+		f32(0)
+	}
 	r := f64(deg) * math.pi / 180.0
 	cs := f32(math.cos(r))
 	sn := f32(math.sin(r))
@@ -130,6 +138,11 @@ fn (e &Editor) gizmo_hit(n &core.Node, m core.Vec2) GizmoHandle {
 			}
 			if _ := e.anchor_preset_at(n, m) {
 				return .anchor_preset
+			}
+		}
+		.size {
+			if _, _ := e.size_handle_at(n, m) {
+				return .resize
 			}
 		}
 	}
@@ -202,6 +215,9 @@ fn (e &Editor) draw_gizmo(n &core.Node) {
 		.anchor {
 			e.draw_anchor_gizmo(n, c, hot)
 		}
+		.size {
+			e.draw_size_gizmo(n, c, hot)
+		}
 	}
 
 	e.ui.ctx.draw_circle_filled(c.x, c.y, 3, c_override)
@@ -251,6 +267,7 @@ fn (e &Editor) draw_gizmo_readout(n &core.Node) {
 		.rotate { 'rotation ${fmt_f(n.rotation)}°' }
 		.scale_x, .scale_y, .scale_xy { 'scale ${fmt_f(n.scale.x)}, ${fmt_f(n.scale.y)}' }
 		.anchor, .anchor_preset { e.anchor_label(n) }
+		.resize { e.size_label(n) }
 		.none { '' }
 	}
 
@@ -363,6 +380,12 @@ fn (mut e Editor) begin_transform_drag(kind DragKind, n &core.Node, handle Gizmo
 	e.gizmo_last_angle = e.gizmo_start_angle
 	e.gizmo_turn = 0
 	e.gizmo_ratio = 1
+	if handle == .resize {
+		e.gizmo_start_rect = size_rect(n) or { render.Rect{} }
+		e.gizmo_start_size = core.vec2(e.gizmo_start_rect.w, e.gizmo_start_rect.h)
+		dx, dy := e.size_handle_at(n, e.ui.mouse) or { 0, 0 }
+		e.gizmo_edge = [dx, dy]
+	}
 }
 
 // apply_gizmo sets the dragged node's transform from the current mouse position.
@@ -456,6 +479,9 @@ fn (mut e Editor) apply_gizmo() {
 			}
 			e.set_anchor_keep_visual(mut n, mut sp, a)
 		}
+		.resize {
+			e.apply_resize(mut n, snap)
+		}
 		.anchor_preset, .none {}
 	}
 }
@@ -505,6 +531,9 @@ fn (mut e Editor) cancel_transform_drag() bool {
 		n.position = e.gizmo_start_local
 		n.rotation = e.gizmo_start_rot
 		n.scale = e.gizmo_start_scale
+		if e.gizmo_handle == .resize {
+			set_size(mut n, e.gizmo_start_size)
+		}
 		if e.gizmo_handle == .anchor {
 			if mut sp := n.get_component[render.Sprite]() {
 				sp.anchor = e.gizmo_start_anchor
@@ -527,4 +556,132 @@ fn (mut e Editor) set_tool(t GizmoTool) {
 	e.tool = t
 	e.tile_tool = .none
 	e.set_status('${t} tool', false)
+}
+
+// ---------- Size tool ----------
+
+const size_handle = f32(4.5) // half size of the Size tool's square handles
+
+// size_rect: the node-space rectangle the Size tool edits — the UITransform's, otherwise the Sprite's.
+fn size_rect(n &core.Node) ?render.Rect {
+	if t := n.get_component[render.UITransform]() {
+		return t.rect()
+	}
+	if sp := n.get_component[render.Sprite]() {
+		x, y, w, h := sp.local_rect()
+		if w > 0 && h > 0 {
+			return render.Rect{x, y, w, h}
+		}
+	}
+	return none
+}
+
+// size_anchor: the pivot of that rectangle, as a fraction of its size.
+fn size_anchor(n &core.Node) core.Vec2 {
+	if t := n.get_component[render.UITransform]() {
+		return t.anchor
+	}
+	if sp := n.get_component[render.Sprite]() {
+		return sp.anchor
+	}
+	return core.vec2(0.5, 0.5)
+}
+
+// set_size resizes the UITransform, or the Sprite without one.
+fn set_size(mut n core.Node, sz core.Vec2) {
+	if mut t := n.get_component[render.UITransform]() {
+		t.size = sz
+	} else if mut sp := n.get_component[render.Sprite]() {
+		sp.size = sz
+	}
+}
+
+// size_handle_point: the screen position of the handle on side (dx, dy) — -1/0/1 per axis, (0, 0) excluded.
+fn (e &Editor) size_handle_point(n &core.Node, rc render.Rect, dx int, dy int) core.Vec2 {
+	local := core.vec2(rc.x + rc.w * f32(dx + 1) / 2, rc.y + rc.h * f32(dy + 1) / 2)
+	return e.view_matrix().mul(n.world_matrix()).apply(local)
+}
+
+// size_handle_at: the side (dx, dy) of the handle under the screen point `m`; corners win over edges.
+fn (e &Editor) size_handle_at(n &core.Node, m core.Vec2) ?(int, int) {
+	rc := size_rect(n) or { return none }
+	for pass in 0 .. 2 {
+		for dy in -1 .. 2 {
+			for dx in -1 .. 2 {
+				corner := dx != 0 && dy != 0
+				if (dx == 0 && dy == 0) || corner != (pass == 0) {
+					continue
+				}
+				p := e.size_handle_point(n, rc, dx, dy)
+				if math.abs(p.x - m.x) <= size_handle + 3 && math.abs(p.y - m.y) <= size_handle + 3 {
+					return dx, dy
+				}
+			}
+		}
+	}
+	return none
+}
+
+fn (e &Editor) draw_size_gizmo(n &core.Node, c core.Vec2, hot GizmoHandle) {
+	rc := size_rect(n) or {
+		e.ui.text(c.x + 10, c.y + 6, 'no UITransform or Sprite: nothing to size', c_dim)
+		return
+	}
+	hot_side := if hot == .resize && e.drag == .none {
+		dx, dy := e.size_handle_at(n, e.ui.mouse) or { 0, 0 }
+		[dx, dy]
+	} else if hot == .resize {
+		e.gizmo_edge
+	} else {
+		[0, 0]
+	}
+	ax, ay := e.gizmo_axes(n)
+	for dy in -1 .. 2 {
+		for dx in -1 .. 2 {
+			if dx == 0 && dy == 0 {
+				continue
+			}
+			p := e.size_handle_point(n, rc, dx, dy)
+			is_hot := hot_side == [dx, dy]
+			e.draw_box(p, ax, ay, size_handle + 1, c_border)
+			e.draw_box(p, ax, ay, size_handle, if is_hot { c_gizmo_hot } else { c_axis_xy })
+		}
+	}
+	if hot == .resize && e.drag == .none {
+		e.ui.text(e.ui.mouse.x + 14, e.ui.mouse.y + 12, e.size_label(n), c_text)
+	}
+}
+
+fn (e &Editor) size_label(n &core.Node) string {
+	rc := size_rect(n) or { return '' }
+	return 'size ${fmt_f(rc.w)} × ${fmt_f(rc.h)}'
+}
+
+// apply_resize moves the dragged side(s) to the mouse; the opposite side stays where it was, so the node
+// is moved to keep its pivot at the same fraction of the new rectangle.
+fn (mut e Editor) apply_resize(mut n core.Node, snap bool) {
+	rc := e.gizmo_start_rect
+	if rc.w <= 0 || rc.h <= 0 {
+		return
+	}
+	q := e.gizmo_start_world.inverse().apply(e.screen_to_world(e.ui.mouse))
+	step := if snap { f32(10) } else { f32(1) }
+	x0, x1 := resize_axis(rc.x, rc.x + rc.w, q.x, e.gizmo_edge[0], step)
+	y0, y1 := resize_axis(rc.y, rc.y + rc.h, q.y, e.gizmo_edge[1], step)
+	a := size_anchor(n)
+	sz := core.vec2(x1 - x0, y1 - y0)
+	// the old pivot is the origin of the start space
+	n.set_world_position(e.gizmo_start_world.apply(core.vec2(x0 + a.x * sz.x, y0 + a.y * sz.y)))
+	set_size(mut n, sz)
+}
+
+// resize_axis moves the low (side < 0) or high (side > 0) end of [lo, hi] to `p`, keeping the other end;
+// the length is rounded to `step` and stays at least one step.
+fn resize_axis(lo f32, hi f32, p f32, side int, step f32) (f32, f32) {
+	if side == 0 {
+		return lo, hi
+	}
+	raw := if side < 0 { hi - p } else { p - lo }
+	len := math.max(snap_to(raw, step), step)
+	return if side < 0 { hi - len, hi } else { lo, lo + len }
 }

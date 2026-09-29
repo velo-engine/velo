@@ -236,6 +236,10 @@ fn (mut r Renderer) draw_sprite(s &Sprite, m core.Affine2) {
 	if s.tex == unsafe { nil } {
 		return
 	}
+	if s.is_sliced_mode() {
+		r.draw_sprite_quads(s, m)
+		return
+	}
 	img := r.image_for(s.tex) or { return }
 	sz := s.display_size()
 	sc := m.scale()
