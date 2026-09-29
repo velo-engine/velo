@@ -2,9 +2,9 @@ module main
 
 import math
 import rand
-import engine.core
-import engine.assets
-import engine.render
+import velo.core
+import velo.assets
+import velo.render
 
 // Bob — bobs up and down.
 pub struct Bob {

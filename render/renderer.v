@@ -1,8 +1,8 @@
 module render
 
 import gg
-import engine.core
-import engine.assets
+import velo.core
+import velo.assets
 
 struct GpuImage {
 	img     gg.Image

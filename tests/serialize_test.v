@@ -1,8 +1,8 @@
 import os
 import time
-import engine.core
-import engine.assets
-import engine.serialize
+import velo.core
+import velo.assets
+import velo.serialize
 
 struct Health {
 	core.Component

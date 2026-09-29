@@ -14,13 +14,27 @@ v test tests/                # unit tests for core, asset, serialize, scenedoc (
 v run tools/assetdb.v examples/demo/assets list
 ```
 
+### New project
+
+Install the `velo` CLI once (any directory on your `PATH`), then use it from anywhere:
+
+```bash
+v -o ~/.local/bin/velo tools/velo.v
+velo new mygame && cd mygame
+velo editor        # or: velo run, velo build, velo assets list
+```
+
+`velo` runs `v -path "@vlib|<parent of the repo>|@vmodules" ...`, so projects find `velo.*` without symlinks or copies
+(the repo directory must therefore be named `velo`).
+The engine location is baked in when `velo` is built; set `VELO_HOME` to override it.
+
 Tested with V 0.5.2 (release and master). Graphics use V's built-in `gg` module
 (on top of sokol: Metal on macOS, D3D11 on Windows, OpenGL on Linux), nothing else to install.
 
 ## Structure
 
 ```
-engine/
+velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   core/       Node, Component, Scene, Input, Vec2/Color/Affine2       (no graphics dependency)
   assets/     AssetDatabase: .meta, stable IDs, AssetRef[T], reference counting, dependency graph, hot reload
   serialize/  .scene format, parser, reflection, Registry, SceneLoader (prefab + override), writer
@@ -28,9 +42,9 @@ engine/
   app/        game loop, input, hot reload
   scenedoc/   scene/prefab editing model: undo/redo, prefab rules, diff-style saving (no GPU needed)
   editor/     editor UI (gg): Hierarchy, Scene view, Inspector, Assets, Play
-examples/demo/  sample game + assets (sprites, prefabs, scenes)
-tools/assetdb.v command-line tool for assets
-tests/          unit tests
+  examples/demo/  sample game + assets (sprites, prefabs, scenes)
+  tools/          velo CLI (velo.v) and asset tool (assetdb.v)
+  tests/          unit tests
 ```
 
 Module dependency order (no cycles): `assets` ← `core` ← `serialize` ← `render` ← `app`,

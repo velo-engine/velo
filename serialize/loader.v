@@ -1,7 +1,7 @@
 module serialize
 
-import engine.core
-import engine.assets
+import velo.core
+import velo.assets
 
 struct CachedDesc {
 	hash u64

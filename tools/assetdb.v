@@ -1,7 +1,7 @@
 module main
 
 import os
-import engine.assets
+import velo.assets
 
 const usage = 'Velo Engine asset management tool
 

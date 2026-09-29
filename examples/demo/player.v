@@ -1,7 +1,7 @@
 module main
 
-import engine.core
-import engine.render
+import velo.core
+import velo.render
 
 // PlayerController — moves with the keyboard, flips the sprite by direction, plays the animation while walking.
 pub struct PlayerController {

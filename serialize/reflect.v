@@ -1,7 +1,7 @@
 module serialize
 
-import engine.core
-import engine.assets
+import velo.core
+import velo.assets
 
 // Automatic serialization via V's comptime reflection: NO need to write read/write code for each component.
 //

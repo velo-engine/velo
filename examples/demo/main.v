@@ -1,9 +1,9 @@
 module main
 
 import os
-import engine.app
-import engine.editor
-import engine.serialize
+import velo.app
+import velo.editor
+import velo.serialize
 
 // "Coin collector" demo: move the player to collect coins; big coins (a prefab variant) are worth more.
 //   v run examples/demo            run the game

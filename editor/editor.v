@@ -2,11 +2,11 @@ module editor
 
 import gg
 import time
-import engine.core
-import engine.assets
-import engine.serialize
-import engine.render
-import engine.scenedoc
+import velo.core
+import velo.assets
+import velo.serialize
+import velo.render
+import velo.scenedoc
 
 // Scene/prefab editor: Hierarchy + Scene view + Inspector + Assets, with test runs (Play) right inside the editor.
 //

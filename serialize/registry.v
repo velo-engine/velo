@@ -1,6 +1,6 @@
 module serialize
 
-import engine.core
+import velo.core
 
 // ComponentType — runtime information about a registered component type.
 pub struct ComponentType {

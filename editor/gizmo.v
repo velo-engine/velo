@@ -2,8 +2,8 @@ module editor
 
 import gg
 import math
-import engine.core
-import engine.render
+import velo.core
+import velo.render
 
 // Transform gizmos for the scene view: Move (W), Rotate (E), Scale (R), Anchor (Y).
 //

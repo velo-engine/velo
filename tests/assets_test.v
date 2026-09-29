@@ -1,6 +1,6 @@
 import os
 import time
-import engine.assets
+import velo.assets
 
 // Create a fake PNG with only a header (enough for AssetDatabase to read its size).
 fn fake_png(path string, w int, h int) {

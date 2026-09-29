@@ -1,6 +1,6 @@
 module core
 
-import engine.assets
+import velo.assets
 
 // InstantiateFn is installed into the Scene by App so components can create prefabs at runtime
 // without the core module depending on the serialize module.

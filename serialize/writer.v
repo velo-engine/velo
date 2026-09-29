@@ -1,7 +1,7 @@
 module serialize
 
 import os
-import engine.core
+import velo.core
 
 // save_node converts a node tree into .scene text.
 // Nodes that are prefab instances only write what DIFFERS from the source prefab, so scene files stay short

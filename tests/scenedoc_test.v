@@ -1,9 +1,9 @@
 import os
 import time
-import engine.core
-import engine.assets
-import engine.serialize
-import engine.scenedoc
+import velo.core
+import velo.assets
+import velo.serialize
+import velo.scenedoc
 
 struct Hp {
 	core.Component

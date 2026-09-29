@@ -1,6 +1,6 @@
 module core
 
-import engine.assets
+import velo.assets
 
 // IComponent — the contract every component must satisfy.
 // Users do NOT need to implement it themselves: just embed `core.Component` in the struct,

@@ -2,7 +2,7 @@ module editor
 
 import gg
 import time
-import engine.core
+import velo.core
 
 // Minimal "immediate mode" widget set drawn with gg: the whole UI is redrawn every frame,
 // and widgets return interaction results immediately (clicked, value changed, ...).

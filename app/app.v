@@ -2,10 +2,10 @@ module app
 
 import gg
 import time
-import engine.core
-import engine.assets
-import engine.serialize
-import engine.render
+import velo.core
+import velo.assets
+import velo.serialize
+import velo.render
 
 pub struct Config {
 pub:

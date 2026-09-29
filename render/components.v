@@ -1,8 +1,8 @@
 module render
 
-import engine.core
-import engine.assets
-import engine.serialize
+import velo.core
+import velo.assets
+import velo.serialize
 
 // register_builtins registers the engine's built-in components so .scene files can use them.
 pub fn register_builtins(mut r serialize.Registry) {

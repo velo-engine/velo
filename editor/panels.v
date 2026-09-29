@@ -2,10 +2,10 @@ module editor
 
 import gg
 import math
-import engine.core
-import engine.assets
-import engine.serialize
-import engine.render
+import velo.core
+import velo.assets
+import velo.serialize
+import velo.render
 
 // ---------- Scene view ----------
 

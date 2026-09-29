@@ -1,9 +1,9 @@
 module scenedoc
 
 import os
-import engine.core
-import engine.assets
-import engine.serialize
+import velo.core
+import velo.assets
+import velo.serialize
 
 // Document — a .scene file (scene or prefab) open in the editor.
 //

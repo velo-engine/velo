@@ -1,6 +1,6 @@
 module serialize
 
-import engine.core
+import velo.core
 
 // AssetId — an `@asset("7f3a91c2")` value in a scene file.
 pub struct AssetId {
