@@ -58,6 +58,9 @@ fn (mut e Editor) draw_scene_view(r Rect) {
 
 	if e.play == unsafe { nil } && e.doc.has_selection() {
 		e.draw_selection(e.doc.selected, view)
+		if n := e.gizmo_target() {
+			e.draw_gizmo(n)
+		}
 	} else if e.play != unsafe { nil } && e.play_selected != unsafe { nil }
 		&& !e.play_selected.destroyed {
 		e.draw_selection(e.play_selected, view)
@@ -113,10 +116,7 @@ fn (e &Editor) draw_selection(n &core.Node, view core.Affine2) {
 	if !drew {
 		e.draw_quad(m, -12, -12, 24, 24, gg.Color{255, 200, 90, 120})
 	}
-	// gizmo: center + two axes
 	p := m.position()
-	e.ui.ctx.draw_line(p.x, p.y, p.x + 40, p.y, gg.Color{230, 80, 80, 255})
-	e.ui.ctx.draw_line(p.x, p.y, p.x, p.y + 40, gg.Color{90, 200, 90, 255})
 	e.ui.ctx.draw_circle_filled(p.x, p.y, 4, c_override)
 }
 
@@ -154,18 +154,24 @@ fn (mut e Editor) handle_scene_view_input(r Rect) {
 	if e.play != unsafe { nil } || !e.ui.click(r) {
 		return
 	}
+	// gizmo handles of the selected node take priority over picking
+	if n := e.gizmo_target() {
+		h := e.gizmo_hit(n, e.ui.mouse)
+		if h != .none {
+			e.begin_transform_drag(.gizmo, n, h)
+			return
+		}
+	}
 	world := e.screen_to_world(e.ui.mouse)
 	hit := e.pick(world) or {
 		e.doc.selected = unsafe { nil }
 		return
 	}
 	e.doc.select(hit)
-	if hit != e.doc.scene.root {
-		e.drag = .move_node
-		e.drag_node = hit
-		e.drag_start = e.ui.mouse
+	// dragging the node's body moves it freely (Move tool only, so rotating/scaling can't nudge it by accident)
+	if hit != e.doc.scene.root && e.tool == .move {
+		e.begin_transform_drag(.move_node, hit, .none)
 		e.drag_offset = world - hit.world_position()
-		e.drag_active = false
 	}
 }
 
@@ -232,6 +238,18 @@ fn (mut e Editor) finish_drag() {
 							f32(math.round(p.y / 10) * 10))
 					}
 					n.set_world_position(p)
+				}
+				return
+			}
+		}
+		.gizmo {
+			if e.doc.contains(e.drag_node) && e.ui.mouse_down {
+				if !e.drag_active && e.ui.mouse.distance(e.drag_start) > 2 {
+					e.drag_active = true
+					e.doc.checkpoint() or {}
+				}
+				if e.drag_active {
+					e.apply_gizmo()
 				}
 				return
 			}
@@ -576,7 +594,9 @@ fn (mut e Editor) draw_inspector(r Rect) {
 		y += 24
 		e.ui.text(x, y, 'Right/middle mouse: pan view · wheel: zoom', c_dim)
 		y += 20
-		e.ui.text(x, y, 'Hold Shift while dragging a node: snap to 10px grid', c_dim)
+		e.ui.text(x, y, 'W move · E rotate · R scale · T local/global axes', c_dim)
+		y += 20
+		e.ui.text(x, y, 'Shift while dragging: snap · Esc: cancel the drag', c_dim)
 		e.ui.reset_clip()
 		return
 	}

@@ -53,7 +53,7 @@ node Main {
   node HUD {
     node Score {
       position = [20, 14]
-      Label { text = "Xu: 0"  size = 32 }
+      Label { text = "Coin: 0"  size = 32 }
       ScoreBoard {  }
     }
     node Help {

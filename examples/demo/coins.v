@@ -134,7 +134,7 @@ fn (mut s CoinSpawner) spawn() {
 pub struct ScoreBoard {
 	core.Component
 pub mut:
-	prefix string = 'Xu: '
+	prefix string = 'Coin: '
 	score  int
 }
 

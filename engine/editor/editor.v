@@ -48,6 +48,7 @@ enum DragKind {
 	pan       // dragging the view
 	hier_node // dragging a node in the hierarchy
 	asset     // dragging an asset from the Assets panel
+	gizmo     // dragging a move/rotate/scale gizmo handle
 }
 
 @[heap]
@@ -74,6 +75,21 @@ mut:
 	drag_active    bool // dragged past the threshold (avoids recording undo on a plain click)
 	drag_asset     string
 	drop_indicator Rect
+	// transform gizmo (see gizmo.v)
+	tool              GizmoTool
+	tool_local        bool // move axes follow the node's rotation
+	gizmo_handle      GizmoHandle
+	gizmo_origin      core.Vec2 // node position on screen when the drag started
+	gizmo_ax          core.Vec2 // gizmo axes when the drag started
+	gizmo_ay          core.Vec2
+	gizmo_start_pos   core.Vec2 // world position
+	gizmo_start_local core.Vec2 // local position (restored on cancel)
+	gizmo_start_rot   f32
+	gizmo_start_scale core.Vec2
+	gizmo_start_angle f32 // radians, mouse angle around the node
+	gizmo_last_angle  f32
+	gizmo_turn        f32 // accumulated rotation (radians)
+	gizmo_ratio       f32 = 1 // current scale factor
 	// panel
 	collapsed      map[string]bool // keyed by node path (survives undo)
 	hier_rows      []HierRow
@@ -336,7 +352,22 @@ fn (mut e Editor) on_key_down(key gg.KeyCode) {
 			e.frame_selected()
 		}
 		.escape {
-			e.add_menu_open = false
+			if !e.cancel_transform_drag() {
+				e.add_menu_open = false
+			}
+		}
+		.w {
+			e.set_tool(.move)
+		}
+		.e {
+			e.set_tool(.rotate)
+		}
+		.r {
+			e.set_tool(.scale)
+		}
+		.t {
+			e.tool_local = !e.tool_local
+			e.set_status(if e.tool_local { 'local axes' } else { 'global axes' }, false)
 		}
 		.left, .right, .up, .down {
 			e.nudge(key)
@@ -776,9 +807,27 @@ fn (mut e Editor) draw_toolbar(r Rect) {
 		}
 	}
 	x += 96
-	e.ui.text_in(Rect{x, r.y, 400, r.h}, e.doc.title(),
+	for t in [GizmoTool.move, .rotate, .scale] {
+		label, key, bw := match t {
+			.move { 'Move', 'W', f32(64) }
+			.rotate { 'Rotate', 'E', f32(72) }
+			.scale { 'Scale', 'R', f32(64) }
+		}
+
+		if e.ui.toggle_button(Rect{x, y, bw, h}, '${label} ${key}', e.tool == t, c_select) {
+			e.set_tool(t)
+		}
+		x += bw + 4
+	}
+	if e.ui.toggle_button(Rect{x, y, 70, h}, if e.tool_local { 'Local T' } else { 'Global T' },
+		e.tool_local, c_select)
+	{
+		e.tool_local = !e.tool_local
+	}
+	x += 86
+	e.ui.text_in(Rect{x, r.y, 300, r.h}, e.doc.title(),
 		if e.doc.dirty { c_override } else { c_text }, 0)
-	hint := 'Ctrl+S save · Ctrl+Z/Y · Ctrl+D duplicate · Del delete · F frame all · Ctrl+P play'
+	hint := 'Shift snap · Esc cancel · Ctrl+S save · Ctrl+Z/Y · Ctrl+D dup · F frame'
 	e.ui.ctx.draw_text(int(r.x + r.w - 10), int(r.y + r.h / 2), hint,
 		color:          c_dim
 		size:           12
