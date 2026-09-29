@@ -146,14 +146,19 @@ node MoreCoins {
 | `UITransform` | `size` + `anchor` of the node's rectangle (used by everything below, and for picking in the editor) |
 | `Panel` | fills the rectangle: `color`, `radius` (rounded corners when not rotated), `border_color`, `border_width` |
 | `Label` | text; `align` left/center/right, `valign` top/middle/bottom. With a UITransform it aligns inside the rectangle |
-| `Button` | click on the rectangle (UITransform or Sprite). `btn.on_click(fn (mut b render.Button) {...})` or poll `btn.clicked` (true for one frame). Tints the Panel/Sprite of `target` by state (`normal/hover/pressed/disabled_color`, multiplied with its own color); `interactable = false` disables it |
+| `Button` | click (or tap, with any finger) on the rectangle (UITransform or Sprite). `btn.on_click(fn (mut b render.Button) {...})` or poll `btn.clicked` (true for one frame). Tints the Panel/Sprite of `target` by state (`normal/hover/pressed/disabled_color`, multiplied with its own color); `interactable = false` disables it |
 | `Toggle` | with a Button on the same node: each click flips `is_on` and shows/hides the `checkmark` child (`changed` is true for that frame) |
 | `ProgressBar` | draws `back_color` + a `fill_color` part for `progress` (0..1); `direction` horizontal/vertical, `reverse` |
 | `ScrollView` | shows the `content` child through the rectangle: drag or mouse wheel, `inertia`, `elastic` edges, `clip`; `horizontal`/`vertical`; `scroll_to_top()`/`scroll_to_bottom()`. Buttons inside cancel their press once a drag starts, and are not clickable outside the viewport |
-| `Widget` | aligns the node to the edges/center of the parent's rectangle (or the screen if the parent has none); left + right (or top + bottom) stretches the UITransform |
+| `Widget` | aligns the node to the edges/center of the parent's rectangle (or the screen if the parent has none); left + right (or top + bottom) stretches the UITransform. Aligned to the screen it stays inside the phone's safe area (notch, rounded corners, system bars); `safe_area = false` reaches the real edges (full-bleed backgrounds) |
+| `Joystick` | on-screen thumb stick: a finger (or the mouse) going down in the rectangle moves the `knob` child up to `radius` from the `base` child; read `value` (-1..1 per axis). `floating` moves the base under the thumb |
 | `Layout` | arranges children in a `vertical`/`horizontal` list or a `grid` (`spacing`, `padding`, `child_align`, `columns`); `resize` grows the UITransform to fit, which is what a ScrollView content needs |
 
 `Input` also has `mouse_pressed` / `mouse_released` (one frame) and `scroll` (wheel delta this frame).
+Touch: `input.touches` lists every finger (`id`, `pos`, `start`, `phase` began/moved/stationary/ended/cancelled) and
+the first finger also drives the mouse fields; `input.pointers()` is every finger plus the held mouse, for code that
+should work the same with both. `scene.safe_insets` holds the safe area (world units); on desktop,
+`VELO_SAFE_AREA="left,top,right,bottom"` fakes one to try a phone layout, and F1 outlines it.
 The demo's HUD uses a Button (`SpawnButton`) and a ScrollView + Layout pickup log (`PickupLog`, see `examples/demo/hud.v`).
 
 Limits: overlapping buttons all receive the click (no event blocking yet); Widget/Layout run in `update`, so the editor

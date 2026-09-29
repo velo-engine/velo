@@ -75,7 +75,11 @@ typedef struct { double top, left, bottom, right; } velo__edge_insets; // UIEdge
 
 // Points. UIView.safeAreaInsets of the key window (iOS 11+).
 static int velo_ios_safe_insets(const void* ui_window, double* out) {
+#if __has_feature(objc_arc)
+	id win = (__bridge id)ui_window; // V compiles iOS builds as Objective-C with ARC
+#else
 	id win = (id)ui_window;
+#endif
 	if (win == NULL) return 0;
 	SEL sel = sel_registerName("safeAreaInsets");
 	if (!class_respondsToSelector(object_getClass(win), sel)) return 0;

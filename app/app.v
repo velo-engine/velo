@@ -184,16 +184,17 @@ fn (a &App) view_size() core.Vec2 {
 
 // fit_scale: on Android gg scales the configured width (portrait) or height (landscape) to the screen, but only
 // at startup — a resize (rotation) resets it to the dpi scale. Re-applying it every frame keeps world units stable.
+// Text must use the same scale, which gg forgets when it loads the font from memory (as on Android).
 fn (mut a App) fit_scale() {
 	$if android {
 		w, h := sapp.width(), sapp.height()
 		s := if w <= h { f32(w) / a.cfg.width } else { f32(h) / a.cfg.height }
-		if s > 0.1 && s != a.ctx.scale {
+		if s > 0.1 {
 			a.ctx.scale = s
-			if a.ctx.ft != unsafe { nil } {
-				a.ctx.ft.scale = s
-			}
 		}
+	}
+	if a.ctx.ft != unsafe { nil } && a.ctx.ft.scale != a.ctx.scale {
+		a.ctx.ft.scale = a.ctx.scale
 	}
 }
 
