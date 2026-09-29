@@ -10,6 +10,7 @@ but with a simpler Scene/Prefab model and stricter asset management.
 ```bash
 v run examples/demo          # coin collector demo: arrows/WASD, R scatters more coins, F1 debug, Esc quits
 v run examples/demo --editor # scene/prefab editor (see the "Editor" section)
+v run examples/kine2d        # skeletal animations exported from the Kine2D editor (see "Kine2D animation")
 v test tests/                # unit tests for core, asset, serialize, scenedoc, physics (no GPU needed)
 v run tools/assetdb.v examples/demo/assets list
 ```
@@ -44,16 +45,18 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   serialize/  .scene format, parser, reflection, Registry, SceneLoader (prefab + override), writer
   render/     Renderer (gg), Sprite, SpriteAnimator, Label, UI components (Button, ScrollView, Widget, Layout, ...)
   physics/    Box2D v3 bindings: PhysicsWorld, RigidBody, Box/Circle/CapsuleCollider (optional, no GPU needed)
+  kine2d/     plays Kine2D editor exports (.skel.json + .atlas.json + .png): the Kine2D component (optional)
   app/        game loop, input, hot reload
   scenedoc/   scene/prefab editing model: undo/redo, prefab rules, diff-style saving (no GPU needed)
   editor/     editor UI (gg): Hierarchy, Scene view, Inspector, Assets, Play
   examples/demo/  sample game + assets (sprites, prefabs, scenes)
+  examples/kine2d/  Kine2D animation sample (three exported characters)
   tools/          velo CLI (velo/) and asset tool (assetdb.v)
   tests/          unit tests
 ```
 
 Module dependency order (no cycles): `assets` ← `core` ← `serialize` ← `render` ← `app`,
-and `serialize` ← `scenedoc` ← `editor` (the editor also uses `render`), and `serialize` ← `physics` (imported by the game only).
+and `serialize` ← `scenedoc` ← `editor` (the editor also uses `render`), and `serialize` ← `physics`, `render` ← `kine2d` (imported by the game only).
 As a result `core`, `assets`, `serialize`, `scenedoc`, `physics` run without a GPU (tests, tools, servers).
 
 ## Writing a component
@@ -210,6 +213,41 @@ have static trunk colliders and the player moves with `set_velocity`.
 
 Limits: no joints, polygon/chain shapes, collision filtering or interpolation yet; shapes are built once (edit a collider's
 fields at runtime and they will not be rebuilt); colliders on child nodes do not join the parent's RigidBody.
+
+## Kine2D animation
+
+The optional `kine2d` module plays skeletal animations made in the Kine2D editor. Its **BUILD** button writes
+`<name>.skel.json`, `<name>.atlas.json` and `<name>.png`: copy all three into the assets directory, register the
+component (`kine2d.register_builtins(mut r)`, see `examples/kine2d/main.v`) and point a `Kine2D` at the two JSON files:
+
+```
+node Goblin {
+  position = [790, 440]                       # where the editor's canvas center was
+  scale = [-1.6, 1.6]                         # negative x = mirrored
+  Kine2D { data = @asset("4b1e0c11")  atlas = @asset("4b1e0c12")  animation = "idle" }
+}
+```
+
+| Field | What it does |
+|---|---|
+| `data` / `atlas` | the `.skel.json` and `.atlas.json` (text assets); the atlas image is found next to the atlas file |
+| `animation` | clip to play (`''` = the first one); changing it restarts from frame 0 |
+| `skin` | skin id or name (`''` = the skin active when exporting) |
+| `speed`, `playing`, `looping`, `color` | playback rate (negative plays backwards), pause, loop or stop at the end, tint |
+| `canvas_size` | the editor canvas size the rig was built on; `0` = the export's `canvasSize` (800x600 if it has none) |
+
+From code: `k.play('attack', false)` then poll `k.finished` (true once a non-looping clip reached its end),
+`k.animations()`, `k.skins()`, `k.current_animation()`, `k.duration()`, `k.time`. The sample's `PlayOnce`
+(`examples/kine2d/controls.v`) plays a clip once and returns to the one it interrupted.
+
+Supported: region and mesh attachments, weighted meshes (skinning), mesh deform keys, bezier/easing curves on
+position and rotation keys, scale keys, skins, attachment switching (display index keys) and draw order keys.
+Editing the exported files hot reloads them. It draws textured triangles through the renderer's `render.MeshDrawable`
+hook, so any component with a `meshes() []render.TexturedMesh` method is drawn the same way.
+
+Limits: IK, transform and physics constraints and event keys are not applied yet (bake them into keys before exporting);
+the binary export (`.skel.bin`) is not read, only the JSON one; the editor cannot click-select a skeleton in the scene view
+(select it in the Hierarchy); `velo assets unused` does not know that the atlas uses its image.
 
 ## Asset management
 

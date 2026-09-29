@@ -100,6 +100,10 @@ fn (mut r Renderer) draw_node(n &core.Node, parent core.Affine2) {
 			r.draw_panel(c, m)
 		} else if c is ProgressBar {
 			r.draw_progress(c, m)
+		} else if c is MeshDrawable {
+			for mesh in c.meshes() {
+				r.draw_mesh(mesh, m)
+			}
 		}
 		if (r.debug || r.show_shapes) && c is DebugShape {
 			r.draw_outline(m, c.debug_outline(), c.debug_color())

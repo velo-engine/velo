@@ -10,3 +10,4 @@ library/
 /thirdparty/
 # mobile/desktop build output of `velo build`
 build/
+examples/kine2d
