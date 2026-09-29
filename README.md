@@ -43,7 +43,7 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   core/       Node, Component, Scene, Input, Vec2/Color/Affine2       (no graphics dependency)
   assets/     AssetDatabase: .meta, stable IDs, AssetRef[T], reference counting, dependency graph, hot reload
   serialize/  .scene format, parser, reflection, Registry, SceneLoader (prefab + override), writer
-  render/     Renderer (gg), Sprite, SpriteAnimator, Label, ParticleSystem, UI components (Button, ScrollView, Widget, Layout, ...)
+  render/     Renderer (gg), Sprite, SpriteAnimator, Label, ParticleSystem, TileMap, UI components (Button, ScrollView, Widget, Layout, ...)
   physics/    Box2D v3 bindings: PhysicsWorld, RigidBody, Box/Circle/CapsuleCollider (optional, no GPU needed)
   kine2d/     plays Kine2D editor exports (.skel.json + .atlas.json + .png): the Kine2D component (optional)
   app/        game loop, input, hot reload
@@ -95,7 +95,7 @@ Common APIs: `node.get_component[T]()`, `node.add_component(&T{...})`, `node.fin
 `scene.instantiate('prefabs/coin.scene', mut parent)`.
 
 V's reflection (`$for field in T.fields`) handles reading/writing fields, so **no serialization code is needed**.
-Supported field types: `f32 f64 int bool string core.Vec2 core.Color assets.AssetRef[...]`.
+Supported field types: `f32 f64 int bool string []int core.Vec2 core.Color assets.AssetRef[...]`.
 
 ## Scene = Prefab
 
@@ -204,6 +204,52 @@ Click inside its orange emission outline to select it. Any component can preview
 `render.Previewable` (`preview(dt f32)`).
 
 Limits: no sub-emitters, collisions, color/size curves beyond start→end, or sorting against other nodes (drawn in tree order).
+
+## Tile maps
+
+`TileMap` (built in) draws a grid of tiles cut from one tileset. The tileset is an ordinary sprite sheet: the
+`frame_width`/`frame_height` in its `.meta` give the tile size, and a tile is a frame index (left -> right,
+top -> bottom). Use `filter: nearest` for pixel art.
+
+```
+node Pond {
+  position = [312, 66]                     # top-left corner of the map (anchor [0, 0])
+  TileMap { tileset = @asset("e71a0c3d")  columns = 7  rows = 3  tile_size = [48, 48]
+            tiles = [3, 0, 1, 1, 1, 2, 7, -1, 4, 5, 11, 5, 6, 3, 13, 8, 9, 9, 9, 10, -1] }
+}
+```
+
+| Field | What it does |
+|---|---|
+| `tileset` | the sprite sheet the tiles come from |
+| `columns`, `rows` | map size in cells (from code, change it with `resize` so tiles keep their cell) |
+| `tile_size` | cell size in world units; `0` = the tileset's frame size |
+| `tiles` | `columns * rows` frame indices, row by row; `-1` = empty (a short list is padded with empty cells) |
+| `anchor`, `color` | `[0, 0]` puts the map's top-left corner at the node, `[0.5, 0.5]` centers it; tint |
+
+It is drawn in one draw call, and only the cells inside the screen (or the ScrollView/scene view clip) are submitted,
+so large maps are cheap. It turns, scales and flips with its node like a Sprite. From code: `tm.get(col, row)`,
+`tm.set(col, row, tile)`, `tm.fill_rect(...)`, `tm.flood_fill(col, row, tile)`, `tm.clear()`, `tm.resize(cols, rows)`,
+`tm.count()`, `tm.world_to_cell(p)`, `tm.tile_at(p)` (the tile under a world point, e.g. to check what the player
+stands on), `tm.cell_center(col, row)` (to place objects on the grid), `tm.set_tileset(ref)`.
+The demo's pond (`scenes/main.scene`, tileset `sprites/tiles.png`) is a TileMap.
+
+In the editor, select the node and paint in the scene view:
+
+| Tool | Key | What it does |
+|---|---|---|
+| Paint | B | drag to paint the brush (click a tile in the Inspector's palette to pick it; that also switches to Paint) |
+| Erase | X | drag to empty cells |
+| Fill | G | flood-fills the clicked area (cells connected to it with the same tile) with the brush |
+| Pick | I | click a cell to use its tile as the brush (an empty cell picks Erase) |
+
+The scene view shows the map's grid and the cell under the mouse, with the brush previewed in it. Each drag is one undo step.
+Clicking outside the map still selects other nodes. Esc or W/E/R/Y leave the tile tools. Editing `columns`/`rows` in
+the Inspector resizes the map and keeps every tile in its cell. On a prefab instance, painted tiles are an override of
+the whole `tiles` list. The Inspector shows a `[]int` field such as `tiles` as a value count, not a text field.
+
+Limits: one layer per TileMap (stack nodes for layers), no per-tile flip/rotation, autotiling, animated tiles or
+tile collisions yet (use colliders on child nodes); `tiles` is saved on one line.
 
 ## Physics
 

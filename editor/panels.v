@@ -62,6 +62,7 @@ fn (mut e Editor) draw_scene_view(r Rect) {
 		if n := e.gizmo_target() {
 			e.draw_gizmo(n)
 		}
+		e.draw_tile_overlay(view)
 	} else if e.play != unsafe { nil } && e.play_selected != unsafe { nil }
 		&& !e.play_selected.destroyed {
 		e.draw_selection(e.play_selected, view)
@@ -145,6 +146,10 @@ fn (mut e Editor) handle_scene_view_input(r Rect) {
 		return
 	}
 	if e.play != unsafe { nil } || !e.ui.click(r) {
+		return
+	}
+	// a tile tool paints when the click is on the selected TileMap
+	if e.begin_tile_stroke() {
 		return
 	}
 	// gizmo handles of the selected node take priority over picking
@@ -275,6 +280,12 @@ fn (mut e Editor) finish_drag() {
 				if e.drag_active {
 					e.apply_gizmo()
 				}
+				return
+			}
+		}
+		.paint {
+			if e.doc.contains(e.drag_node) && e.ui.mouse_down {
+				e.continue_tile_stroke()
 				return
 			}
 		}
@@ -621,6 +632,8 @@ fn (mut e Editor) draw_inspector(r Rect) {
 		e.ui.text(x, y, 'W move · E rotate · R scale · Y anchor · T local/global', c_dim)
 		y += 20
 		e.ui.text(x, y, 'Shift while dragging: snap · Esc: cancel the drag', c_dim)
+		y += 20
+		e.ui.text(x, y, 'TileMap: B paint · X erase · G fill · I pick', c_dim)
 		e.ui.reset_clip()
 		return
 	}
@@ -708,6 +721,9 @@ fn (mut e Editor) draw_inspector(r Rect) {
 		for f in t.fields {
 			v := values[f.name] or { continue }
 			y = e.field_row(x, y, w, id, n, ci, f, v, ro)
+		}
+		if c is render.TileMap {
+			y = e.draw_tile_palette(x, y + 2, w, n, ro)
 		}
 		y += 6
 	}
@@ -824,6 +840,12 @@ fn (mut e Editor) field_row(x f32, y f32, w f32, id string, n &core.Node, comp i
 			return e.asset_row(x, y, w, id, n, comp, f, v.id, ro)
 		}
 		[]serialize.Value {
+			if f.is_list {
+				// []int (e.g. TileMap.tiles): long, edited by tools rather than typed
+				e.prop_label(x, y, f.name, e.is_overridden(n, comp, f.name, ro))
+				e.ui.text_in(Rect{x + label_w, y, w - label_w, row_h}, '${v.len} values', c_dim, 0)
+				return y + row_h + 3
+			}
 			if v.len == 2 {
 				return e.vec2_row(x, y, w, id, n, comp, f.name, v, ro)
 			}

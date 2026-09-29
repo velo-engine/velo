@@ -77,6 +77,9 @@ fn (e &Editor) gizmo_target() ?&core.Node {
 	if e.play != unsafe { nil } || !e.doc.has_selection() || e.doc.selected == e.doc.scene.root {
 		return none
 	}
+	if _ := e.tile_map() {
+		return none // tile tools replace the gizmo
+	}
 	return e.doc.selected
 }
 
@@ -522,5 +525,6 @@ fn (mut e Editor) cancel_transform_drag() bool {
 
 fn (mut e Editor) set_tool(t GizmoTool) {
 	e.tool = t
+	e.tile_tool = .none
 	e.set_status('${t} tool', false)
 }

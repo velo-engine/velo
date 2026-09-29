@@ -49,6 +49,7 @@ enum DragKind {
 	hier_node // dragging a node in the hierarchy
 	asset     // dragging an asset from the Assets panel
 	gizmo     // dragging a move/rotate/scale gizmo handle
+	paint     // painting tiles on a TileMap (see tilemap.v)
 }
 
 @[heap]
@@ -94,6 +95,10 @@ mut:
 	gizmo_start_anchor core.Vec2    // Sprite anchor when the drag started
 	gizmo_child_world  []core.Vec2  // children kept in place while the anchor moves
 	gizmo_child_local  []core.Vec2  // restored on cancel
+	// tile painting (see tilemap.v)
+	tile_tool  TileTool
+	tile_brush int
+	tile_last  []int // cell painted last during a stroke: [col, row]
 	// panel
 	collapsed      map[string]bool // keyed by node path (survives undo)
 	hier_rows      []HierRow
@@ -377,9 +382,24 @@ fn (mut e Editor) on_key_down(key gg.KeyCode) {
 			e.frame_selected()
 		}
 		.escape {
-			if !e.cancel_transform_drag() {
+			if e.cancel_transform_drag() {
+			} else if e.tile_tool != .none {
+				e.set_tile_tool(.none)
+			} else {
 				e.add_menu_open = false
 			}
+		}
+		.b {
+			e.set_tile_tool(.paint)
+		}
+		.x {
+			e.set_tile_tool(.erase)
+		}
+		.g {
+			e.set_tile_tool(.fill)
+		}
+		.i {
+			e.set_tile_tool(.pick)
 		}
 		.w {
 			e.set_tool(.move)
@@ -674,6 +694,21 @@ fn (mut e Editor) apply_edit(t EditTarget, text string) ! {
 	}
 	if t.kind == .node_prop {
 		e.doc.set_node_prop(mut n, t.field, v, true)!
+	} else if t.field in ['columns', 'rows'] && n.components[t.comp] is render.TileMap {
+		// resizing a TileMap keeps every tile at its cell instead of shifting the row-major list
+		size := int(v.as_f64()!)
+		if size < 1 {
+			return error('${t.field} must be at least 1')
+		}
+		e.doc.checkpoint()!
+		mut c := n.components[t.comp]
+		if mut c is render.TileMap {
+			if t.field == 'columns' {
+				c.resize(size, c.rows)
+			} else {
+				c.resize(c.columns, size)
+			}
+		}
 	} else {
 		e.doc.set_field(mut n, t.comp, t.field, v)!
 	}

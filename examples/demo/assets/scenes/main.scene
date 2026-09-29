@@ -5,6 +5,10 @@ node Main {
     Sprite { texture = @asset("b8c1e2a3")  size = [960, 540] }
   }
   node World {
+    node Pond {                                                       # tiles painted in the editor (TileMap)
+      position = [312, 66]
+      TileMap { tileset = @asset("e71a0c3d")  columns = 7  rows = 3  tile_size = [48, 48]  tiles = [3, 0, 1, 1, 1, 2, 7, -1, 4, 5, 11, 5, 6, 3, 13, 8, 9, 9, 9, 10, -1] }
+    }
     node Tree1 {
       position = [220.3085, 137.6868]
       rotation = 32

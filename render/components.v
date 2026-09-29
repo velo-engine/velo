@@ -19,6 +19,7 @@ pub fn register_builtins(mut r serialize.Registry) {
 	r.register[Layout]()
 	r.register[Joystick]()
 	r.register[ParticleSystem]()
+	r.register[TileMap]()
 }
 
 // Sprite — draws a texture (or one frame of a sprite sheet) at the node's position.

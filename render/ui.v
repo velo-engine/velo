@@ -64,6 +64,12 @@ pub fn node_rect(n &core.Node) ?Rect {
 			return Rect{x, y, w, h}
 		}
 	}
+	if tm := n.get_component[TileMap]() {
+		x, y, w, h := tm.local_rect()
+		if w > 0 && h > 0 {
+			return Rect{x, y, w, h}
+		}
+	}
 	return none
 }
 

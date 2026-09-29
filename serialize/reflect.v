@@ -5,7 +5,7 @@ import velo.assets
 
 // Automatic serialization via V's comptime reflection: NO need to write read/write code for each component.
 //
-// Supported field types: f32, f64, int, bool, string, core.Vec2, core.Color,
+// Supported field types: f32, f64, int, bool, string, []int, core.Vec2, core.Color,
 // assets.AssetRef[Texture | SceneAsset | AudioClip | TextAsset].
 // Fields of other types (pointers, maps, ...) are skipped automatically. Hide a field with the @[hide] attribute:
 //
@@ -28,6 +28,8 @@ pub fn set_fields[T](mut obj T, props map[string]Value) ! {
 					obj.$(field.name) = v.as_bool()!
 				} $else $if field.typ is string {
 					obj.$(field.name) = v.as_string()!
+				} $else $if field.typ is []int {
+					obj.$(field.name) = v.as_number_list()!.map(int(it))
 				} $else $if field.typ is core.Vec2 {
 					obj.$(field.name) = v.as_vec2()!
 				} $else $if field.typ is core.Color {
@@ -76,6 +78,8 @@ pub fn dump_fields[T](obj T) map[string]Value {
 				out[field.name] = Value(obj.$(field.name))
 			} $else $if field.typ is string {
 				out[field.name] = Value(obj.$(field.name))
+			} $else $if field.typ is []int {
+				out[field.name] = Value(obj.$(field.name).map(Value(f64(it))))
 			} $else $if field.typ is core.Vec2 {
 				out[field.name] = vec2_value(obj.$(field.name))
 			} $else $if field.typ is core.Color {
@@ -100,12 +104,16 @@ pub:
 	name       string
 	type_name  string
 	asset_kind assets.AssetKind // asset kind accepted by an AssetRef[...] field (.unknown if not an AssetRef)
+	is_list    bool             // a []int field (any length, so not a Vec2/Color even with 2 or 4 values)
 }
 
 pub fn describe_fields[T]() []FieldInfo {
 	mut kinds := map[string]assets.AssetKind{}
+	mut lists := map[string]bool{}
 	$for field in T.fields {
-		$if field.typ is assets.AssetRef[assets.Texture] {
+		$if field.typ is []int {
+			lists[field.name] = true
+		} $else $if field.typ is assets.AssetRef[assets.Texture] {
 			kinds[field.name] = .texture
 		} $else $if field.typ is assets.AssetRef[assets.SceneAsset] {
 			kinds[field.name] = .scene
@@ -122,6 +130,7 @@ pub fn describe_fields[T]() []FieldInfo {
 			name:       k
 			type_name:  v.type_name()
 			asset_kind: kinds[k] or { assets.AssetKind.unknown }
+			is_list:    lists[k]
 		}
 	}
 	return out
