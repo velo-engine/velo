@@ -173,31 +173,65 @@ fn (mut e Editor) handle_scene_view_input(r Rect) {
 	}
 }
 
-// pick: the topmost node (drawn last) whose rectangle (UITransform or Sprite) contains the point `world`.
+// pick: the topmost node (drawn last) whose rectangle (UITransform or Sprite) contains the point `world`;
+// without one, the topmost node whose debug outline (particle emitter, collider) is under the point.
 // Clicking a child of a prefab instance selects the instance root.
 fn (mut e Editor) pick(world core.Vec2) ?&core.Node {
 	mut hits := []&core.Node{}
-	collect_hits(e.doc.scene.root, world, mut hits)
-	if hits.len == 0 {
+	mut shape_hits := []&core.Node{}
+	collect_hits(e.doc.scene.root, world, pick_pad / e.zoom, mut hits, mut shape_hits)
+	if hits.len == 0 && shape_hits.len == 0 {
 		return none
 	}
-	mut n := hits.last()
+	mut n := if hits.len > 0 { hits.last() } else { shape_hits.last() }
 	for n.parent != unsafe { nil } && e.doc.is_prefab_owned(n) {
 		n = n.parent
 	}
 	return n
 }
 
-fn collect_hits(n &core.Node, world core.Vec2, mut out []&core.Node) {
+const pick_pad = f32(8) // screen pixels around a debug outline that still select its node
+
+fn collect_hits(n &core.Node, world core.Vec2, pad f32, mut out []&core.Node, mut shape_out []&core.Node) {
 	if !n.active {
 		return
 	}
 	if render.hit_test(n, world) {
 		out << n
+	} else if shape_hit(n, world, pad) {
+		shape_out << n
 	}
 	for ch in n.children {
-		collect_hits(ch, world, mut out)
+		collect_hits(ch, world, pad, mut out, mut shape_out)
 	}
+}
+
+// shape_hit: nodes drawn without a rectangle (particle emitters, colliders) are picked by the
+// world-space bounds of their debug outline, grown by `pad` so a point emitter can still be clicked.
+fn shape_hit(n &core.Node, world core.Vec2, pad f32) bool {
+	m := n.world_matrix()
+	for c in n.components {
+		if c is render.DebugShape {
+			pts := c.debug_outline()
+			if pts.len == 0 {
+				continue
+			}
+			first := m.apply(pts[0])
+			mut x0, mut y0, mut x1, mut y1 := first.x, first.y, first.x, first.y
+			for p in pts {
+				q := m.apply(p)
+				x0 = math.min(x0, q.x)
+				y0 = math.min(y0, q.y)
+				x1 = math.max(x1, q.x)
+				y1 = math.max(y1, q.y)
+			}
+			if world.x >= x0 - pad && world.x <= x1 + pad && world.y >= y0 - pad
+				&& world.y <= y1 + pad {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // finish_drag updates / ends the drag operation (called every frame after drawing).

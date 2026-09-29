@@ -189,6 +189,8 @@ fn on_frame(mut e Editor) {
 	if e.play != unsafe { nil } {
 		e.play.update(dt)
 		e.play_input.end_frame()
+	} else if e.doc != unsafe { nil } {
+		preview_tree(mut e.doc.scene.root, dt)
 	}
 
 	e.ctx.begin()
@@ -206,6 +208,21 @@ fn on_frame(mut e Editor) {
 	if e.reload_timer >= 0.5 {
 		e.reload_timer = 0
 		e.poll_assets()
+	}
+}
+
+// preview_tree animates the edited scene's render.Previewable components (particles) while not playing.
+fn preview_tree(mut n core.Node, dt f32) {
+	if !n.active {
+		return
+	}
+	for mut c in n.components {
+		if c.enabled && mut c is render.Previewable {
+			c.preview(dt)
+		}
+	}
+	for mut ch in n.children {
+		preview_tree(mut ch, dt)
 	}
 }
 

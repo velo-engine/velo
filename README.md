@@ -43,7 +43,7 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   core/       Node, Component, Scene, Input, Vec2/Color/Affine2       (no graphics dependency)
   assets/     AssetDatabase: .meta, stable IDs, AssetRef[T], reference counting, dependency graph, hot reload
   serialize/  .scene format, parser, reflection, Registry, SceneLoader (prefab + override), writer
-  render/     Renderer (gg), Sprite, SpriteAnimator, Label, UI components (Button, ScrollView, Widget, Layout, ...)
+  render/     Renderer (gg), Sprite, SpriteAnimator, Label, ParticleSystem, UI components (Button, ScrollView, Widget, Layout, ...)
   physics/    Box2D v3 bindings: PhysicsWorld, RigidBody, Box/Circle/CapsuleCollider (optional, no GPU needed)
   kine2d/     plays Kine2D editor exports (.skel.json + .atlas.json + .png): the Kine2D component (optional)
   app/        game loop, input, hot reload
@@ -125,8 +125,7 @@ Prefabs can also be built in code (type-checked by the compiler), handy for smal
 
 ```v
 mut fx := core.Node.new('Sparkle')
-	.with(&render.Sprite{ texture: tex, size: core.vec2(18, 18) })
-	.with(&FadeAway{ duration: 0.5 })
+	.with(&render.ParticleSystem{ texture: tex, rate: 0, burst: 14, looping: false, auto_destroy: true })
 ```
 
 ## UI
@@ -166,6 +165,45 @@ The demo's HUD uses a Button (`SpawnButton`) and a ScrollView + Layout pickup lo
 
 Limits: overlapping buttons all receive the click (no event blocking yet); Widget/Layout run in `update`, so the editor
 shows them at their saved positions until you press Play; the anchor gizmo (Y) only edits Sprite anchors.
+
+## Particles
+
+`ParticleSystem` (built in, like `Sprite`) emits, moves and draws many small sprites in one draw call:
+
+```
+node Smoke {
+  ParticleSystem { texture = @asset("5d9a0c66")  rate = 30  angle = -90  spread = 15  gravity = [0, -40]
+                   start_size = 12  end_size = 40  start_color = [200, 200, 200, 180]  end_color = [120, 120, 120, 0] }
+}
+```
+
+| Field | What it does |
+|---|---|
+| `texture` | particle image (a sprite sheet's frame 0, or a random frame with `random_frame`); unset = plain squares |
+| `playing`, `looping`, `duration` | emitting; loop forever or stop after `duration` seconds |
+| `rate`, `burst`, `max_particles` | particles per second, particles emitted at once when playing starts, live cap |
+| `lifetime`, `speed`, `angle`, `spread` | seconds alive; initial speed; direction in degrees (0 = right, -90 = up, turns with the node) +- `spread` |
+| `gravity`, `damping` | acceleration (world units/s²); fraction of velocity lost per second |
+| `shape`, `shape_size` | where particles are born: `point`, `circle` (radius = `shape_size.x`) or `box` (w, h) |
+| `start_size`/`end_size`, `start_color`/`end_color` | blended over each particle's life (fade out with an end alpha of 0) |
+| `spin`, `random_angle` | rotation speed in degrees/s; random start rotation |
+| `world_space` | on (default): particles stay where they were born when the node moves (trails); off: they move with it |
+| `additive` | additive blending, for fire, sparks and glows |
+| `auto_destroy` | destroy the node once emission stopped and the last particle died (one-shot effects) |
+
+`lifetime_var`, `speed_var`, `size_var` and `spin_var` add +- randomness. From code: `ps.play()` (restarts, fires
+the burst again), `ps.stop()`, `ps.emit(n)`, `ps.clear()`, `ps.alive()`, `ps.is_done()`, `ps.set_texture(ref)`.
+The demo's coin pickup is a one-shot burst built in code (`make_sparkle` in `examples/demo/coins.v`) and its
+fireflies are a looping emitter in `scenes/main.scene`. Particles use the renderer's `MeshDrawable` hook, whose
+`TexturedMesh` now also takes per-vertex `colors`, `additive` and no texture (plain colored triangles).
+
+In the editor, add it with "+ Add component", edit it in the Inspector (`shape` takes `"point"`, `"circle"` or `"box"`)
+and it previews live in the scene view without pressing Play: the effect runs and one-shot bursts replay every
+half second, without changing saved fields (`playing` stays on, `auto_destroy` does not delete the node).
+Click inside its orange emission outline to select it. Any component can preview this way by implementing
+`render.Previewable` (`preview(dt f32)`).
+
+Limits: no sub-emitters, collisions, color/size curves beyond start→end, or sorting against other nodes (drawn in tree order).
 
 ## Physics
 

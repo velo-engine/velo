@@ -56,6 +56,10 @@ node Main {
       position = [154.5617, 261.4367]
       Pickup { value = 10 }
     }
+    node Fireflies {                                                  # looping particles from the scene file
+      position = [480, 300]
+      ParticleSystem { rate = 6  lifetime = 3  lifetime_var = 1  speed = 12  speed_var = 8  spread = 180  shape = "box"  shape_size = [900, 460]  start_size = 5  end_size = 2  start_color = [255, 240, 140, 230]  end_color = [255, 220, 90, 0]  additive = true }
+    }
     node Player from @asset("e4a1b7c2") {
       position = [482.663, 205.8465]
     }

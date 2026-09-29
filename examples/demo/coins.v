@@ -56,51 +56,36 @@ pub fn (mut p Pickup) update(dt f32) {
 	}
 	if p.effect.is_set() {
 		mut world := sc.find('World') or { sc.root }
-		for i in 0 .. 6 {
-			mut fx := make_sparkle(p.effect, me, f32(i) * 60)
-			world.add_child(mut fx)
-		}
+		mut fx := make_sparkle(p.effect, me)
+		world.add_child(mut fx)
 	}
 	p.node.destroy()
 }
 
 // make_sparkle — a "prefab built in code": handy for small effects, type-checked by the compiler.
-fn make_sparkle(tex assets.AssetRef[assets.Texture], at core.Vec2, angle f32) &core.Node {
-	mut n := core.Node.new('Sparkle')
-		.with(&render.Sprite{ texture: tex, size: core.vec2(18, 18) })
-		.with(&FadeAway{ duration: 0.5, direction: angle })
+// A one-shot particle burst that removes its node once the last particle is gone.
+fn make_sparkle(tex assets.AssetRef[assets.Texture], at core.Vec2) &core.Node {
+	mut n := core.Node.new('Sparkle').with(&render.ParticleSystem{
+		texture:      tex
+		rate:         0
+		burst:        14
+		looping:      false
+		duration:     0
+		lifetime:     0.45
+		lifetime_var: 0.15
+		speed:        110
+		speed_var:    40
+		spread:       180
+		damping:      3
+		start_size:   18
+		end_size:     6
+		spin:         360
+		random_angle: true
+		additive:     true
+		auto_destroy: true
+	})
 	n.position = at
 	return n
-}
-
-// FadeAway — flies outward, fades out, then destroys itself.
-pub struct FadeAway {
-	core.Component
-pub mut:
-	duration  f32 = 0.5
-	direction f32 // degrees
-	distance  f32 = 40
-	t         f32       @[hide]
-	origin    core.Vec2 @[hide]
-}
-
-pub fn (mut f FadeAway) start() {
-	f.origin = f.node.position
-}
-
-pub fn (mut f FadeAway) update(dt f32) {
-	f.t += dt
-	k := if f.duration > 0 { f.t / f.duration } else { 1 }
-	if k >= 1 {
-		f.node.destroy()
-		return
-	}
-	rad := f.direction * math.pi / 180
-	f.node.position = f.origin + core.vec2(f32(math.cos(rad)), f32(math.sin(rad))).mul(f.distance * k)
-	f.node.rotation += 360 * dt
-	if mut s := f.node.get_component[render.Sprite]() {
-		s.color.a = u8(255 * (1 - k))
-	}
 }
 
 // CoinSpawner — creates coins from a prefab at runtime. Press R to scatter more.
@@ -130,8 +115,8 @@ fn (mut s CoinSpawner) spawn() {
 			eprintln('[CoinSpawner] ${err}')
 			return
 		}
-		coin.position = core.vec2(rand.f32_in_range(s.area_min.x, s.area_max.x) or { 0 },
-			rand.f32_in_range(s.area_min.y, s.area_max.y) or { 0 })
+		coin.position = core.vec2(rand.f32_in_range(s.area_min.x, s.area_max.x) or { 0 }, rand.f32_in_range(s.area_min.y,
+			s.area_max.y) or { 0 })
 	}
 }
 
