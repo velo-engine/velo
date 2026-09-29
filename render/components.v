@@ -9,6 +9,14 @@ pub fn register_builtins(mut r serialize.Registry) {
 	r.register[Sprite]()
 	r.register[SpriteAnimator]()
 	r.register[Label]()
+	r.register[UITransform]()
+	r.register[Panel]()
+	r.register[Button]()
+	r.register[Toggle]()
+	r.register[ProgressBar]()
+	r.register[ScrollView]()
+	r.register[Widget]()
+	r.register[Layout]()
 }
 
 // Sprite — draws a texture (or one frame of a sprite sheet) at the node's position.
@@ -24,7 +32,7 @@ pub mut:
 	flip_y  bool
 	// Loaded texture (runtime, not serialized).
 	tex    &assets.Texture = unsafe { nil } @[hide]
-	loaded string    @[hide]
+	loaded string          @[hide]
 }
 
 // on_load: fetches the texture from the AssetDatabase (increments the reference count).
@@ -128,12 +136,33 @@ pub fn (mut a SpriteAnimator) update(dt f32) {
 	sprite.frame = a.first_frame + idx
 }
 
-// Label — draws text at the node's position (ignores rotation).
+// Label — draws text (ignores rotation). With a UITransform on the node, the text is aligned inside its
+// rectangle; otherwise it is aligned around the node's position.
 pub struct Label {
 	core.Component
 pub mut:
-	text  string
-	size  int        = 20
-	color core.Color = core.white
-	align string     = 'left' // 'left' | 'center' | 'right'
+	text   string
+	size   int        = 20
+	color  core.Color = core.white
+	align  string     = 'left' // 'left' | 'center' | 'right'
+	valign string     = 'top'  // 'top' | 'middle' | 'bottom'
+}
+
+// text_point: where the text is anchored, in node space (for the given align/valign).
+pub fn (l &Label) text_point() core.Vec2 {
+	t := l.node.get_component[UITransform]() or { return core.Vec2{} }
+	r := t.rect()
+	x := match l.align {
+		'center' { r.x + r.w / 2 }
+		'right' { r.x + r.w }
+		else { r.x }
+	}
+
+	y := match l.valign {
+		'middle' { r.y + r.h / 2 }
+		'bottom' { r.y + r.h }
+		else { r.y }
+	}
+
+	return core.vec2(x, y)
 }

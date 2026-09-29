@@ -258,18 +258,21 @@ fn on_event(ev &gg.Event, mut e Editor) {
 		}
 		.mouse_down {
 			e.ui.on_mouse_down(ev.mouse_button)
-			if e.play != unsafe { nil } && e.view_rect.has(e.ui.mouse) {
-				e.play_input.mouse_down = true
+			if e.play != unsafe { nil } && e.view_rect.has(e.ui.mouse) && ev.mouse_button == .left {
+				e.play_input.mouse_press()
 			}
 		}
 		.mouse_up {
 			e.ui.on_mouse_up(ev.mouse_button)
-			if e.play != unsafe { nil } {
-				e.play_input.mouse_down = false
+			if e.play != unsafe { nil } && ev.mouse_button == .left {
+				e.play_input.mouse_release()
 			}
 		}
 		.mouse_scroll {
 			e.ui.scroll += ev.scroll_y
+			if e.play != unsafe { nil } && e.view_rect.has(e.ui.mouse) {
+				e.play_input.mouse_scroll(ev.scroll_x, ev.scroll_y)
+			}
 		}
 		.char {
 			if e.ui.focus != '' {
@@ -584,6 +587,7 @@ fn (mut e Editor) start_play() {
 	}
 	e.play_input = &core.Input{}
 	s.input = e.play_input
+	s.view_size = core.vec2(e.cfg.game_width, e.cfg.game_height)
 	e.play = s
 	e.play_selected = unsafe { nil }
 	e.add_menu_open = false

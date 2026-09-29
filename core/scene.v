@@ -19,6 +19,8 @@ pub mut:
 	frame           u64
 	pending_destroy []&Node
 	instantiate_fn  InstantiateFn = unsafe { nil }
+	// Size of the game screen, in world units (UI Widgets without a sized parent align to it). Set by App/editor.
+	view_size Vec2 = Vec2{960, 540}
 }
 
 pub fn Scene.new(name string) &Scene {

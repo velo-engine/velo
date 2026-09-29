@@ -38,7 +38,7 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   core/       Node, Component, Scene, Input, Vec2/Color/Affine2       (no graphics dependency)
   assets/     AssetDatabase: .meta, stable IDs, AssetRef[T], reference counting, dependency graph, hot reload
   serialize/  .scene format, parser, reflection, Registry, SceneLoader (prefab + override), writer
-  render/     Renderer (gg), Sprite, SpriteAnimator, Label components
+  render/     Renderer (gg), Sprite, SpriteAnimator, Label, UI components (Button, ScrollView, Widget, Layout, ...)
   app/        game loop, input, hot reload
   scenedoc/   scene/prefab editing model: undo/redo, prefab rules, diff-style saving (no GPU needed)
   editor/     editor UI (gg): Hierarchy, Scene view, Inspector, Assets, Play
@@ -121,6 +121,39 @@ mut fx := core.Node.new('Sparkle')
 	.with(&FadeAway{ duration: 0.5 })
 ```
 
+## UI
+
+UI nodes are ordinary nodes (world = screen, there is no camera). A `UITransform` gives a node its rectangle;
+the other UI components draw it, react to the mouse inside it, or position nodes relative to it.
+
+```
+node MoreCoins {
+  UITransform { size = [160, 40] }                                  # rectangle: size + anchor
+  Widget { align_right = true  right = 16  align_top = true  top = 14 }
+  Panel { color = [70, 130, 220, 255]  radius = 8  border_width = 1 }
+  Button { }
+  node Text { Label { text = "More coins"  align = "center"  valign = "middle" } }
+}
+```
+
+| Component | What it does |
+|---|---|
+| `UITransform` | `size` + `anchor` of the node's rectangle (used by everything below, and for picking in the editor) |
+| `Panel` | fills the rectangle: `color`, `radius` (rounded corners when not rotated), `border_color`, `border_width` |
+| `Label` | text; `align` left/center/right, `valign` top/middle/bottom. With a UITransform it aligns inside the rectangle |
+| `Button` | click on the rectangle (UITransform or Sprite). `btn.on_click(fn (mut b render.Button) {...})` or poll `btn.clicked` (true for one frame). Tints the Panel/Sprite of `target` by state (`normal/hover/pressed/disabled_color`, multiplied with its own color); `interactable = false` disables it |
+| `Toggle` | with a Button on the same node: each click flips `is_on` and shows/hides the `checkmark` child (`changed` is true for that frame) |
+| `ProgressBar` | draws `back_color` + a `fill_color` part for `progress` (0..1); `direction` horizontal/vertical, `reverse` |
+| `ScrollView` | shows the `content` child through the rectangle: drag or mouse wheel, `inertia`, `elastic` edges, `clip`; `horizontal`/`vertical`; `scroll_to_top()`/`scroll_to_bottom()`. Buttons inside cancel their press once a drag starts, and are not clickable outside the viewport |
+| `Widget` | aligns the node to the edges/center of the parent's rectangle (or the screen if the parent has none); left + right (or top + bottom) stretches the UITransform |
+| `Layout` | arranges children in a `vertical`/`horizontal` list or a `grid` (`spacing`, `padding`, `child_align`, `columns`); `resize` grows the UITransform to fit, which is what a ScrollView content needs |
+
+`Input` also has `mouse_pressed` / `mouse_released` (one frame) and `scroll` (wheel delta this frame).
+The demo's HUD uses a Button (`SpawnButton`) and a ScrollView + Layout pickup log (`PickupLog`, see `examples/demo/hud.v`).
+
+Limits: overlapping buttons all receive the click (no event blocking yet); Widget/Layout run in `update`, so the editor
+shows them at their saved positions until you press Play; the anchor gizmo (Y) only edits Sprite anchors.
+
 ## Asset management
 
 - **Stable IDs** in a `.meta` file next to each asset (created if missing). Scenes reference assets by ID,
@@ -173,14 +206,14 @@ if '--editor' in os.args {
 | Area | What it does |
 |---|---|
 | Hierarchy | select, add/duplicate/delete, reorder; drag and drop to reparent (dropping on the top/bottom edge of a row = insert before/after). Prefab instances are shown in blue |
-| Scene view | click to select (clicking a child of a prefab selects the instance root), drag the body to move freely, right/middle mouse or Alt+drag: pan, mouse wheel: zoom, F: frame all |
+| Scene view | click to select (Sprite or UITransform rectangle) (clicking a child of a prefab selects the instance root), drag the body to move freely, right/middle mouse or Alt+drag: pan, mouse wheel: zoom, F: frame all |
 | Gizmos | **W** Move (drag an arrow to move along one axis, the square to move freely), **E** Rotate (drag the ring), **R** Scale (drag a box to scale one axis, the center box for uniform scale), **Y** Anchor (drag the pivot circle to move the Sprite's anchor, or click one of the 9 dots on its corners/edges/center; the sprite and children stay in place, only the pivot used by rotate/scale moves), **T** toggles local/global move axes. Shift snaps (10px / 15° / 0.1 / 0.1), Esc cancels the drag, each drag is one undo step. Also available as toolbar buttons |
 | Inspector | generated from the `Registry` (no editor code needed per component). Fields overridden relative to the prefab are highlighted in yellow. Add/remove components, assign assets, "Create prefab from this node", "Unpack prefab", "Open prefab" |
 | Assets | double-click a scene/prefab to open it; drag prefabs/images into the Scene view or Hierarchy to add them (image -> node with a `Sprite`) |
 | Toolbar | New, Save (Ctrl/Cmd+S), Save as (Ctrl+Shift+S), Undo/Redo (Ctrl+Z / Ctrl+Y), Play/Stop (Ctrl+P) |
 
 - **Input fields** use `.scene` syntax: numbers, `"strings"`, `[255, 200, 0, 255]`; asset fields accept a path or ID and check the asset kind.
-- **Play** builds a separate scene from the current editing state; all changes made while playing are discarded on stop.
+- **Play** builds a separate scene (while playing, the mouse wheel over the scene view is also sent to the game) from the current editing state; all changes made while playing are discarded on stop.
 - **Prefab rules** match the file format: parts owned by the source prefab can only have their values edited (no delete/rename/move,
   no removing components); adding nodes/components to an instance is allowed. Saving still only writes what differs from the prefab; opening a prefab variant
   and saving it keeps `from`.

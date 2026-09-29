@@ -27,6 +27,10 @@ mut:
 pub mut:
 	mouse      Vec2
 	mouse_down bool
+	// Per-frame mouse state (reset by end_frame), set through mouse_press / mouse_release / mouse_scroll.
+	mouse_pressed  bool
+	mouse_released bool
+	scroll         Vec2 // wheel delta this frame (y > 0 = wheel up)
 }
 
 pub fn (i &Input) is_down(k Key) bool {
@@ -78,9 +82,30 @@ pub fn (mut i Input) key_up(code int) {
 	i.released[code] = true
 }
 
+pub fn (mut i Input) mouse_press() {
+	if !i.mouse_down {
+		i.mouse_pressed = true
+	}
+	i.mouse_down = true
+}
+
+pub fn (mut i Input) mouse_release() {
+	if i.mouse_down {
+		i.mouse_released = true
+	}
+	i.mouse_down = false
+}
+
+pub fn (mut i Input) mouse_scroll(dx f32, dy f32) {
+	i.scroll = i.scroll + Vec2{dx, dy}
+}
+
 pub fn (mut i Input) end_frame() {
 	i.pressed.clear()
 	i.released.clear()
+	i.mouse_pressed = false
+	i.mouse_released = false
+	i.scroll = Vec2{}
 }
 
 fn clamp1(v f32) f32 {

@@ -65,6 +65,7 @@ pub fn (mut a App) register[T]() {
 pub fn (mut a App) load_scene(key string) ! {
 	mut next := a.loader.load_scene(key)!
 	next.input = a.input
+	next.view_size = a.view_size()
 	if a.scene != unsafe { nil } {
 		a.scene.unload()
 	}
@@ -113,6 +114,7 @@ fn on_frame(mut a App) {
 	if a.input.was_pressed(.f1) {
 		a.renderer.debug = !a.renderer.debug
 	}
+	a.scene.view_size = a.view_size()
 	a.scene.update(dt)
 	a.input.end_frame()
 
@@ -138,6 +140,15 @@ fn on_frame(mut a App) {
 			a.check_hot_reload()
 		}
 	}
+}
+
+// view_size: the window size in world units (the configured size until the window exists).
+fn (a &App) view_size() core.Vec2 {
+	if a.ctx == unsafe { nil } {
+		return core.vec2(a.cfg.width, a.cfg.height)
+	}
+	sz := gg.window_size()
+	return core.vec2(sz.width, sz.height)
 }
 
 // check_hot_reload: texture changed -> draw the new image; scene/prefab changed -> reload the current scene.
@@ -181,10 +192,17 @@ fn on_event(e &gg.Event, mut a App) {
 			a.input.mouse = core.vec2(e.mouse_x, e.mouse_y) // gg already divides by the dpi scale
 		}
 		.mouse_down {
-			a.input.mouse_down = true
+			if e.mouse_button == .left {
+				a.input.mouse_press()
+			}
 		}
 		.mouse_up {
-			a.input.mouse_down = false
+			if e.mouse_button == .left {
+				a.input.mouse_release()
+			}
+		}
+		.mouse_scroll {
+			a.input.mouse_scroll(e.scroll_x, e.scroll_y)
 		}
 		else {}
 	}

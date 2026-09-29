@@ -43,4 +43,6 @@ fn register_components(mut r serialize.Registry) {
 	r.register[CoinSpawner]()
 	r.register[ScoreBoard]()
 	r.register[FadeAway]()
+	r.register[SpawnButton]()
+	r.register[PickupLog]()
 }

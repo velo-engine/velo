@@ -49,6 +49,11 @@ pub fn (mut p Pickup) update(dt f32) {
 			board.add(p.value)
 		}
 	}
+	if log_node := sc.find('HUD/Log') {
+		if mut log := log_node.get_component[PickupLog]() {
+			log.add('+${p.value}  ${p.node.name}')
+		}
+	}
 	if p.effect.is_set() {
 		mut world := sc.find('World') or { sc.root }
 		for i in 0 .. 6 {

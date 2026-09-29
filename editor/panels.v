@@ -53,6 +53,7 @@ fn (mut e Editor) draw_scene_view(r Rect) {
 	tl := view.apply(core.vec2(0, 0))
 	br := view.apply(core.vec2(f32(e.cfg.game_width), f32(e.cfg.game_height)))
 	e.ui.ctx.draw_rect_filled(tl.x, tl.y, br.x - tl.x, br.y - tl.y, gg.Color{40, 40, 50, 255})
+	e.renderer.base_clip = render.Rect{r.x, r.y, r.w, r.h}
 	e.renderer.draw_tree(e.current_root(), view)
 	e.ui.ctx.draw_rect_empty(tl.x, tl.y, br.x - tl.x, br.y - tl.y, gg.Color{200, 200, 210, 120})
 
@@ -103,17 +104,9 @@ fn (e &Editor) draw_grid(r Rect, view core.Affine2) {
 
 fn (e &Editor) draw_selection(n &core.Node, view core.Affine2) {
 	m := view.mul(n.world_matrix())
-	mut drew := false
-	for c in n.components {
-		if c is render.Sprite {
-			x, y, w, h := c.local_rect()
-			if w > 0 && h > 0 {
-				e.draw_quad(m, x, y, w, h, c_override)
-				drew = true
-			}
-		}
-	}
-	if !drew {
+	if rc := render.node_rect(n) {
+		e.draw_quad(m, rc.x, rc.y, rc.w, rc.h, c_override)
+	} else {
 		e.draw_quad(m, -12, -12, 24, 24, gg.Color{255, 200, 90, 120})
 	}
 	p := m.position()
@@ -180,7 +173,7 @@ fn (mut e Editor) handle_scene_view_input(r Rect) {
 	}
 }
 
-// pick: the topmost node (drawn last) whose sprite contains the point `world`.
+// pick: the topmost node (drawn last) whose rectangle (UITransform or Sprite) contains the point `world`.
 // Clicking a child of a prefab instance selects the instance root.
 fn (mut e Editor) pick(world core.Vec2) ?&core.Node {
 	mut hits := []&core.Node{}
@@ -199,16 +192,8 @@ fn collect_hits(n &core.Node, world core.Vec2, mut out []&core.Node) {
 	if !n.active {
 		return
 	}
-	local := n.world_matrix().inverse().apply(world)
-	for c in n.components {
-		if c is render.Sprite {
-			x, y, w, h := c.local_rect()
-			if w > 0 && h > 0 && local.x >= x && local.x <= x + w && local.y >= y
-				&& local.y <= y + h {
-				out << n
-				break
-			}
-		}
+	if render.hit_test(n, world) {
+		out << n
 	}
 	for ch in n.children {
 		collect_hits(ch, world, mut out)

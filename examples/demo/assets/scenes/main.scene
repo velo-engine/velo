@@ -60,5 +60,27 @@ node Main {
       position = [20, 508]
       Label { text = "Arrows / WASD: move    R: scatter more coins    F1: debug    Esc: quit"  size = 18  color = [255, 255, 255, 210] }
     }
+    node MoreCoins {
+      UITransform { size = [160, 40] }
+      Widget { align_right = true  right = 16  align_top = true  top = 14 }
+      Panel { color = [70, 130, 220, 255]  radius = 8  border_width = 1 }
+      Button { }
+      SpawnButton { }
+      node Text {
+        Label { text = "More coins"  size = 18  align = "center"  valign = "middle" }
+      }
+    }
+    node Log {
+      UITransform { size = [180, 150] }
+      Widget { align_right = true  right = 16  align_top = true  top = 66 }
+      Panel { color = [0, 0, 0, 110]  radius = 6 }
+      ScrollView { }
+      PickupLog { }
+      node Content {
+        position = [-90, -75]
+        UITransform { size = [180, 0]  anchor = [0, 0] }
+        Layout { padding = 6  spacing = [4, 2] }
+      }
+    }
   }
 }
