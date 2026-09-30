@@ -6,6 +6,8 @@ import velo.serialize
 
 // register_builtins registers the engine's built-in components so .scene files can use them.
 pub fn register_builtins(mut r serialize.Registry) {
+	r.register[core.Camera]()
+	r.register[core.Canvas]()
 	r.register[Sprite]()
 	r.register[SpriteAnimator]()
 	r.register[Label]()

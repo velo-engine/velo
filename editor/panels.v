@@ -54,8 +54,11 @@ fn (mut e Editor) draw_scene_view(r Rect) {
 	br := view.apply(core.vec2(f32(e.cfg.game_width), f32(e.cfg.game_height)))
 	e.ui.ctx.draw_rect_filled(tl.x, tl.y, br.x - tl.x, br.y - tl.y, gg.Color{40, 40, 50, 255})
 	e.renderer.base_clip = render.Rect{r.x, r.y, r.w, r.h}
-	e.renderer.draw_tree(e.current_root(), view)
+	e.renderer.draw_tree(e.current_root(), view, e.play_camera())
 	e.ui.ctx.draw_rect_empty(tl.x, tl.y, br.x - tl.x, br.y - tl.y, gg.Color{200, 200, 210, 120})
+	if e.play == unsafe { nil } {
+		e.draw_camera_frames(e.doc.scene.root, view)
+	}
 
 	if e.play == unsafe { nil } && e.doc.has_selection() {
 		e.draw_selection(e.doc.selected, view)
@@ -66,7 +69,8 @@ fn (mut e Editor) draw_scene_view(r Rect) {
 		e.draw_tile_overlay(view)
 	} else if e.play != unsafe { nil } && e.play_selected != unsafe { nil }
 		&& !e.play_selected.destroyed {
-		e.draw_selection(e.play_selected, view)
+		cam := if e.play_selected.in_canvas() { core.Affine2.identity() } else { e.play_camera() }
+		e.draw_selection(e.play_selected, view.mul(cam))
 	}
 	if e.drag == .asset && e.drag_active && e.ui.hover(r) {
 		e.ui.outline(r.shrink(2), c_accent)
@@ -77,6 +81,33 @@ fn (mut e Editor) draw_scene_view(r Rect) {
 		e.ui.text(r.x + 10, r.y + 8, 'PLAYING', c_ok)
 	}
 	e.handle_scene_view_input(r)
+}
+
+// play_camera: world -> game screen for the running scene; identity while editing (the scene view shows the world).
+fn (e &Editor) play_camera() core.Affine2 {
+	return if e.play != unsafe { nil } { e.play.view_matrix() } else { core.Affine2.identity() }
+}
+
+// draw_camera_frames outlines what each Camera shows (the game screen at its position, zoom and rotation).
+fn (e &Editor) draw_camera_frames(n &core.Node, view core.Affine2) {
+	if !n.active {
+		return
+	}
+	if cam := n.get_component[core.Camera]() {
+		z := if cam.zoom > 0.001 { cam.zoom } else { f32(1) }
+		w := f32(e.cfg.game_width) / z
+		h := f32(e.cfg.game_height) / z
+		wm := n.world_matrix()
+		m := view.mul(core.Affine2.trs(wm.position(), wm.rotation_deg(), core.vec2(1, 1)))
+		col := if cam.enabled { gg.Color{190, 140, 255, 220} } else { gg.Color{190, 140, 255, 90} }
+		e.draw_quad(m, -w / 2, -h / 2, w, h, col)
+		p := m.position()
+		e.ui.ctx.draw_line(p.x - 8, p.y, p.x + 8, p.y, col)
+		e.ui.ctx.draw_line(p.x, p.y - 8, p.x, p.y + 8, col)
+	}
+	for ch in n.children {
+		e.draw_camera_frames(ch, view)
+	}
 }
 
 fn (e &Editor) draw_grid(r Rect, view core.Affine2) {
@@ -104,6 +135,7 @@ fn (e &Editor) draw_grid(r Rect, view core.Affine2) {
 	}
 }
 
+// draw_selection outlines `n`; `view` maps the node's world to the window.
 fn (e &Editor) draw_selection(n &core.Node, view core.Affine2) {
 	m := view.mul(n.world_matrix())
 	if rc := render.node_rect(n) {
@@ -179,17 +211,24 @@ fn (mut e Editor) handle_scene_view_input(r Rect) {
 	}
 }
 
-// pick: the topmost node (drawn last) whose rectangle (UITransform or Sprite) contains the point `world`;
-// without one, the topmost node whose debug outline (particle emitter, collider) is under the point.
-// Clicking a child of a prefab instance selects the instance root.
+// pick: the topmost node (drawn last, so z_index and y_sort count) whose rectangle (UITransform or Sprite)
+// contains the point `world`; without one, the topmost node whose debug outline (particle emitter, collider)
+// is under the point. Clicking a child of a prefab instance selects the instance root.
 fn (mut e Editor) pick(world core.Vec2) ?&core.Node {
-	mut hits := []&core.Node{}
-	mut shape_hits := []&core.Node{}
-	collect_hits(e.doc.scene.root, world, pick_pad / e.zoom, mut hits, mut shape_hits)
-	if hits.len == 0 && shape_hits.len == 0 {
-		return none
+	order := render.draw_order(e.doc.scene.root)
+	pad := pick_pad / e.zoom
+	mut shape_hit_node := ?&core.Node(none)
+	mut found := ?&core.Node(none)
+	for i := order.len - 1; i >= 0; i-- {
+		if render.hit_test_world(order[i], world) {
+			found = order[i]
+			break
+		}
+		if shape_hit_node == none && shape_hit(order[i], world, pad) {
+			shape_hit_node = order[i]
+		}
 	}
-	mut n := if hits.len > 0 { hits.last() } else { shape_hits.last() }
+	mut n := found or { shape_hit_node or { return none } }
 	for n.parent != unsafe { nil } && e.doc.is_prefab_owned(n) {
 		n = n.parent
 	}
@@ -197,20 +236,6 @@ fn (mut e Editor) pick(world core.Vec2) ?&core.Node {
 }
 
 const pick_pad = f32(8) // screen pixels around a debug outline that still select its node
-
-fn collect_hits(n &core.Node, world core.Vec2, pad f32, mut out []&core.Node, mut shape_out []&core.Node) {
-	if !n.active {
-		return
-	}
-	if render.hit_test(n, world) {
-		out << n
-	} else if shape_hit(n, world, pad) {
-		shape_out << n
-	}
-	for ch in n.children {
-		collect_hits(ch, world, pad, mut out, mut shape_out)
-	}
-}
 
 // shape_hit: nodes drawn without a rectangle (particle emitters, colliders) are picked by the
 // world-space bounds of their debug outline, grown by `pad` so a point emitter can still be clicked.
@@ -703,6 +728,13 @@ fn (mut e Editor) draw_inspector(r Rect) {
 	y = e.vec2_row(x, y, w, id, n, -1, 'position', serialize.vec2_value(n.position), ro)
 	y = e.number_row(x, y, w, id, n, -1, 'rotation', serialize.Value(f64(n.rotation)), ro)
 	y = e.vec2_row(x, y, w, id, n, -1, 'scale', serialize.vec2_value(n.scale), ro)
+	y = e.number_row(x, y, w, id, n, -1, 'z_index', serialize.Value(f64(n.z_index)), ro)
+	e.prop_label(x, y, 'y_sort', e.is_overridden(n, -1, 'y_sort', ro))
+	if e.ui.checkbox(Rect{x + label_w, y, 40, row_h}, n.y_sort, !ro) {
+		toggled := !n.y_sort
+		e.doc.set_node_prop(mut n, 'y_sort', serialize.Value(toggled), true) or { e.report(err) }
+	}
+	y += row_h + 3
 	y += 6
 
 	// ---- Component ----

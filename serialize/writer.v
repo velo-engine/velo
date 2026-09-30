@@ -47,6 +47,12 @@ fn (mut l SceneLoader) write_node(n &core.Node, reference ?&core.Node, depth int
 	if n.active != base.active {
 		body << '${pad}  active = ${n.active}'
 	}
+	if n.z_index != base.z_index {
+		body << '${pad}  z_index = ${n.z_index}'
+	}
+	if n.y_sort != base.y_sort {
+		body << '${pad}  y_sort = ${n.y_sort}'
+	}
 
 	// Component
 	for c in n.components {

@@ -162,7 +162,7 @@ pub fn direct_child(n &core.Node, name string) ?&core.Node {
 	return none
 }
 
-// apply_node_props assigns node properties (position, rotation, scale, active).
+// apply_node_props assigns node properties (position, rotation, scale, active, z_index, y_sort).
 pub fn apply_node_props(mut n core.Node, props map[string]Value) ! {
 	for k, v in props {
 		match k {
@@ -170,8 +170,10 @@ pub fn apply_node_props(mut n core.Node, props map[string]Value) ! {
 			'rotation' { n.rotation = f32(v.as_f64()!) }
 			'scale' { n.scale = v.as_vec2()! }
 			'active' { n.active = v.as_bool()! }
+			'z_index' { n.z_index = int(v.as_f64()!) }
+			'y_sort' { n.y_sort = v.as_bool()! }
 			else {
-				return error('node has no property "${k}" (only position, rotation, scale, active)')
+				return error('node has no property "${k}" (only position, rotation, scale, active, z_index, y_sort)')
 			}
 		}
 	}

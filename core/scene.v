@@ -24,6 +24,8 @@ pub mut:
 	// How far in from each screen edge the safe area starts (notches, rounded corners, system bars), in world units.
 	// Set by App on phones; zero on desktop. Widgets aligned to the screen stay inside it (see render.Widget.safe_area).
 	safe_insets Insets
+	// Cameras in the scene (they add themselves in on_load); see active_camera.
+	cameras []&Camera
 }
 
 pub fn Scene.new(name string) &Scene {
@@ -68,7 +70,38 @@ pub fn (mut s Scene) update(dt f32) {
 	s.time += dt
 	s.frame++
 	s.root.tick(dt)
+	if mut cam := s.active_camera() {
+		cam.late_update(dt)
+	}
 	s.flush_destroyed()
+}
+
+// active_camera: the first enabled Camera on an active node (none = world coordinates are screen coordinates).
+pub fn (s &Scene) active_camera() ?&Camera {
+	for c in s.cameras {
+		if c.enabled && c.node != unsafe { nil } && !c.node.destroyed && c.node.is_active_in_hierarchy() {
+			return c
+		}
+	}
+	return none
+}
+
+// view_matrix: world -> screen through the active camera (identity without one).
+pub fn (s &Scene) view_matrix() Affine2 {
+	if c := s.active_camera() {
+		return c.view_matrix()
+	}
+	return Affine2.identity()
+}
+
+// screen_to_world converts a screen point (input.mouse, a touch) to world coordinates.
+pub fn (s &Scene) screen_to_world(p Vec2) Vec2 {
+	return s.view_matrix().inverse().apply(p)
+}
+
+// world_to_screen converts a world point to screen coordinates.
+pub fn (s &Scene) world_to_screen(p Vec2) Vec2 {
+	return s.view_matrix().apply(p)
 }
 
 pub fn (mut s Scene) flush_destroyed() {

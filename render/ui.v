@@ -73,10 +73,20 @@ pub fn node_rect(n &core.Node) ?Rect {
 	return none
 }
 
-// hit_test: true if the world point `p` is inside the node's rectangle and not clipped away by a ScrollView above it.
+// hit_test: true if the screen point `p` (input.mouse, a touch) is inside the node's rectangle and not clipped away
+// by a ScrollView above it. The scene camera applies unless the node is under a Canvas.
 pub fn hit_test(n &core.Node, p core.Vec2) bool {
+	return hit_test_in(n, p, true)
+}
+
+// hit_test_world: like hit_test, with a world point and no camera (the editor picks this way).
+pub fn hit_test_world(n &core.Node, p core.Vec2) bool {
+	return hit_test_in(n, p, false)
+}
+
+fn hit_test_in(n &core.Node, p core.Vec2, screen bool) bool {
 	r := node_rect(n) or { return false }
-	if !r.has(n.world_matrix().inverse().apply(p)) {
+	if !r.has(node_point(n, p, screen)) {
 		return false
 	}
 	mut cur := n.parent
@@ -84,7 +94,7 @@ pub fn hit_test(n &core.Node, p core.Vec2) bool {
 		if sv := cur.get_component[ScrollView]() {
 			if sv.enabled && sv.clip {
 				vr := node_rect(cur) or { Rect{} }
-				if !vr.has(cur.world_matrix().inverse().apply(p)) {
+				if !vr.has(node_point(cur, p, screen)) {
 					return false
 				}
 			}
@@ -92,6 +102,11 @@ pub fn hit_test(n &core.Node, p core.Vec2) bool {
 		cur = cur.parent
 	}
 	return true
+}
+
+fn node_point(n &core.Node, p core.Vec2, screen bool) core.Vec2 {
+	m := if screen { n.screen_matrix() } else { n.world_matrix() }
+	return m.inverse().apply(p)
 }
 
 // in_dragged_scroll_view: true while a ScrollView above `n` is being dragged (buttons inside it cancel their press).
@@ -318,7 +333,7 @@ pub fn (mut s ScrollView) update(dt f32) {
 	mut content := s.content_node() or { return }
 	view := node_rect(s.node) or { return }
 	input := s.input()
-	local := s.node.world_matrix().inverse().apply(input.mouse)
+	local := s.node.screen_matrix().inverse().apply(input.mouse)
 	inside := hit_test(s.node, input.mouse)
 
 	if input.mouse_pressed && inside {
@@ -552,7 +567,7 @@ pub fn (mut j Joystick) release() {
 }
 
 fn (j &Joystick) to_local(p core.Vec2) core.Vec2 {
-	return j.node.world_matrix().inverse().apply(p)
+	return j.node.screen_matrix().inverse().apply(p)
 }
 
 // ---------- Widget ----------
@@ -607,7 +622,7 @@ fn (w &Widget) parent_rect() ?Rect {
 		return none
 	}
 	// the screen (or its safe area), brought into the parent's space (ignores parent rotation)
-	inv := p.world_matrix().inverse()
+	inv := p.screen_matrix().inverse()
 	sc := w.node.scene
 	ins := if w.safe_area { sc.safe_insets } else { core.Insets{} }
 	a := inv.apply(core.vec2(ins.left, ins.top))

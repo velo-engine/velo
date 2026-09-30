@@ -16,8 +16,8 @@ pub interface DebugShape {
 	debug_color() core.Color
 }
 
-// Renderer walks the node tree in order (parent first, children after => children draw over the parent)
-// and draws Sprite/Label with gg (a 2D drawing layer on top of sokol: Metal / D3D11 / OpenGL).
+// Renderer draws the node tree in tree order (parent first, children after => children draw over the parent),
+// reordered by Node.z_index / Node.y_sort, world first and Canvas (screen space) nodes last, and draws Sprite/Label with gg (a 2D drawing layer on top of sokol: Metal / D3D11 / OpenGL).
 @[heap]
 pub struct Renderer {
 mut:
@@ -43,7 +43,7 @@ pub fn new_renderer(ctx &gg.Context, db &assets.AssetDatabase) &Renderer {
 }
 
 pub fn (mut r Renderer) draw_scene(scene &core.Scene) {
-	r.draw_tree(scene.root, core.Affine2.identity())
+	r.draw_tree(scene.root, core.Affine2.identity(), scene.view_matrix())
 	ins := scene.safe_insets
 	if r.debug && !ins.is_zero() {
 		sz := scene.view_size
@@ -52,17 +52,133 @@ pub fn (mut r Renderer) draw_scene(scene &core.Scene) {
 	}
 }
 
-// draw_tree draws the node tree through the `view` matrix (used by the editor to pan/zoom the scene view).
-pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2) {
+// draw_tree draws the node tree. `camera` maps the world to the screen (scene.view_matrix(); nodes under a
+// Canvas skip it) and `view` maps the screen into the window (the editor's pan/zoom; identity in the game).
+pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2, camera core.Affine2) {
 	r.draw_calls = 0
-	r.clip = if r.base_clip.w > 0 && r.base_clip.h > 0 {
-		r.base_clip
-	} else {
-		sz := r.ctx.window_size()
-		Rect{0, 0, sz.width, sz.height}
+	base := r.base_rect()
+	r.clip = base
+	for it in collect_draw_items(root, view, camera, base) {
+		if it.clip != r.clip {
+			r.clip = it.clip
+			r.set_scissor(r.clip)
+		}
+		r.draw_node(it.node, it.m)
 	}
-	r.draw_node(root, view)
-	r.set_scissor(r.clip)
+	r.clip = base
+	r.set_scissor(base)
+}
+
+// draw_order: the visible nodes of the tree in the order they are drawn (last = on top), e.g. for picking.
+pub fn draw_order(root &core.Node) []&core.Node {
+	return collect_draw_items(root, core.Affine2.identity(), core.Affine2.identity(), Rect{}).map(it.node)
+}
+
+fn (r &Renderer) base_rect() Rect {
+	if r.base_clip.w > 0 && r.base_clip.h > 0 {
+		return r.base_clip
+	}
+	sz := r.ctx.window_size()
+	return Rect{0, 0, sz.width, sz.height}
+}
+
+// DrawItem — one node to draw, with its node -> window matrix and the clip rect it is drawn in.
+struct DrawItem {
+	node   &core.Node
+	m      core.Affine2
+	clip   Rect
+	canvas bool // under a Canvas: drawn after (over) the world
+	z      int  // effective z_index (the sum of the node's and its ancestors')
+	seq    int  // tree order (y_sort already applied), keeps equal z in order
+}
+
+struct CollectState {
+	view     core.Affine2
+	view_cam core.Affine2
+mut:
+	items []DrawItem
+}
+
+// collect_draw_items lists the visible nodes sorted by draw order: world before Canvas, then z_index, then tree order.
+fn collect_draw_items(root &core.Node, view core.Affine2, camera core.Affine2, clip Rect) []DrawItem {
+	mut st := CollectState{
+		view:     view
+		view_cam: view.mul(camera)
+	}
+	collect_node(mut st, root, core.Affine2.identity(), false, 0, clip)
+	st.items.sort_with_compare(compare_draw_items)
+	return st.items
+}
+
+fn collect_node(mut st CollectState, n &core.Node, parent_world core.Affine2, canvas bool, z int, clip Rect) {
+	if !n.active || n.destroyed {
+		return
+	}
+	w := parent_world.mul(n.local_matrix())
+	mut in_canvas := canvas
+	if !in_canvas {
+		if _ := n.get_component[core.Canvas]() {
+			in_canvas = true
+		}
+	}
+	m := if in_canvas { st.view.mul(w) } else { st.view_cam.mul(w) }
+	zz := z + n.z_index
+	st.items << DrawItem{
+		node:   n
+		m:      m
+		clip:   clip
+		canvas: in_canvas
+		z:      zz
+		seq:    st.items.len
+	}
+	// ScrollView: children only show inside the viewport (screen-aligned bounds of the rect)
+	mut child_clip := clip
+	if sv := n.get_component[ScrollView]() {
+		if sv.enabled && sv.clip {
+			if vr := node_rect(n) {
+				child_clip = clip.intersect(screen_bounds(m, vr))
+			}
+		}
+	}
+	if n.y_sort && n.children.len > 1 {
+		for ch in y_sorted(n.children, w) {
+			collect_node(mut st, ch, w, in_canvas, zz, child_clip)
+		}
+	} else {
+		for ch in n.children {
+			collect_node(mut st, ch, w, in_canvas, zz, child_clip)
+		}
+	}
+}
+
+struct YKey {
+	y     f32
+	index int
+}
+
+// y_sorted: the children ordered by their world y (ties keep the child order).
+fn y_sorted(children []&core.Node, parent_world core.Affine2) []&core.Node {
+	mut keys := []YKey{cap: children.len}
+	for i, ch in children {
+		keys << YKey{parent_world.apply(ch.position).y, i}
+	}
+	keys.sort_with_compare(fn (a &YKey, b &YKey) int {
+		if a.y != b.y {
+			return if a.y < b.y { -1 } else { 1 }
+		}
+		return a.index - b.index
+	})
+	return keys.map(children[it.index])
+}
+
+fn compare_draw_items(a &DrawItem, b &DrawItem) int {
+	if a.canvas != b.canvas {
+		return if a.canvas { 1 } else { -1 }
+	}
+	if a.z != b.z {
+		return if a.z < b.z { -1 } else { 1 }
+	}
+	return a.seq - b.seq
 }
 
 fn (mut r Renderer) set_scissor(c Rect) {
@@ -83,11 +199,8 @@ fn (mut r Renderer) release_gpu(id string) {
 	}
 }
 
-fn (mut r Renderer) draw_node(n &core.Node, parent core.Affine2) {
-	if !n.active || n.destroyed {
-		return
-	}
-	m := parent.mul(n.local_matrix())
+// draw_node draws the components of one node (not its children) through `m` (node -> window).
+fn (mut r Renderer) draw_node(n &core.Node, m core.Affine2) {
 	for c in n.components {
 		if !c.enabled {
 			continue
@@ -117,25 +230,6 @@ fn (mut r Renderer) draw_node(n &core.Node, parent core.Affine2) {
 		if t := n.get_component[UITransform]() {
 			r.draw_quad_empty(m, t.rect(), gg.Color{0, 200, 255, 160})
 		}
-	}
-	// ScrollView: children only show inside the viewport (screen-aligned bounds of the rect)
-	old_clip := r.clip
-	mut clipped := false
-	if sv := n.get_component[ScrollView]() {
-		if sv.enabled && sv.clip {
-			if vr := node_rect(n) {
-				r.clip = old_clip.intersect(screen_bounds(m, vr))
-				r.set_scissor(r.clip)
-				clipped = true
-			}
-		}
-	}
-	for ch in n.children {
-		r.draw_node(ch, m)
-	}
-	if clipped {
-		r.clip = old_clip
-		r.set_scissor(old_clip)
 	}
 }
 

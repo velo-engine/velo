@@ -40,10 +40,10 @@ The optional `physics` module (used by the demo) needs [Box2D](https://box2d.org
 
 ```
 velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
-  core/       Node, Component, Scene, Input, Vec2/Color/Affine2       (no graphics dependency)
+  core/       Node, Component, Scene, Camera/Canvas, Input, Vec2/Color/Affine2       (no graphics dependency)
   assets/     AssetDatabase: .meta, stable IDs, AssetRef[T], reference counting, dependency graph, hot reload
   serialize/  .scene format, parser, reflection, Registry, SceneLoader (prefab + override), writer
-  render/     Renderer (gg), Sprite, SpriteAnimator, Label, ParticleSystem, TileMap, UI components (Button, ScrollView, Widget, Layout, ...)
+  render/     Renderer (gg): draw order (z_index, y_sort, Canvas), Sprite, SpriteAnimator, Label, ParticleSystem, TileMap, UI components (Button, ScrollView, Widget, Layout, ...)
   physics/    Box2D v3 bindings: PhysicsWorld, RigidBody, Box/Circle/CapsuleCollider (optional, no GPU needed)
   kine2d/     plays Kine2D editor exports (.skel.json + .atlas.json + .png): the Kine2D component (optional)
   app/        game loop, input, hot reload
@@ -109,7 +109,7 @@ node Coin {
 }
 ```
 
-- `node Name { ... }` — a node; node properties: `position rotation scale active`
+- `node Name { ... }` — a node; node properties: `position rotation scale active z_index y_sort` (see "Camera and draw order")
 - `ComponentName { field = value }` — a component
 - `node X from @asset("id") { ... }` — an instance of another prefab; the block inside is an **override**
 - A prefab **variant** = a prefab whose root is `from` another prefab (see `prefabs/big_coin.scene`). No separate concept needed.
@@ -128,9 +128,48 @@ mut fx := core.Node.new('Sparkle')
 	.with(&render.ParticleSystem{ texture: tex, rate: 0, burst: 14, looping: false, auto_destroy: true })
 ```
 
+## Camera and draw order
+
+A `Camera` shows the world around its node: the node's world position is at the center of the screen, its
+rotation turns the view and `zoom` magnifies it. Without a camera, world = screen, as before. A `Canvas` puts its
+node and everything under it in screen space: the camera does not move it and it draws over the world (HUD, menus).
+
+```
+node Main {
+  node Cam { Camera { zoom = 1.25  follow = "World/Player"  smoothing = 6  limit_max = [960, 540] } }
+  node World {
+    y_sort = true                                  # lower on screen = in front
+    node Player from @asset("e4a1b7c2") { }
+    node Fireflies { z_index = 1  ParticleSystem { ... } }
+  }
+  node HUD { Canvas { } ... }
+}
+```
+
+| Camera field | What it does |
+|---|---|
+| `zoom` | > 1 = closer |
+| `follow`, `follow_offset` | path (from the scene root) of a node to move to every frame, after all updates; offset added to it |
+| `smoothing` | how fast it catches up (1/s); `0` = sticks to the target |
+| `limit_min`, `limit_max` | world rectangle the view stays inside (an axis with `limit_max <= limit_min` is unlimited); a smaller rectangle is centered |
+
+The first enabled Camera on an active node is used (`scene.active_camera()`). From code: `cam.shake(strength, seconds)`,
+`cam.center()`, `cam.visible_rect()`, `scene.screen_to_world(input.mouse)`, `scene.world_to_screen(p)`,
+`node.screen_matrix()`. UI components (Button, ScrollView, Joystick, Widget) go through the camera by themselves, so
+a Button in the world still clicks where it is drawn; `render.hit_test(n, screen_point)` does the same.
+
+Draw order: nodes draw in tree order, world first and Canvas nodes after. `z_index` moves a node (with its children)
+over or under others: it adds to the parent's, and equal values keep the tree order. `y_sort` on a node draws its
+children ordered by their y (each with its whole subtree), for top-down scenes. The editor picks the topmost node in
+this order, draws each Camera's frame (purple) and shows `z_index` / `y_sort` under Transform. The demo uses all of them
+(`Camera`, y-sorted `World`, `HUD` Canvas; big coins shake the camera).
+
+Limits: one camera at a time (no split screen or minimap render targets), no parallax layers, the editor scene view
+shows the world without the camera (Play shows it through the camera).
+
 ## UI
 
-UI nodes are ordinary nodes (world = screen, there is no camera). A `UITransform` gives a node its rectangle;
+UI nodes are ordinary nodes. Put them under a `Canvas` so a camera does not move them (without a camera, world = screen). A `UITransform` gives a node its rectangle;
 the other UI components draw it, react to the mouse inside it, or position nodes relative to it.
 
 ```
@@ -203,7 +242,7 @@ half second, without changing saved fields (`playing` stays on, `auto_destroy` d
 Click inside its orange emission outline to select it. Any component can preview this way by implementing
 `render.Previewable` (`preview(dt f32)`).
 
-Limits: no sub-emitters, collisions, color/size curves beyond start→end, or sorting against other nodes (drawn in tree order).
+Limits: no sub-emitters, collisions, or color/size curves beyond start→end; particles draw at their node's place in the draw order (use `z_index`).
 
 ## Sliced and tiled sprites
 
@@ -500,7 +539,7 @@ files written at runtime (settings, saves) live in memory and are lost on reload
 ## Current limitations and next steps
 
 - Scene hot reload **resets game state** (score, positions) because the whole tree is rebuilt.
-- Not yet available: audio (the `AudioClip` asset kind exists), physics joints, camera, z-order sorting (currently drawn in tree order),
+- Not yet available: audio (the `AudioClip` asset kind exists), physics joints,
   removing prefab components via override, a `library/` directory caching import results.
 - Mobile: Android ignores `app.orientation` (it follows the device), there is no screen-size scaling (the game sees the
   screen size in points), and the iOS build patches two V 0.5.2 issues in the generated C (see `tools/velo/ios.v`).

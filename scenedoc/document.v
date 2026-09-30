@@ -252,6 +252,8 @@ pub fn (mut d Document) node_prop_overridden(n &core.Node, prop string) bool {
 		'rotation' { r.rotation != n.rotation }
 		'scale' { r.scale != n.scale }
 		'active' { r.active != n.active }
+		'z_index' { r.z_index != n.z_index }
+		'y_sort' { r.y_sort != n.y_sort }
 		else { false }
 	}
 }
@@ -403,7 +405,7 @@ pub fn (mut d Document) move_sibling(mut n core.Node, delta int) ! {
 	parent.insert_child(mut n, to)
 }
 
-// set_node_prop assigns position/rotation/scale/active. `record` = record an undo step
+// set_node_prop assigns position/rotation/scale/active/z_index/y_sort. `record` = record an undo step
 // (false while dragging: the undo step was recorded when the drag started).
 pub fn (mut d Document) set_node_prop(mut n core.Node, prop string, v serialize.Value, record bool) ! {
 	d.expect_mine(n)!
@@ -412,6 +414,8 @@ pub fn (mut d Document) set_node_prop(mut n core.Node, prop string, v serialize.
 		rotation: n.rotation
 		scale:    n.scale
 		active:   n.active
+		z_index:  n.z_index
+		y_sort:   n.y_sort
 	}
 	serialize.apply_node_props(mut tmp, {
 		prop: v
@@ -424,6 +428,8 @@ pub fn (mut d Document) set_node_prop(mut n core.Node, prop string, v serialize.
 	n.rotation = tmp.rotation
 	n.scale = tmp.scale
 	n.active = tmp.active
+	n.z_index = tmp.z_index
+	n.y_sort = tmp.y_sort
 }
 
 // ---------- Component ----------

@@ -59,6 +59,11 @@ pub fn (mut p Pickup) update(dt f32) {
 		mut fx := make_sparkle(p.effect, me)
 		world.add_child(mut fx)
 	}
+	if p.value >= 10 {
+		if mut cam := sc.active_camera() {
+			cam.shake(6, 0.3) // big coins give a little kick
+		}
+	}
 	p.node.destroy()
 }
 
@@ -85,6 +90,7 @@ fn make_sparkle(tex assets.AssetRef[assets.Texture], at core.Vec2) &core.Node {
 		auto_destroy: true
 	})
 	n.position = at
+	n.z_index = 1 // over the y-sorted World (trees, the player)
 	return n
 }
 
