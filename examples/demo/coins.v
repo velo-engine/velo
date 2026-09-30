@@ -5,6 +5,7 @@ import rand
 import velo.core
 import velo.assets
 import velo.render
+import velo.audio
 
 // Bob — bobs up and down.
 pub struct Bob {
@@ -58,6 +59,12 @@ pub fn (mut p Pickup) update(dt f32) {
 		mut world := sc.find('World') or { sc.root }
 		mut fx := make_sparkle(p.effect, me)
 		world.add_child(mut fx)
+	}
+	if sfx_node := sc.find('Audio/Coin') {
+		if mut sfx := sfx_node.get_component[audio.AudioSource]() {
+			sfx.pitch = if p.value >= 10 { 0.75 } else { 0.95 + rand.f32() * 0.1 } // big coins sound deeper
+			sfx.play_one_shot() // overlaps when coins are picked up quickly
+		}
 	}
 	if p.value >= 10 {
 		if mut cam := sc.active_camera() {

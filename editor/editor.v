@@ -6,6 +6,7 @@ import velo.core
 import velo.assets
 import velo.serialize
 import velo.render
+import velo.audio
 import velo.scenedoc
 
 // Scene/prefab editor: Hierarchy + Scene view + Inspector + Assets, with test runs (Play) right inside the editor.
@@ -139,6 +140,7 @@ pub fn new(cfg Config) !&Editor {
 	mut db := assets.open(cfg.assets_dir)!
 	mut reg := serialize.new_registry()
 	render.register_builtins(mut reg)
+	audio.register_builtins(mut reg)
 	return &Editor{
 		cfg:        cfg
 		db:         db
@@ -162,6 +164,7 @@ pub fn (mut e Editor) run() {
 		init_fn:      on_init
 		frame_fn:     on_frame
 		event_fn:     on_event
+		cleanup_fn:   on_cleanup
 		user_data:    e
 	)
 	e.ui.ctx = e.ctx
@@ -171,6 +174,7 @@ pub fn (mut e Editor) run() {
 fn on_init(mut e Editor) {
 	e.renderer = render.new_renderer(e.ctx, e.db)
 	e.renderer.show_shapes = true
+	audio.start() // sounds play while playing the scene
 	if e.cfg.scene != '' {
 		e.open_doc(e.cfg.scene)
 	}
@@ -179,6 +183,10 @@ fn on_init(mut e Editor) {
 	}
 	e.frame_all()
 	e.last_ticks = time.ticks()
+}
+
+fn on_cleanup(mut _ Editor) {
+	audio.shutdown()
 }
 
 // ---------- Loop ----------
@@ -202,6 +210,7 @@ fn on_frame(mut e Editor) {
 	if e.play != unsafe { nil } {
 		e.play.update(dt)
 		e.play_input.end_frame()
+		audio.pump()
 	} else if e.doc != unsafe { nil } {
 		preview_tree(mut e.doc.scene.root, dt)
 	}
@@ -266,6 +275,10 @@ fn (mut e Editor) poll_assets() {
 	events, rebuilt := e.doc.poll()
 	for ev in events {
 		e.renderer.on_asset_event(ev)
+		if ev.kind in [.unloaded, .removed] {
+			mut m := audio.mixer()
+			m.forget(ev.id)
+		}
 		if ev.kind != .unloaded {
 			println('[editor] ${ev.kind}: ${ev.path}')
 		}
@@ -649,6 +662,9 @@ fn (mut e Editor) stop_play() {
 		return
 	}
 	e.play.unload()
+	mut m := audio.mixer()
+	m.stop_all() // one-shots and music started from code
+	audio.pump()
 	e.play = unsafe { nil }
 	e.play_selected = unsafe { nil }
 	e.set_status('stopped', false)

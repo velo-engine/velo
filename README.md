@@ -44,6 +44,7 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   assets/     AssetDatabase: .meta, stable IDs, AssetRef[T], reference counting, dependency graph, hot reload
   serialize/  .scene format, parser, reflection, Registry, SceneLoader (prefab + override), writer
   render/     Renderer (gg): draw order (z_index, y_sort, Canvas), Sprite, SpriteAnimator, Label, ParticleSystem, TileMap, UI components (Button, ScrollView, Widget, Layout, ...)
+  audio/      AudioSource, Mixer (buses, fades, streaming .ogg), output device (sokol_audio)
   physics/    Box2D v3 bindings: PhysicsWorld, RigidBody, Box/Circle/CapsuleCollider (optional, no GPU needed)
   kine2d/     plays Kine2D editor exports (.skel.json + .atlas.json + .png): the Kine2D component (optional)
   app/        game loop, input, hot reload
@@ -55,7 +56,7 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   tests/          unit tests
 ```
 
-Module dependency order (no cycles): `assets` ← `core` ← `serialize` ← `render` ← `app`,
+Module dependency order (no cycles): `assets` ← `core` ← `serialize` ← `render`/`audio` ← `app`,
 and `serialize` ← `scenedoc` ← `editor` (the editor also uses `render`), and `serialize` ← `physics`, `render` ← `kine2d` (imported by the game only).
 As a result `core`, `assets`, `serialize`, `scenedoc`, `physics` run without a GPU (tests, tools, servers).
 
@@ -312,6 +313,47 @@ the whole `tiles` list. The Inspector shows a `[]int` field such as `tiles` as a
 Limits: one layer per TileMap (stack nodes for layers), no per-tile flip/rotation, autotiling, animated tiles or
 tile collisions yet (use colliders on child nodes); `tiles` is saved on one line.
 
+## Audio
+
+`AudioSource` plays a `.wav` (PCM 8/16/24/32-bit or float) or `.ogg` (Vorbis) clip. Sound works in the game, in the
+editor's Play mode, on phones and on the web; `app` opens the output device and mixes once per frame.
+
+```
+node Audio {
+  node Music { AudioSource { clip = @asset("5c01a7d4")  looping = true  bus = "music"  volume = 0.35 } }
+  node Coin  { AudioSource { clip = @asset("5c01a7d3")  play_on_start = false } }
+}
+```
+
+| Field | What it does |
+|---|---|
+| `clip` | the sound file |
+| `volume`, `pitch`, `looping` | `pitch` is the playback speed (2 = an octave up) |
+| `play_on_start` | play when the node starts (on by default) |
+| `bus` | volume group: `sfx` (default), `music`, `ui`, `voice` |
+| `spatial`, `range` | quieter with distance from the camera center (silent at `range` world units) and panned to its side |
+| `fade_out` | seconds to fade out when stopped or destroyed, instead of cutting off |
+
+From code: `src.play()`, `src.play_one_shot()` (overlapping copies: rapid pickups, footsteps), `src.stop()`, `src.pause()`,
+`src.resume()`, `src.is_playing()`, `src.set_clip(ref)`. Global control goes through `audio.mixer()`:
+`set_bus_volume('music', 0.5)` (options screens), `master`, `set_paused(true)`, `stop_all()`,
+`play_music(sound, volume, fade)` (cross-fades from the current music), `load(clip)` then `play(sound, volume: .., pan: ..)`.
+The game pauses all sound while it is in the background or minimized.
+
+Long `.ogg` files (over 20 seconds, or `stream: true` in the `.meta`) are decoded while they play instead of all at
+once, so a 3-minute track does not take 60 MB; `stream: false` forces full decoding. Short effects should stay `.wav` or
+short `.ogg`. Editing a sound file hot reloads it (the next play uses the new file). The demo's music and coin sounds
+(`examples/demo/assets/sounds`, generated for this repo) show both uses; big coins play the pickup lower.
+
+How it works: `velo.audio` pushes samples to [sokol_audio](https://github.com/floooh/sokol) from the game loop
+(no audio-thread callback touches V memory, which the GC and the web could not handle), about 45 ms ahead;
+`.ogg` is decoded by stb_vorbis compiled from V's sources. The mixer (`audio.Mixer`) has no device dependency and is
+unit tested by mixing into an array.
+
+Limits: no `.mp3`, no effects (reverb, filters), no Doppler or 3D; seeking is not available; 64 sounds at once; a
+frame taking longer than ~45 ms can make the sound stutter. Mobile builds link AudioToolbox/AVFoundation (iOS) and
+AAudio (Android 8+), untested on devices so far.
+
 ## Physics
 
 2D physics with [Box2D](https://box2d.org) v3. It is opt-in: register the components with the game's own ones
@@ -539,7 +581,7 @@ files written at runtime (settings, saves) live in memory and are lost on reload
 ## Current limitations and next steps
 
 - Scene hot reload **resets game state** (score, positions) because the whole tree is rebuilt.
-- Not yet available: audio (the `AudioClip` asset kind exists), physics joints,
+- Not yet available: physics joints,
   removing prefab components via override, a `library/` directory caching import results.
 - Mobile: Android ignores `app.orientation` (it follows the device), there is no screen-size scaling (the game sees the
   screen size in points), and the iOS build patches two V 0.5.2 issues in the generated C (see `tools/velo/ios.v`).

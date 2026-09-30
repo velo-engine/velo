@@ -7,6 +7,7 @@ import velo.core
 import velo.assets
 import velo.serialize
 import velo.render
+import velo.audio
 
 pub struct Config {
 pub:
@@ -58,6 +59,7 @@ pub fn new(config Config) !&App {
 	mut db := assets.open(cfg.assets_dir)!
 	mut reg := serialize.new_registry()
 	render.register_builtins(mut reg)
+	audio.register_builtins(mut reg)
 	mut a := &App{
 		cfg:      cfg
 		db:       db
@@ -100,6 +102,7 @@ pub fn (mut a App) run() {
 		font_path:    if a.cfg.font_path != '' { a.cfg.font_path } else { system_font() }
 		init_fn:      on_init
 		frame_fn:     on_frame
+		cleanup_fn:   on_cleanup
 		event_fn:     on_event
 		user_data:    a
 	)
@@ -113,6 +116,7 @@ pub fn (mut a App) run() {
 
 fn on_init(mut a App) {
 	a.renderer = render.new_renderer(a.ctx, a.db)
+	audio.start()
 	a.load_scene(a.cfg.scene) or {
 		eprintln('[velo] scene load error: ${err}')
 		exit(1)
@@ -149,6 +153,7 @@ fn on_frame(mut a App) {
 	a.scene.safe_insets = a.safe_insets
 	a.scene.update(dt)
 	a.input.end_frame()
+	audio.pump()
 
 	a.ctx.begin()
 	a.renderer.draw_scene(a.scene)
@@ -163,7 +168,7 @@ fn on_frame(mut a App) {
 	a.ctx.end()
 
 	for ev in a.db.drain_events() {
-		a.renderer.on_asset_event(ev)
+		a.on_asset_event(ev)
 	}
 	if a.cfg.hot_reload {
 		a.reload_timer += dt
@@ -171,6 +176,19 @@ fn on_frame(mut a App) {
 			a.reload_timer = 0
 			a.check_hot_reload()
 		}
+	}
+}
+
+fn on_cleanup(mut _ App) {
+	audio.shutdown()
+}
+
+// on_asset_event: the renderer frees GPU images, the mixer forgets decoded sounds.
+fn (mut a App) on_asset_event(ev assets.AssetEvent) {
+	a.renderer.on_asset_event(ev)
+	if ev.kind in [.unloaded, .removed] {
+		mut m := audio.mixer()
+		m.forget(ev.id)
 	}
 }
 
@@ -205,7 +223,7 @@ fn (mut a App) check_hot_reload() {
 	mut reload := false
 	used := a.db.dependencies_deep(a.scene_id)
 	for ev in events {
-		a.renderer.on_asset_event(ev)
+		a.on_asset_event(ev)
 		if ev.kind == .unloaded {
 			continue
 		}
@@ -257,6 +275,14 @@ fn on_event(e &gg.Event, mut a App) {
 		}
 		.touches_began, .touches_moved, .touches_ended, .touches_cancelled {
 			a.on_touch(e)
+		}
+		.suspended, .iconified {
+			mut m := audio.mixer()
+			m.set_paused(true) // app in the background (phones) or minimized
+		}
+		.resumed, .restored {
+			mut m := audio.mixer()
+			m.set_paused(false)
 		}
 		else {}
 	}

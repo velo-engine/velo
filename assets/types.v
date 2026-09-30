@@ -113,12 +113,15 @@ pub mut:
 	version int
 }
 
-// AudioClip — currently only holds metadata; the audio system will be added in a later stage.
+// AudioClip — a sound file (.wav or .ogg). The velo.audio module decodes it when it is first played.
 pub struct AudioClip {
 pub:
 	id   string
 	path string
 pub mut:
-	bytes   int
+	bytes int
+	// From .meta: `stream: true` decodes while playing (long music), `false` decodes it all up front;
+	// '' = automatic (streams .ogg files longer than 20 seconds).
+	stream  string
 	version int
 }

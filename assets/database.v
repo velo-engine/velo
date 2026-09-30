@@ -154,11 +154,7 @@ pub fn (mut db AssetDatabase) load[T](key string) !&T {
 	} $else $if T is AudioClip {
 		db.expect_kind(e, .audio, 'AudioClip')!
 		if e.audio == unsafe { nil } {
-			e.audio = &AudioClip{
-				id:    e.id
-				path:  db.abs_path(e)
-				bytes: int(os.file_size(db.abs_path(e)))
-			}
+			e.audio = db.read_audio(e)
 		}
 		e.refs++
 		return e.audio
@@ -415,6 +411,24 @@ fn (mut db AssetDatabase) reload_in_place(mut e AssetEntry) ! {
 	if e.text != unsafe { nil } {
 		e.text.text = os.read_file(db.abs_path(e))!
 		e.text.version++
+	}
+	if e.audio != unsafe { nil } {
+		fresh := db.read_audio(e)
+		v := e.audio.version
+		unsafe {
+			*e.audio = *fresh
+		}
+		e.audio.version = v + 1
+	}
+}
+
+fn (db &AssetDatabase) read_audio(e &AssetEntry) &AudioClip {
+	abs := db.abs_path(e)
+	return &AudioClip{
+		id:     e.id
+		path:   abs
+		bytes:  int(os.file_size(abs))
+		stream: e.meta.settings['stream'] or { '' }
 	}
 }
 

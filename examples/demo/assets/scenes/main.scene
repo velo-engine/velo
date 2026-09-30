@@ -86,6 +86,10 @@ node Main {
       position = [482.663, 205.8465]
     }
   }
+  node Audio {
+    node Music { AudioSource { clip = @asset("5c01a7d4")  looping = true  bus = "music"  volume = 0.35 } }
+    node Coin { AudioSource { clip = @asset("5c01a7d3")  play_on_start = false  volume = 0.6 } }   # played by Pickup
+  }
   node HUD {
     Canvas { }                                                        # screen space: the camera does not move it
     node TopBar {                                                     # reaches the real screen edges, under a notch

@@ -45,7 +45,7 @@ pub fn (mut c Camera) on_load() {
 pub fn (mut c Camera) on_destroy() {
 	if c.node.scene != unsafe { nil } && c.registered {
 		mut s := c.node.scene
-		s.cameras = s.cameras.filter(it != c)
+		s.cameras = s.cameras.filter(voidptr(it) != voidptr(c)) // == would compare contents
 	}
 	c.registered = false
 }
