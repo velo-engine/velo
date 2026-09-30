@@ -45,3 +45,30 @@ pub fn (mut l PickupLog) add(text string) {
 	}
 	sv.scroll_to_bottom()
 }
+
+// PauseControls — P pauses the game (scene.paused), T toggles slow motion (scene.time_scale).
+// It lives on the HUD, which has `unscaled_time`, so it (and the HUD's buttons and scroll view) keeps working while paused.
+pub struct PauseControls {
+	core.Component
+pub mut:
+	slow_motion f32    = 0.3
+	label       string = 'Paused' // child shown while paused
+}
+
+pub fn (mut c PauseControls) update(dt f32) {
+	input := c.input()
+	mut sc := c.scene()
+	if input.was_pressed(.p) {
+		sc.paused = !sc.paused
+		if mut label := c.node.find(c.label) {
+			label.active = sc.paused
+			if sc.paused {
+				label.scale = core.vec2(0.6, 0.6)
+				label.tween().scale_to(core.vec2(1, 1), 0.35, .elastic_out)
+			}
+		}
+	}
+	if input.was_pressed(.t) {
+		sc.time_scale = if sc.time_scale < 1 { f32(1) } else { c.slow_motion }
+	}
+}

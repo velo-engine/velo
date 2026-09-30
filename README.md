@@ -98,6 +98,45 @@ Common APIs: `node.get_component[T]()`, `node.add_component(&T{...})`, `node.fin
 V's reflection (`$for field in T.fields`) handles reading/writing fields, so **no serialization code is needed**.
 Supported field types: `f32 f64 int bool string []int core.Vec2 core.Color assets.AssetRef[...]`.
 
+## Time, timers and tweens
+
+`scene.time_scale` changes the game speed (0.5 = slow motion) and `scene.paused = true` stops components, timers,
+tweens and physics; drawing, input and sound go on. A node with `unscaled_time = true` (inherited by its children)
+ignores both: put it on the pause menu or HUD so they keep working. `update(dt)` receives the scaled time;
+`scene.time` / `scene.real_time` and `scene.dt` / `scene.unscaled_dt` give both.
+
+Timers and tweens belong to a node: they run in its update (so they pause with it and use its time) and end
+with it. Timers due in the same frame run in the order they were made.
+
+```v
+node.after(2, fn [mut node] () { node.destroy() })
+mut t := node.every(0.5, fn [mut spawner] () { spawner.spawn() })   // t.cancel() stops it
+scene.after(1, fn () { println('one second of game time later') })   // on the scene root
+
+node.tween()
+	.move_by(core.vec2(0, -40), 0.3, .quad_out).also().scale_to(core.vec2(1.5, 1.5), 0.3, .back_out)
+	.wait(0.5)
+	.call(fn [mut node] () { node.destroy() })
+render.fade_to(mut node, 0, 0.4, .quad_in)            // alpha of the node's Sprite / Label / Panel / TileMap
+render.color_to(mut node, core.rgba(255, 80, 80, 255), 0.2, .linear)
+```
+
+| Tween | |
+|---|---|
+| `move_to` / `move_by`, `rotate_to` / `rotate_by`, `scale_to` | node transform (absolute, or relative to where the step starts) |
+| `value(get, set, to, seconds, ease)` | any number, e.g. a ProgressBar's `progress`; `progress(set, seconds, ease)` passes 0..1 |
+| `also()` | the next step runs at the same time as the previous one (each keeps its own duration) |
+| `wait(seconds)`, `call(fn)`, `delay(seconds)` | pause, run code, wait before starting |
+| `repeat(times, yoyo)`, `on_complete(fn)` | `-1` = forever; `yoyo` plays every other pass backwards |
+| `kill()`, `pause()`, `resume()`, `finish()`, `is_playing()` | `finish` jumps to the end; `node.kill_tweens()` stops all of a node's tweens |
+
+Eases: `linear`, `quad/cubic/sine/expo` `_in/_out/_in_out`, `back_in/out/in_out` (overshoot), `elastic_out`,
+`bounce_out`. Starting values are read when each step starts, so steps build on each other. In the demo, coins pop
+and fade when picked up, the score bounces, **P** pauses (the HUD has `unscaled_time`) and **T** toggles slow motion.
+
+Limits: a Button re-tints its target every frame (fade something else); fading a node does not fade its children.
+Closures that capture variables should not be created every frame on the web (see "Web").
+
 ## Scene = Prefab
 
 There is only **one** file format. A scene is simply a prefab chosen as the root when running.
@@ -110,7 +149,7 @@ node Coin {
 }
 ```
 
-- `node Name { ... }` — a node; node properties: `position rotation scale active z_index y_sort` (see "Camera and draw order")
+- `node Name { ... }` — a node; node properties: `position rotation scale active z_index y_sort unscaled_time` (see "Camera and draw order")
 - `ComponentName { field = value }` — a component
 - `node X from @asset("id") { ... }` — an instance of another prefab; the block inside is an **override**
 - A prefab **variant** = a prefab whose root is `from` another prefab (see `prefabs/big_coin.scene`). No separate concept needed.

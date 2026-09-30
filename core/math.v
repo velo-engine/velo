@@ -76,6 +76,23 @@ pub mut:
 	a u8 = 255
 }
 
+// lerp blends from `a` to `b` (t = 0..1, each channel rounded).
+pub fn (a Color) lerp(b Color, t f32) Color {
+	return Color{lerp_u8(a.r, b.r, t), lerp_u8(a.g, b.g, t), lerp_u8(a.b, b.b, t), lerp_u8(a.a,
+		b.a, t)}
+}
+
+fn lerp_u8(a u8, b u8, t f32) u8 {
+	v := f32(a) + (f32(b) - f32(a)) * t + 0.5
+	return if v <= 0 {
+		u8(0)
+	} else if v >= 255 {
+		u8(255)
+	} else {
+		u8(v)
+	}
+}
+
 pub fn rgba(r u8, g u8, b u8, a u8) Color {
 	return Color{r, g, b, a}
 }

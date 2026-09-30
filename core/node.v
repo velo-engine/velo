@@ -14,14 +14,19 @@ pub mut:
 	z_index int
 	// Draw the children ordered by their world y (lower on screen = in front), e.g. a top-down game's
 	// characters and trees. Each child moves with its whole subtree.
-	y_sort     bool
-	parent     &Node = unsafe { nil }
-	children   []&Node
-	components []IComponent
-	scene      &Scene = unsafe { nil }
-	destroyed  bool
+	y_sort bool
+	// This node and its children ignore Scene.time_scale and Scene.paused: they get real time and keep
+	// updating while the game is paused (pause menus, UI animations).
+	unscaled_time bool
+	parent        &Node = unsafe { nil }
+	children      []&Node
+	components    []IComponent
+	scene         &Scene = unsafe { nil }
+	destroyed     bool
 	// ID of the prefab that created this node ('' if not an instance). Used when saving to write only the overrides.
 	prefab_id string
+	tweens    []&Tween // see tween()
+	timers    []&Timer // see after() / every()
 }
 
 pub fn Node.new(name string) &Node {
@@ -297,25 +302,33 @@ fn (mut n Node) detach_from_scene() {
 	n.scene = unsafe { nil }
 }
 
-fn (mut n Node) tick(dt f32) {
+// tick updates the node's components, timers and tweens, then its children. `dt` is scaled time (zero while
+// `paused`); `real` is the unscaled frame time, used from a node with `unscaled_time` down.
+fn (mut n Node) tick(dt f32, real f32, paused bool) {
 	if !n.active || n.destroyed {
 		return
 	}
-	// Snapshot the counts: components/children added during this frame run starting next frame.
-	count := n.components.len
-	for i in 0 .. count {
-		if !n.components[i].enabled {
-			continue
+	d := if n.unscaled_time { real } else { dt }
+	p := paused && !n.unscaled_time
+	if !p {
+		// Snapshot the counts: components/children added during this frame run starting next frame.
+		count := n.components.len
+		for i in 0 .. count {
+			if !n.components[i].enabled {
+				continue
+			}
+			if !n.components[i].started {
+				n.components[i].started = true
+				n.components[i].start()
+			}
+			n.components[i].update(d)
 		}
-		if !n.components[i].started {
-			n.components[i].started = true
-			n.components[i].start()
-		}
-		n.components[i].update(dt)
+		n.tick_timers(d)
+		n.tick_tweens(d)
 	}
 	mut kids := n.children.clone()
 	for mut ch in kids {
-		ch.tick(dt)
+		ch.tick(d, real, p)
 	}
 }
 

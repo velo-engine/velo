@@ -735,6 +735,14 @@ fn (mut e Editor) draw_inspector(r Rect) {
 		e.doc.set_node_prop(mut n, 'y_sort', serialize.Value(toggled), true) or { e.report(err) }
 	}
 	y += row_h + 3
+	e.prop_label(x, y, 'unscaled_time', e.is_overridden(n, -1, 'unscaled_time', ro))
+	if e.ui.checkbox(Rect{x + label_w, y, 40, row_h}, n.unscaled_time, !ro) {
+		toggled := !n.unscaled_time
+		e.doc.set_node_prop(mut n, 'unscaled_time', serialize.Value(toggled), true) or {
+			e.report(err)
+		}
+	}
+	y += row_h + 3
 	y += 6
 
 	// ---- Component ----

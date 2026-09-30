@@ -11,12 +11,21 @@ pub type InstantiateFn = fn (key string) !&Node
 @[heap]
 pub struct Scene {
 pub mut:
-	name            string
-	root            &Node
-	input           &Input
-	assets          &assets.AssetDatabase = unsafe { nil }
-	time            f64
-	frame           u64
+	name      string
+	root      &Node
+	input     &Input
+	assets    &assets.AssetDatabase = unsafe { nil }
+	time      f64 // seconds of game time (scaled, stops while paused)
+	real_time f64 // seconds since the scene started, whatever time_scale and paused say
+	frame     u64
+	// Game speed: 0.5 = slow motion, 2 = fast forward, 0 = frozen (components still update, with dt 0).
+	time_scale f32 = 1
+	// Paused: components, timers and tweens stop (physics too), except under nodes with `unscaled_time`.
+	// Drawing, input and sound go on.
+	paused bool
+	// This frame's time step, scaled (what update(dt) receives) and real.
+	dt              f32
+	unscaled_dt     f32
 	pending_destroy []&Node
 	instantiate_fn  InstantiateFn = unsafe { nil }
 	// The visible game screen, in screen units (UI Widgets without a sized parent align to it): its top-left
@@ -69,12 +78,22 @@ pub fn (mut s Scene) instantiate(key string, mut parent Node) !&Node {
 }
 
 // update runs one frame: start()/update() for every component, then processes destroyed nodes.
-pub fn (mut s Scene) update(dt f32) {
+// update runs one frame of `real_dt` seconds: time_scale and paused turn it into game time.
+pub fn (mut s Scene) update(real_dt f32) {
+	dt := if s.paused { f32(0) } else { real_dt * if s.time_scale > 0 {
+			s.time_scale
+		} else {
+			f32(0)
+		}
+	 }
+	s.dt = dt
+	s.unscaled_dt = real_dt
 	s.time += dt
+	s.real_time += real_dt
 	s.frame++
-	s.root.tick(dt)
+	s.root.tick(dt, real_dt, s.paused)
 	if mut cam := s.active_camera() {
-		cam.late_update(dt)
+		cam.late_update(if cam.node.unscaled_time { real_dt } else { dt })
 	}
 	s.flush_destroyed()
 }

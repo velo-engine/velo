@@ -27,7 +27,7 @@ pub fn (mut b Bob) update(dt f32) {
 	b.node.position.y = b.base_y + f32(math.sin(t * b.speed + b.phase)) * b.amplitude
 }
 
-// Pickup — when the player touches it: add score, spawn an effect, then destroy itself.
+// Pickup — when the player touches it: add score, spawn an effect, then pops (tween) and destroys itself.
 pub struct Pickup {
 	core.Component
 pub mut:
@@ -71,7 +71,18 @@ pub fn (mut p Pickup) update(dt f32) {
 			cam.shake(6, 0.3) // big coins give a little kick
 		}
 	}
-	p.node.destroy()
+	// pop: stop counting and bobbing, grow and fade out, then go away
+	p.enabled = false
+	if mut bob := p.node.get_component[Bob]() {
+		bob.enabled = false
+	}
+	node := p.node
+	grow := p.node.scale.mul(1.8)
+	render.fade_to(mut p.node, 0, 0.25, .quad_in)
+	p.node.tween().scale_to(grow, 0.25, .back_out).call(fn [node] () {
+		mut n := unsafe { node }
+		n.destroy()
+	})
 }
 
 // make_sparkle — a "prefab built in code": handy for small effects, type-checked by the compiler.
@@ -148,6 +159,11 @@ pub fn (mut b ScoreBoard) start() {
 pub fn (mut b ScoreBoard) add(v int) {
 	b.score += v
 	b.refresh()
+	// a little bounce on every point
+	b.node.kill_tweens()
+	b.node.scale = core.vec2(1, 1)
+	b.node.tween().scale_to(core.vec2(1.3, 1.3), 0.07, .quad_out).scale_to(core.vec2(1, 1), 0.3,
+		.back_out)
 }
 
 fn (mut b ScoreBoard) refresh() {

@@ -254,6 +254,7 @@ pub fn (mut d Document) node_prop_overridden(n &core.Node, prop string) bool {
 		'active' { r.active != n.active }
 		'z_index' { r.z_index != n.z_index }
 		'y_sort' { r.y_sort != n.y_sort }
+		'unscaled_time' { r.unscaled_time != n.unscaled_time }
 		else { false }
 	}
 }
@@ -410,12 +411,13 @@ pub fn (mut d Document) move_sibling(mut n core.Node, delta int) ! {
 pub fn (mut d Document) set_node_prop(mut n core.Node, prop string, v serialize.Value, record bool) ! {
 	d.expect_mine(n)!
 	mut tmp := core.Node{
-		position: n.position
-		rotation: n.rotation
-		scale:    n.scale
-		active:   n.active
-		z_index:  n.z_index
-		y_sort:   n.y_sort
+		position:      n.position
+		rotation:      n.rotation
+		scale:         n.scale
+		active:        n.active
+		z_index:       n.z_index
+		y_sort:        n.y_sort
+		unscaled_time: n.unscaled_time
 	}
 	serialize.apply_node_props(mut tmp, {
 		prop: v
@@ -430,6 +432,7 @@ pub fn (mut d Document) set_node_prop(mut n core.Node, prop string, v serialize.
 	n.active = tmp.active
 	n.z_index = tmp.z_index
 	n.y_sort = tmp.y_sort
+	n.unscaled_time = tmp.unscaled_time
 }
 
 // ---------- Component ----------

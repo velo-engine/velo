@@ -166,14 +166,29 @@ pub fn direct_child(n &core.Node, name string) ?&core.Node {
 pub fn apply_node_props(mut n core.Node, props map[string]Value) ! {
 	for k, v in props {
 		match k {
-			'position' { n.position = v.as_vec2()! }
-			'rotation' { n.rotation = f32(v.as_f64()!) }
-			'scale' { n.scale = v.as_vec2()! }
-			'active' { n.active = v.as_bool()! }
-			'z_index' { n.z_index = int(v.as_f64()!) }
-			'y_sort' { n.y_sort = v.as_bool()! }
+			'position' {
+				n.position = v.as_vec2()!
+			}
+			'rotation' {
+				n.rotation = f32(v.as_f64()!)
+			}
+			'scale' {
+				n.scale = v.as_vec2()!
+			}
+			'active' {
+				n.active = v.as_bool()!
+			}
+			'z_index' {
+				n.z_index = int(v.as_f64()!)
+			}
+			'y_sort' {
+				n.y_sort = v.as_bool()!
+			}
+			'unscaled_time' {
+				n.unscaled_time = v.as_bool()!
+			}
 			else {
-				return error('node has no property "${k}" (only position, rotation, scale, active, z_index, y_sort)')
+				return error('node has no property "${k}" (only position, rotation, scale, active, z_index, y_sort, unscaled_time)')
 			}
 		}
 	}

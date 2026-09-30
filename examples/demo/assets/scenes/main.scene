@@ -91,7 +91,9 @@ node Main {
     node Coin { AudioSource { clip = @asset("5c01a7d3")  play_on_start = false  volume = 0.6 } }   # played by Pickup
   }
   node HUD {
+    unscaled_time = true                                              # keeps running while paused (P)
     Canvas { }                                                        # screen space: the camera does not move it
+    PauseControls { }
     node TopBar {                                                     # reaches the real screen edges, under a notch
       position = [480, 30]
       UITransform { size = [960, 60] }
@@ -106,7 +108,7 @@ node Main {
     }
     node Help {
       position = [20, 526]
-      Label { text = "Arrows / WASD / joystick: move    R: scatter more coins    F1: debug    Esc: quit"  size = 18  color = [255, 255, 255, 210]  valign = "bottom" }
+      Label { text = "Arrows / WASD / joystick: move    R: more coins    P: pause    T: slow motion    F1: debug    Esc: quit"  size = 18  color = [255, 255, 255, 210]  valign = "bottom" }
       Widget { align_left = true  left = 20  align_bottom = true  bottom = 14 }
     }
     node MoreCoins {
@@ -146,6 +148,13 @@ node Main {
           Panel { color = [255, 255, 255, 170]  radius = 28 }
         }
       }
+    }
+    node Paused {
+      active = false                                                  # shown by PauseControls
+      UITransform { size = [260, 70] }
+      Widget { align_center_x = true  align_center_y = true }
+      Panel { color = [0, 0, 0, 160]  radius = 10 }
+      node Text { Label { text = "PAUSED"  size = 36  align = "center"  valign = "middle" } }
     }
     node Touches {
       TouchMarkers {  }

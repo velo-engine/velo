@@ -757,6 +757,7 @@ fn node_prop_value(n &core.Node, prop string) serialize.Value {
 		'rotation' { serialize.Value(f64(n.rotation)) }
 		'z_index' { serialize.Value(f64(n.z_index)) }
 		'y_sort' { serialize.Value(n.y_sort) }
+		'unscaled_time' { serialize.Value(n.unscaled_time) }
 		'scale' { serialize.vec2_value(n.scale) }
 		else { serialize.Value(n.active) }
 	}

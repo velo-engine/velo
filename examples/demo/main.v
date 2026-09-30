@@ -46,5 +46,6 @@ fn register_components(mut r serialize.Registry) {
 	r.register[ScoreBoard]()
 	r.register[SpawnButton]()
 	r.register[PickupLog]()
+	r.register[PauseControls]()
 	r.register[TouchMarkers]()
 }

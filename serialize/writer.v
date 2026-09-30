@@ -53,6 +53,9 @@ fn (mut l SceneLoader) write_node(n &core.Node, reference ?&core.Node, depth int
 	if n.y_sort != base.y_sort {
 		body << '${pad}  y_sort = ${n.y_sort}'
 	}
+	if n.unscaled_time != base.unscaled_time {
+		body << '${pad}  unscaled_time = ${n.unscaled_time}'
+	}
 
 	// Component
 	for c in n.components {
@@ -118,8 +121,8 @@ pub fn matching_child(ref ?&core.Node, ch &core.Node) ?&core.Node {
 }
 
 fn ident_or_quoted(s string) string {
-	if s.len > 0 && (s[0].is_letter() || s[0] == `_`)
-		&& s.bytes().all(it.is_letter() || it.is_digit() || it == `_`) && s !in ['node', 'from'] {
+	if s.len > 0 && (s[0].is_letter() || s[0] == `_`) && s.bytes().all(it.is_letter()
+		|| it.is_digit() || it == `_`) && s !in ['node', 'from'] {
 		return s
 	}
 	return Value(s).to_text()
