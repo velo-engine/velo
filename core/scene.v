@@ -19,8 +19,11 @@ pub mut:
 	frame           u64
 	pending_destroy []&Node
 	instantiate_fn  InstantiateFn = unsafe { nil }
-	// Size of the game screen, in world units (UI Widgets without a sized parent align to it). Set by App/editor.
-	view_size Vec2 = Vec2{960, 540}
+	// The visible game screen, in screen units (UI Widgets without a sized parent align to it): its top-left
+	// corner and size. With the default scale mode the design area (e.g. 0,0..960,540) is always inside it and
+	// a wider or taller screen shows more around it (so view_origin can be negative). Set by App/editor.
+	view_origin Vec2
+	view_size   Vec2 = Vec2{960, 540}
 	// How far in from each screen edge the safe area starts (notches, rounded corners, system bars), in world units.
 	// Set by App on phones; zero on desktop. Widgets aligned to the screen stay inside it (see render.Widget.safe_area).
 	safe_insets Insets
@@ -76,10 +79,16 @@ pub fn (mut s Scene) update(dt f32) {
 	s.flush_destroyed()
 }
 
+// view_center: the middle of the visible screen, in screen units (where a camera's target is shown).
+pub fn (s &Scene) view_center() Vec2 {
+	return s.view_origin + s.view_size.mul(0.5)
+}
+
 // active_camera: the first enabled Camera on an active node (none = world coordinates are screen coordinates).
 pub fn (s &Scene) active_camera() ?&Camera {
 	for c in s.cameras {
-		if c.enabled && c.node != unsafe { nil } && !c.node.destroyed && c.node.is_active_in_hierarchy() {
+		if c.enabled && c.node != unsafe { nil } && !c.node.destroyed
+			&& c.node.is_active_in_hierarchy() {
 			return c
 		}
 	}

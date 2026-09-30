@@ -625,8 +625,9 @@ fn (w &Widget) parent_rect() ?Rect {
 	inv := p.screen_matrix().inverse()
 	sc := w.node.scene
 	ins := if w.safe_area { sc.safe_insets } else { core.Insets{} }
-	a := inv.apply(core.vec2(ins.left, ins.top))
-	b := inv.apply(core.vec2(sc.view_size.x - ins.right, sc.view_size.y - ins.bottom))
+	o := sc.view_origin
+	a := inv.apply(core.vec2(o.x + ins.left, o.y + ins.top))
+	b := inv.apply(core.vec2(o.x + sc.view_size.x - ins.right, o.y + sc.view_size.y - ins.bottom))
 	return Rect{math.min(a.x, b.x), math.min(a.y, b.y), math.abs(b.x - a.x), math.abs(b.y - a.y)}
 }
 

@@ -42,18 +42,20 @@ pub fn new_renderer(ctx &gg.Context, db &assets.AssetDatabase) &Renderer {
 	}
 }
 
-pub fn (mut r Renderer) draw_scene(scene &core.Scene) {
-	r.draw_tree(scene.root, core.Affine2.identity(), scene.view_matrix())
+// draw_scene draws the scene; `window` maps screen units to window points (see core.ScreenFit.to_window).
+pub fn (mut r Renderer) draw_scene(scene &core.Scene, window core.Affine2) {
+	r.draw_tree(scene.root, window, scene.view_matrix())
 	ins := scene.safe_insets
 	if r.debug && !ins.is_zero() {
+		o := scene.view_origin
 		sz := scene.view_size
-		r.ctx.draw_rect_empty(ins.left, ins.top, sz.x - ins.left - ins.right, sz.y - ins.top -
-			ins.bottom, gg.Color{255, 80, 80, 200})
+		r.draw_quad_empty(window, Rect{o.x + ins.left, o.y + ins.top, sz.x - ins.left - ins.right,
+			sz.y - ins.top - ins.bottom}, gg.Color{255, 80, 80, 200})
 	}
 }
 
 // draw_tree draws the node tree. `camera` maps the world to the screen (scene.view_matrix(); nodes under a
-// Canvas skip it) and `view` maps the screen into the window (the editor's pan/zoom; identity in the game).
+// Canvas skip it) and `view` maps the screen into the window (the scale mode in the game, pan/zoom in the editor).
 pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2, camera core.Affine2) {
 	r.draw_calls = 0
 	base := r.base_rect()

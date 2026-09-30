@@ -11,7 +11,7 @@ pub struct PlayOptions {
 pub:
 	volume  f32 = 1
 	pitch   f32 = 1 // playback speed: 2 = one octave up and twice as fast
-	pan     f32    // -1 = left, 0 = center, 1 = right
+	pan     f32 // -1 = left, 0 = center, 1 = right
 	looping bool
 	bus     string = 'sfx' // volume group, see Mixer.set_bus_volume
 	fade_in f32 // seconds to rise from silence
@@ -79,9 +79,7 @@ pub fn (mut m Mixer) load(clip &assets.AudioClip) !&Sound {
 			return s
 		}
 	}
-	decoded := decode_file(clip.path, clip.stream) or {
-		return error('${clip.path}: ${err.msg()}')
-	}
+	decoded := decode_file(clip.path, clip.stream) or { return error('${clip.path}: ${err.msg()}') }
 	s := &Sound{
 		...decoded
 		id:      clip.id

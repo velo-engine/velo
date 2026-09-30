@@ -63,7 +63,8 @@ fn (mut d OggDecoder) read(mut out []f32, at int, max_frames int) int {
 		}
 		return n
 	}
-	return C.stb_vorbis_get_samples_float_interleaved(d.f, 2, unsafe { &out[at * 2] }, max_frames * 2)
+	return C.stb_vorbis_get_samples_float_interleaved(d.f, 2, unsafe { &out[at * 2] },
+		max_frames * 2)
 }
 
 fn (mut d OggDecoder) rewind() {

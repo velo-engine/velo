@@ -149,6 +149,9 @@ fn main() {
 		title:      '{{name}}'
 		assets_dir: assets_dir
 		scene:      'scenes/main.scene'
+		width:      960 // design resolution: the screen the game is laid out for,
+		height:     540 // fitted to any window or phone (see scale_mode)
+		scale_mode: 'expand' // expand | fit | fill | width | height | none
 	) or {
 		eprintln(err)
 		exit(1)

@@ -10,10 +10,10 @@ fn C.velo_android_safe_insets(activity voidptr, out &int) int
 fn C.velo_ios_safe_insets(window voidptr, out &f64) int
 fn C.sapp_ios_get_window() voidptr
 
-// query_safe_insets returns the safe area insets in world units (`scale` = framebuffer pixels per world unit),
+// query_safe_insets returns the safe area insets in window points (`scale` = framebuffer pixels per point),
 // or none when the platform cannot tell yet.
 //
-// On desktop there is no safe area, but VELO_SAFE_AREA="left,top,right,bottom" (world units) fakes one,
+// On desktop there is no safe area, but VELO_SAFE_AREA="left,top,right,bottom" (window points) fakes one,
 // to try a layout for notched phones without a device.
 fn query_safe_insets(scale f32) ?core.Insets {
 	$if android {
@@ -27,7 +27,7 @@ fn query_safe_insets(scale f32) ?core.Insets {
 		if C.velo_ios_safe_insets(C.sapp_ios_get_window(), &pt[0]) == 0 {
 			return none
 		}
-		k := sapp.dpi_scale() / scale // points -> pixels -> world units
+		k := sapp.dpi_scale() / scale // iOS points -> pixels -> window points
 		return core.Insets{f32(pt[0]) * k, f32(pt[1]) * k, f32(pt[2]) * k, f32(pt[3]) * k}
 	} $else {
 		env := os.getenv('VELO_SAFE_AREA')

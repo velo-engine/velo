@@ -21,8 +21,8 @@ pub struct AudioSource {
 	core.Component
 pub mut:
 	clip          assets.AssetRef[assets.AudioClip]
-	volume        f32  = 1
-	pitch         f32  = 1
+	volume        f32 = 1
+	pitch         f32 = 1
 	looping       bool
 	play_on_start bool   = true
 	bus           string = 'sfx' @[choices: 'sfx|music|ui|voice']
@@ -32,7 +32,7 @@ pub mut:
 	// Stop over this many seconds instead of cutting off (stop() and when the node is destroyed).
 	fade_out f32
 	loaded   &assets.AudioClip = unsafe { nil } @[hide]
-	voice    VoiceId @[hide]
+	voice    VoiceId           @[hide]
 }
 
 pub fn (mut s AudioSource) on_load() {
@@ -155,7 +155,7 @@ fn (s &AudioSource) spatial_mix() (f32, f32) {
 		return 1, 0
 	}
 	sc := s.node.scene
-	mut listener := sc.view_size.mul(0.5)
+	mut listener := sc.view_center()
 	mut half_w := sc.view_size.x / 2
 	if cam := sc.active_camera() {
 		listener = cam.center()

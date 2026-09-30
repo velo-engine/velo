@@ -129,6 +129,33 @@ mut fx := core.Node.new('Sparkle')
 	.with(&render.ParticleSystem{ texture: tex, rate: 0, burst: 14, looping: false, auto_destroy: true })
 ```
 
+## Screen size and scaling
+
+The game is laid out for a **design resolution** (`width`/`height` in `app.new`, 960x540 by default) and
+`scale_mode` fits it to any window or phone screen. Positions, sizes, `input.mouse` and touches are all in these
+screen units, whatever the real resolution or pixel density.
+
+```v
+mut game := app.new(scene: 'scenes/main.scene', width: 960, height: 540, scale_mode: 'expand',
+	window_width: 1280, window_height: 720) // desktop window size at startup (0 = the design size)
+```
+
+| scale_mode | On a screen with another aspect ratio |
+|---|---|
+| `expand` (default) | the whole design area is visible, as large as it fits; the extra room on the longer side shows more of the game around it (no bars, nothing cut) |
+| `fit` | exactly the design area, black bars on the longer side |
+| `fill` | fills the screen, the design area is cropped on the longer side |
+| `width` / `height` | the design width (or height) fills the screen; the other direction shows more or less |
+| `none` | no scaling: one unit per window point, top-left at 0, 0 (how Velo worked before) |
+
+The design area stays centered, so with `expand` a wider phone shows a bit more on the left and right:
+`scene.view_origin` (the top-left of what is visible, can be negative) and `scene.view_size` describe the visible
+area, `scene.view_center()` its middle. Widgets aligned to the screen, the Camera (it centers its target in the
+visible area) and spatial sound use them, so a HUD built with `Widget` sticks to the real screen edges.
+The math is in `core.fit_screen` (unit tested); the renderer draws through its matrix, text stays sharp at any scale.
+
+Limits: no integer-only scaling for pixel art yet; the editor always shows the design area.
+
 ## Camera and draw order
 
 A `Camera` shows the world around its node: the node's world position is at the center of the screen, its
@@ -199,8 +226,8 @@ node MoreCoins {
 `Input` also has `mouse_pressed` / `mouse_released` (one frame) and `scroll` (wheel delta this frame).
 Touch: `input.touches` lists every finger (`id`, `pos`, `start`, `phase` began/moved/stationary/ended/cancelled) and
 the first finger also drives the mouse fields; `input.pointers()` is every finger plus the held mouse, for code that
-should work the same with both. `scene.safe_insets` holds the safe area (world units); on desktop,
-`VELO_SAFE_AREA="left,top,right,bottom"` fakes one to try a phone layout, and F1 outlines it.
+should work the same with both. `scene.safe_insets` holds the safe area (screen units, from the edges of the visible
+area); on desktop, `VELO_SAFE_AREA="left,top,right,bottom"` (window points) fakes one to try a phone layout, and F1 outlines it.
 The demo's HUD uses a Button (`SpawnButton`) and a ScrollView + Layout pickup log (`PickupLog`, see `examples/demo/hud.v`).
 
 Limits: overlapping buttons all receive the click (no event blocking yet); Widget/Layout run in `update`, so the editor
@@ -517,8 +544,8 @@ velo build android --release --aab       # Android App Bundle for Google Play
 
 Output goes to `build/<target>/` in the project. Games need no code changes: on a phone `app.new` ignores
 `assets_dir` and uses the packaged assets, the first finger acts as the left mouse button (so UI buttons, scroll views
-and `input.mouse` work), and hot reload is off. The window is the whole screen: `scene.view_size` is the screen size in
-points, which is not the desktop window size, so anchor UI with `UITransform` rather than fixed positions.
+and `input.mouse` work), and hot reload is off. The window is the whole screen, fitted by the scale mode (see
+"Screen size and scaling"): lay the game out for the design resolution and anchor UI with `Widget`.
 
 - **Android** is built with [vab](https://github.com/vlang/vab) (`v install vab && v -prod ~/.vmodules/vab`),
   plus the Android SDK, NDK and a JDK. Android Studio installs all three; velo uses its bundled JDK when `JAVA_HOME` is unset.
@@ -583,8 +610,7 @@ files written at runtime (settings, saves) live in memory and are lost on reload
 - Scene hot reload **resets game state** (score, positions) because the whole tree is rebuilt.
 - Not yet available: physics joints,
   removing prefab components via override, a `library/` directory caching import results.
-- Mobile: Android ignores `app.orientation` (it follows the device), there is no screen-size scaling (the game sees the
-  screen size in points), and the iOS build patches two V 0.5.2 issues in the generated C (see `tools/velo/ios.v`).
+- Mobile: Android ignores `app.orientation` (it follows the device), and the iOS build patches two V 0.5.2 issues in the generated C (see `tools/velo/ios.v`).
 - Editor: no copy/paste between scenes, multi-selection,
   save prompt when closing the window, or per-field "Revert" to the prefab value.
 - Small note about `gg` 0.5.x: creating an image mid-frame leaves the cached image not yet uploaded to the GPU;

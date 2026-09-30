@@ -11,14 +11,20 @@ import velo.audio
 
 pub struct Config {
 pub:
-	title      string = 'Velo Engine'
+	title string = 'Velo Engine'
+	// Design resolution: the screen size the game is made for, in screen units. `scale_mode` fits it to the
+	// real window / phone screen (see core.ScaleMode): expand (default), fit, fill, width, height or none.
 	width      int    = 960
 	height     int    = 540
-	assets_dir string = 'assets'
-	scene      string // path (within assets) or asset ID of the startup scene
-	background core.Color = core.rgba(30, 30, 40, 255)
-	hot_reload bool       = true // always off on Android/iOS
-	font_path  string // .ttf used for text; empty = the platform default
+	scale_mode string = 'expand'
+	// Desktop window size at startup, in points; 0 = the design resolution.
+	window_width  int
+	window_height int
+	assets_dir    string = 'assets'
+	scene         string // path (within assets) or asset ID of the startup scene
+	background    core.Color = core.rgba(30, 30, 40, 255)
+	hot_reload    bool       = true // always off on Android/iOS
+	font_path     string // .ttf used for text; empty = the platform default
 	// Set this hook to run code after each time the scene is (re)loaded.
 	on_scene_loaded fn (mut a App) = unsafe { nil }
 }
@@ -36,9 +42,12 @@ pub mut:
 	input    &core.Input
 	renderer &render.Renderer = unsafe { nil }
 	scene_id string
-	// The safe area insets in world units (see core.Scene.safe_insets), refreshed twice a second.
+	// Where the game is drawn in the window this frame (see core.fit_screen).
+	fit core.ScreenFit
+	// The safe area insets in window points, refreshed twice a second (the scene gets them in screen units).
 	safe_insets core.Insets
 mut:
+	mode         core.ScaleMode
 	last_ticks   i64
 	reload_timer f32
 	fps          f32
@@ -55,6 +64,7 @@ pub fn new(config Config) !&App {
 		assets_dir: runtime_assets_dir(config.assets_dir)!
 		hot_reload: config.hot_reload && !is_mobile() && !is_web() // packaged assets never change
 	}
+	mode := core.scale_mode_from_str(cfg.scale_mode)!
 	setup_web_gc()
 	mut db := assets.open(cfg.assets_dir)!
 	mut reg := serialize.new_registry()
@@ -66,7 +76,9 @@ pub fn new(config Config) !&App {
 		registry: reg
 		loader:   serialize.new_loader(reg, db)
 		input:    &core.Input{}
+		mode:     mode
 	}
+	a.update_fit()
 	println('[velo] ${db.len()} assets in ${db.root}')
 	return a
 }
@@ -80,8 +92,7 @@ pub fn (mut a App) register[T]() {
 pub fn (mut a App) load_scene(key string) ! {
 	mut next := a.loader.load_scene(key)!
 	next.input = a.input
-	next.view_size = a.view_size()
-	next.safe_insets = a.safe_insets
+	a.apply_fit(mut next)
 	if a.scene != unsafe { nil } {
 		a.scene.unload()
 	}
@@ -96,8 +107,8 @@ pub fn (mut a App) load_scene(key string) ! {
 pub fn (mut a App) run() {
 	a.ctx = gg.new_context(
 		bg_color:     gg.Color{a.cfg.background.r, a.cfg.background.g, a.cfg.background.b, 255}
-		width:        a.cfg.width
-		height:       a.cfg.height
+		width:        if a.cfg.window_width > 0 { a.cfg.window_width } else { a.cfg.width }
+		height:       if a.cfg.window_height > 0 { a.cfg.window_height } else { a.cfg.height }
 		window_title: a.cfg.title
 		font_path:    if a.cfg.font_path != '' { a.cfg.font_path } else { system_font() }
 		init_fn:      on_init
@@ -139,6 +150,7 @@ fn on_frame(mut a App) {
 		a.renderer.debug = !a.renderer.debug
 	}
 	a.fit_scale()
+	a.update_fit()
 	a.safe_timer -= dt
 	if a.safe_timer <= 0 {
 		a.safe_timer = 0.5 // cheap, but not free on Android (JNI); insets only change on rotation
@@ -149,16 +161,18 @@ fn on_frame(mut a App) {
 			}
 		}
 	}
-	a.scene.view_size = a.view_size()
-	a.scene.safe_insets = a.safe_insets
+	a.apply_fit(mut a.scene)
 	a.scene.update(dt)
 	a.input.end_frame()
 	audio.pump()
 
 	a.ctx.begin()
-	a.renderer.draw_scene(a.scene)
+	a.renderer.base_clip =
+		render.Rect{a.fit.area_pos.x, a.fit.area_pos.y, a.fit.area_size.x, a.fit.area_size.y}
+	a.renderer.draw_scene(a.scene, a.fit.to_window())
+	a.draw_bars()
 	if a.renderer.debug {
-		a.ctx.draw_text(a.cfg.width - 10, 10,
+		a.ctx.draw_text(int(a.window_points().x) - 10, 10,
 			'FPS ${int(a.fps)} | node ${a.scene.node_count()} | asset ${a.db.loaded_count()}/${a.db.len()} | draw ${a.renderer.draw_calls}',
 			size:  16
 			color: gg.Color{255, 255, 0, 255}
@@ -192,25 +206,59 @@ fn (mut a App) on_asset_event(ev assets.AssetEvent) {
 	}
 }
 
-// view_size: the window size in world units (the configured size until the window exists).
-fn (a &App) view_size() core.Vec2 {
+// window_points: the window size in points (the configured size until the window exists).
+fn (a &App) window_points() core.Vec2 {
 	if a.ctx == unsafe { nil } {
-		return core.vec2(a.cfg.width, a.cfg.height)
+		return core.vec2(if a.cfg.window_width > 0 { a.cfg.window_width } else { a.cfg.width }, if a.cfg.window_height > 0 {
+			a.cfg.window_height
+		} else {
+			a.cfg.height
+		})
 	}
 	sz := a.ctx.window_size() // gg.window_size() assumes the dpi scale, which Android does not use
 	return core.vec2(sz.width, sz.height)
 }
 
-// fit_scale: on Android gg scales the configured width (portrait) or height (landscape) to the screen, but only
-// at startup — a resize (rotation) resets it to the dpi scale. Re-applying it every frame keeps world units stable.
+// update_fit recomputes where the design resolution goes in the window (it changes when the window is resized
+// or the phone rotates).
+fn (mut a App) update_fit() {
+	a.fit = core.fit_screen(a.window_points(), core.vec2(a.cfg.width, a.cfg.height), a.mode)
+}
+
+// apply_fit gives the scene its visible area and safe area, in screen units.
+fn (a &App) apply_fit(mut s core.Scene) {
+	s.view_origin = a.fit.view_origin
+	s.view_size = a.fit.view_size
+	s.safe_insets = a.fit.insets_from_window(a.window_points(), a.safe_insets)
+}
+
+// to_screen converts a window point (gg mouse/touch coordinates) to screen units.
+fn (a &App) to_screen(x f32, y f32) core.Vec2 {
+	return a.fit.from_window(core.vec2(x, y))
+}
+
+// draw_bars covers what is outside the game area (letterbox bars of the `fit` scale mode) in black.
+fn (mut a App) draw_bars() {
+	w := a.window_points()
+	p := a.fit.area_pos
+	sz := a.fit.area_size
+	if p.x <= 0 && p.y <= 0 && sz.x >= w.x && sz.y >= w.y {
+		return
+	}
+	a.ctx.scissor_rect(0, 0, int(w.x), int(w.y))
+	black := gg.Color{0, 0, 0, 255}
+	a.ctx.draw_rect_filled(0, 0, w.x, p.y, black)
+	a.ctx.draw_rect_filled(0, p.y + sz.y, w.x, w.y - p.y - sz.y, black)
+	a.ctx.draw_rect_filled(0, p.y, p.x, sz.y, black)
+	a.ctx.draw_rect_filled(p.x + sz.x, p.y, w.x - p.x - sz.x, sz.y, black)
+}
+
+// fit_scale: gg's scale (framebuffer pixels per window point) comes from the configured size on Android at
+// startup but from the screen density after a rotation. Pin it to the density; the scale mode does the fitting.
 // Text must use the same scale, which gg forgets when it loads the font from memory (as on Android).
 fn (mut a App) fit_scale() {
 	$if android {
-		w, h := sapp.width(), sapp.height()
-		s := if w <= h { f32(w) / a.cfg.width } else { f32(h) / a.cfg.height }
-		if s > 0.1 {
-			a.ctx.scale = s
-		}
+		a.ctx.scale = gg.dpi_scale()
 	}
 	if a.ctx.ft != unsafe { nil } && a.ctx.ft.scale != a.ctx.scale {
 		a.ctx.ft.scale = a.ctx.scale
@@ -255,17 +303,17 @@ fn on_event(e &gg.Event, mut a App) {
 			a.input.key_up(int(e.key_code))
 		}
 		.mouse_move {
-			a.input.mouse = core.vec2(e.mouse_x, e.mouse_y) // gg already divides by the dpi scale
+			a.input.mouse = a.to_screen(e.mouse_x, e.mouse_y) // gg already divides by the dpi scale
 		}
 		.mouse_down {
 			// A click can arrive without a move before it (first click in a browser page, synthetic events).
-			a.input.mouse = core.vec2(e.mouse_x, e.mouse_y)
+			a.input.mouse = a.to_screen(e.mouse_x, e.mouse_y)
 			if e.mouse_button == .left {
 				a.input.mouse_press()
 			}
 		}
 		.mouse_up {
-			a.input.mouse = core.vec2(e.mouse_x, e.mouse_y)
+			a.input.mouse = a.to_screen(e.mouse_x, e.mouse_y)
 			if e.mouse_button == .left {
 				a.input.mouse_release()
 			}
@@ -296,7 +344,7 @@ fn (mut a App) on_touch(e &gg.Event) {
 		if !t.changed {
 			continue
 		}
-		pos := core.vec2(t.pos_x / scale, t.pos_y / scale)
+		pos := a.to_screen(t.pos_x / scale, t.pos_y / scale)
 		match e.typ {
 			.touches_began { a.input.touch_begin(t.identifier, pos) }
 			.touches_moved { a.input.touch_move(t.identifier, pos) }

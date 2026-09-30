@@ -113,9 +113,9 @@ fn (c &Camera) effective_zoom() f32 {
 // view_matrix: world -> screen for this camera.
 pub fn (c &Camera) view_matrix() Affine2 {
 	z := c.effective_zoom()
-	size := if c.node.scene != unsafe { nil } { c.node.scene.view_size } else { Vec2{} }
+	mid := if c.node.scene != unsafe { nil } { c.node.scene.view_center() } else { Vec2{} }
 	eye := Affine2.trs(c.center(), c.node.world_matrix().rotation_deg(), vec2(1 / z, 1 / z))
-	return Affine2.trs(size.mul(0.5), 0, vec2(1, 1)).mul(eye.inverse())
+	return Affine2.trs(mid, 0, vec2(1, 1)).mul(eye.inverse())
 }
 
 // visible_rect: the world-space bounds of what the camera shows (x, y, w, h; ignores rotation).

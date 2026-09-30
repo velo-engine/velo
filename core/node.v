@@ -4,17 +4,17 @@ module core
 @[heap]
 pub struct Node {
 pub mut:
-	name       string
-	position   Vec2
-	rotation   f32 // degrees, positive = clockwise on screen
-	scale      Vec2  = Vec2{1, 1}
-	active     bool  = true
+	name     string
+	position Vec2
+	rotation f32 // degrees, positive = clockwise on screen
+	scale    Vec2 = Vec2{1, 1}
+	active   bool = true
 	// Draw order: higher draws over lower, whatever the tree order. Relative to the parent (a child of a node
 	// with z_index 2 and its own 1 draws at 3). Equal values keep the tree order.
 	z_index int
 	// Draw the children ordered by their world y (lower on screen = in front), e.g. a top-down game's
 	// characters and trees. Each child moves with its whole subtree.
-	y_sort bool
+	y_sort     bool
 	parent     &Node = unsafe { nil }
 	children   []&Node
 	components []IComponent
