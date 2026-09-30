@@ -7,6 +7,7 @@ pub enum AssetKind {
 	audio
 	scene
 	text
+	font
 }
 
 pub fn kind_from_ext(path string) AssetKind {
@@ -16,6 +17,7 @@ pub fn kind_from_ext(path string) AssetKind {
 		'wav', 'ogg', 'mp3' { .audio }
 		'scene', 'prefab' { .scene }
 		'txt', 'json', 'md', 'csv' { .text }
+		'ttf', 'otf' { .font }
 		else { .unknown }
 	}
 }
@@ -26,6 +28,7 @@ pub fn kind_from_str(s string) AssetKind {
 		'audio' { .audio }
 		'scene' { .scene }
 		'text' { .text }
+		'font' { .font }
 		else { .unknown }
 	}
 }
@@ -110,6 +113,15 @@ pub:
 	path string
 pub mut:
 	text    string
+	version int
+}
+
+// Font — a .ttf/.otf file for Label and TextInput (`font` field). The renderer loads it on first use.
+pub struct Font {
+pub:
+	id   string
+	path string // absolute path of the font file
+pub mut:
 	version int
 }
 

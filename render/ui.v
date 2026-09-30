@@ -109,6 +109,79 @@ fn node_point(n &core.Node, p core.Vec2, screen bool) core.Vec2 {
 	return m.inverse().apply(p)
 }
 
+// ---------- Pointer targets ----------
+
+// UI that takes the pointer (Button, ScrollView, Joystick, TextInput, and Panels with block_input) is hit in
+// draw order: only the topmost element under a click receives it, so a dialog stops the buttons behind it.
+// An element still receives presses on its own children (a button inside a ScrollView: the ScrollView can
+// start a drag from it).
+
+@[heap]
+struct PointerCache {
+mut:
+	scene   voidptr
+	frame   u64
+	targets []&core.Node // pointer targets in draw order, for `frame`
+}
+
+const pointer_cache = &PointerCache{}
+
+fn is_pointer_target(n &core.Node) bool {
+	for c in n.components {
+		if !c.enabled {
+			continue
+		}
+		if c is Button || c is ScrollView || c is Joystick || c is TextInput {
+			return true
+		}
+		if c is Panel && c.block_input {
+			return true
+		}
+	}
+	return false
+}
+
+fn pointer_targets(sc &core.Scene) []&core.Node {
+	mut pc := unsafe { pointer_cache }
+	if pc.scene != voidptr(sc) || pc.frame != sc.frame {
+		pc.scene = voidptr(sc)
+		pc.frame = sc.frame
+		pc.targets = draw_order(sc.root).filter(is_pointer_target(it))
+	}
+	return pc.targets
+}
+
+// pointer_target: the topmost UI element under the screen point `p` (none = the pointer is over the game).
+pub fn pointer_target(sc &core.Scene, p core.Vec2) ?&core.Node {
+	targets := pointer_targets(sc)
+	for i := targets.len - 1; i >= 0; i-- {
+		n := targets[i]
+		if !n.destroyed && hit_test(n, p) {
+			return n
+		}
+	}
+	return none
+}
+
+// pointer_over_ui: some UI element is under `p`; gameplay that reacts to clicks (tap to move, shoot)
+// should ignore those.
+pub fn pointer_over_ui(sc &core.Scene, p core.Vec2) bool {
+	pointer_target(sc, p) or { return false }
+	return true
+}
+
+// ui_hit: `n` is under the screen point `p` and no other UI drawn over it takes the pointer there.
+pub fn ui_hit(n &core.Node, p core.Vec2) bool {
+	if !hit_test(n, p) {
+		return false
+	}
+	if n.scene == unsafe { nil } {
+		return true
+	}
+	t := pointer_target(n.scene, p) or { return true }
+	return voidptr(t) == voidptr(n) || n.is_ancestor_of(t)
+}
+
 // in_dragged_scroll_view: true while a ScrollView above `n` is being dragged (buttons inside it cancel their press).
 fn in_dragged_scroll_view(n &core.Node) bool {
 	mut cur := n.parent
@@ -135,6 +208,8 @@ pub mut:
 	radius       f32 // rounded corners (only when the node is not rotated)
 	border_color core.Color = core.rgba(255, 255, 255, 80)
 	border_width int
+	// Stops clicks and touches from reaching UI drawn under it (a dialog over buttons).
+	block_input bool = true
 }
 
 // ---------- Button ----------
@@ -184,11 +259,11 @@ pub fn (mut b Button) update(dt f32) {
 		return
 	}
 	input := b.input()
-	b.hovered = hit_test(b.node, input.mouse)
+	b.hovered = ui_hit(b.node, input.mouse)
 	// Any pointer (the mouse or any finger) can press the button; the one that pressed it must also release it.
 	if !b.pressed {
 		for p in input.pointers() {
-			if p.phase == .began && hit_test(b.node, p.pos) {
+			if p.phase == .began && ui_hit(b.node, p.pos) {
 				b.pressed = true
 				b.pointer = p.id
 				break
@@ -201,7 +276,7 @@ pub fn (mut b Button) update(dt f32) {
 	mut inside := false
 	if b.pressed {
 		if p := input.pointer(b.pointer) {
-			inside = hit_test(b.node, p.pos)
+			inside = ui_hit(b.node, p.pos)
 			if p.is_up() {
 				b.pressed = false
 				if inside && p.phase == .ended {
@@ -334,7 +409,7 @@ pub fn (mut s ScrollView) update(dt f32) {
 	view := node_rect(s.node) or { return }
 	input := s.input()
 	local := s.node.screen_matrix().inverse().apply(input.mouse)
-	inside := hit_test(s.node, input.mouse)
+	inside := ui_hit(s.node, input.mouse)
 
 	if input.mouse_pressed && inside {
 		s.tracking = true
@@ -514,7 +589,7 @@ pub fn (mut j Joystick) update(dt f32) {
 	input := j.input()
 	if !j.held {
 		for p in input.pointers() {
-			if p.phase == .began && hit_test(j.node, p.pos) {
+			if p.phase == .began && ui_hit(j.node, p.pos) {
 				j.held = true
 				j.pointer = p.id
 				if j.floating {

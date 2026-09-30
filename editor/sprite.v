@@ -87,11 +87,11 @@ fn (mut e Editor) draw_slice_editor(x f32, y0 f32, w f32, n &core.Node, ro bool)
 	e.renderer.draw_texture_frame(sp.tex, sp.frame, img.x, img.y, img.w, img.h)
 	e.ui.outline(img, gg.Color{255, 255, 255, 40})
 	// the drag handler (finish_drag) maps the mouse back through these
-	if e.drag != .slice || e.drag_node == n {
+	if e.drag != .slice || voidptr(e.drag_node) == voidptr(n) {
 		e.slice_origin = core.vec2(img.x, img.y)
 		e.slice_k = k
 	}
-	hot := if e.drag == .slice && e.drag_node == n {
+	hot := if e.drag == .slice && voidptr(e.drag_node) == voidptr(n) {
 		e.slice_edge
 	} else if !ro && e.drag == .none {
 		e.slice_edge_at(sp, img)

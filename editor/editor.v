@@ -62,8 +62,9 @@ pub mut:
 	registry &serialize.Registry
 	loader   &serialize.SceneLoader
 	// Save data while playing: kept in memory for the editor session (the game's real save file is not touched).
-	play_store &core.Store        = &core.Store{}
-	doc        &scenedoc.Document = unsafe { nil }
+	play_store   &core.Store = &core.Store{}
+	play_editing bool // last frame, a text field in the game had the keyboard
+	doc          &scenedoc.Document = unsafe { nil }
 mut:
 	ctx      &gg.Context      = unsafe { nil }
 	renderer &render.Renderer = unsafe { nil }
@@ -211,6 +212,7 @@ fn on_frame(mut e Editor) {
 
 	if e.play != unsafe { nil } {
 		e.play.update(dt)
+		e.play_editing = e.play_input.text_editing // a text field has the keys: Esc goes to it, not Stop
 		e.play_input.end_frame()
 		e.change_play_scene()
 		audio.pump()
@@ -324,10 +326,16 @@ fn on_event(ev &gg.Event, mut e Editor) {
 		.char {
 			if e.ui.focus != '' {
 				e.ui.on_char(ev.char_code)
+			} else if e.play != unsafe { nil } {
+				e.play_input.type_char(ev.char_code)
 			}
 		}
 		.key_down {
-			e.on_key_down(ev.key_code)
+			if ev.key_repeat && e.play != unsafe { nil } && e.ui.focus == '' {
+				e.play_input.key_repeat(int(ev.key_code))
+			} else {
+				e.on_key_down(ev.key_code)
+			}
 		}
 		.key_up {
 			if e.play != unsafe { nil } {
@@ -358,7 +366,7 @@ fn (mut e Editor) on_key_down(key gg.KeyCode) {
 		return
 	}
 	if e.play != unsafe { nil } {
-		if key == .escape || (e.ui.ctrl() && key == .p) {
+		if (key == .escape && !e.play_editing) || (e.ui.ctrl() && key == .p) {
 			e.stop_play()
 			return
 		}
@@ -583,7 +591,7 @@ fn (mut e Editor) move_selected(delta int) {
 }
 
 fn (mut e Editor) nudge(key gg.KeyCode) {
-	if !e.doc.has_selection() || e.doc.selected == e.doc.scene.root {
+	if !e.doc.has_selection() || voidptr(e.doc.selected) == voidptr(e.doc.scene.root) {
 		return
 	}
 	step := f32(if e.ui.shift() { 10 } else { 1 })

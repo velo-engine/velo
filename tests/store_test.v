@@ -141,7 +141,8 @@ fn test_persistent_nodes_move_without_lifecycle() {
 
 	assert dup_tr.log == ['load', 'destroy']
 	assert tr.log == ['load'] // moved: neither destroyed nor loaded again
-	assert music.scene == next && cam.scene == next && music.parent == next.root
+	assert voidptr(music.scene) == voidptr(next) && voidptr(cam.scene) == voidptr(next)
+	assert voidptr(music.parent) == voidptr(next.root)
 	assert next.root.children.len == 1 && old.root.children.len == 1
 	assert next.active_camera() != none && old.active_camera() == none
 	next.update(0.6) // its timer came along

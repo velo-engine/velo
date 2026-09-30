@@ -123,6 +123,7 @@ mut:
 	down     map[int]bool
 	pressed  map[int]bool
 	released map[int]bool
+	repeated map[int]bool // held long enough to auto-repeat this frame
 	// The touch that drives the mouse fields (the first finger down), see touch_begin.
 	mouse_touch u64
 	mouse_start Vec2
@@ -141,6 +142,11 @@ pub mut:
 	touches []Touch
 	// True while the mouse fields are emulated by a touch, so mouse-only code keeps working on touch screens.
 	mouse_from_touch bool
+	// Text typed this frame (already composed characters, any language), for text fields.
+	text string
+	// A text field has the keyboard this frame (a focused render.TextInput sets it in its update; end_frame
+	// clears it): phones show the on-screen keyboard, and Esc no longer quits the game.
+	text_editing bool
 }
 
 pub fn (i &Input) is_down(k Key) bool {
@@ -185,6 +191,24 @@ pub fn (mut i Input) key_down(code int) {
 		i.pressed[code] = true
 	}
 	i.down[code] = true
+}
+
+// key_repeat records an auto-repeat of a held key (see was_typed).
+pub fn (mut i Input) key_repeat(code int) {
+	i.repeated[code] = true
+}
+
+// was_typed: pressed this frame, or held down long enough to repeat (for text editing, menus).
+pub fn (i &Input) was_typed(k Key) bool {
+	return i.pressed[int(k)] || i.repeated[int(k)]
+}
+
+// type_char adds a typed character (a Unicode code point) to `text`; control characters are ignored.
+pub fn (mut i Input) type_char(c u32) {
+	if c < 32 || c == 127 {
+		return
+	}
+	i.text += utf32_to_str(c)
 }
 
 pub fn (mut i Input) key_up(code int) {
@@ -258,6 +282,9 @@ pub fn (i &Input) pointer(id u64) ?Touch {
 pub fn (mut i Input) end_frame() {
 	i.pressed.clear()
 	i.released.clear()
+	i.repeated.clear()
+	i.text = ''
+	i.text_editing = false
 	i.mouse_pressed = false
 	i.mouse_released = false
 	i.scroll = Vec2{}

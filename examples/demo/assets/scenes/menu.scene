@@ -11,12 +11,19 @@ node Menu {
     node Title {
       UITransform { size = [700, 90] }
       Widget { align_center_x = true  align_top = true  top = 110 }
-      Label { text = "Coin Collector"  size = 64  align = "center"  valign = "middle"  color = [255, 236, 150, 255] }
+      Label { text = "Coin Collector"  size = 64  align = "center"  valign = "middle"  color = [255, 236, 150, 255]
+              outline_color = [110, 60, 10, 255]  outline_width = 2.5  shadow_color = [0, 0, 0, 120]  shadow_offset = [3, 5] }
     }
     node Best {
       UITransform { size = [400, 40] }
       Widget { align_center_x = true  align_top = true  top = 205 }
-      Label { text = "Best: 0"  size = 28  align = "center"  valign = "middle" }
+      Label { text = "Best: 0"  size = 28  align = "center"  valign = "middle"  shadow_color = [0, 0, 0, 150] }
+    }
+    node Name {                                                       # a text field; MenuScreen saves what is typed
+      UITransform { size = [260, 44] }
+      Widget { align_center_x = true  align_top = true  top = 255 }
+      Panel { color = [0, 0, 0, 140]  radius = 8  border_width = 1 }
+      TextInput { placeholder = "Your name"  max_length = 16  size = 22 }
     }
     node Play {
       UITransform { size = [220, 60] }

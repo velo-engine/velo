@@ -77,7 +77,8 @@ pub fn (mut c PauseControls) update(dt f32) {
 	}
 }
 
-// MenuScreen — the title screen: shows the saved best score, Play starts the game, Reset forgets the best score.
+// MenuScreen — the title screen: shows the saved best score, keeps the player's name (a TextInput) in the save
+// data, Play starts the game, Reset forgets the best score.
 pub struct MenuScreen {
 	core.Component
 pub mut:
@@ -85,6 +86,9 @@ pub mut:
 }
 
 pub fn (mut m MenuScreen) start() {
+	if mut field := m.name_field() {
+		field.text = m.scene().store.get_string('name', '')
+	}
 	m.show_best()
 	if mut title := m.node.find('Title') {
 		title.scale = core.vec2(0.8, 0.8)
@@ -94,14 +98,29 @@ pub fn (mut m MenuScreen) start() {
 
 pub fn (mut m MenuScreen) update(dt f32) {
 	mut sc := m.scene()
-	if m.clicked('Play') || m.input().was_pressed(.enter) || m.input().was_pressed(.space) {
+	mut typing := false
+	if mut field := m.name_field() {
+		typing = field.focused // Enter and Space belong to the text field while typing
+		if field.changed {
+			mut st := sc.store
+			st.set_string('name', field.text.trim_space())
+		}
+	}
+	if m.clicked('Play')
+		|| (!typing && (m.input().was_pressed(.enter) || m.input().was_pressed(.space))) {
 		sc.change_scene(m.game, fade: 0.4)
 	}
 	if m.clicked('Reset') {
 		mut st := sc.store
 		st.delete('best')
+		st.delete('best_name')
 		m.show_best()
 	}
+}
+
+fn (m &MenuScreen) name_field() ?&render.TextInput {
+	n := m.node.find('Name') or { return none }
+	return n.get_component[render.TextInput]()
 }
 
 fn (m &MenuScreen) clicked(name string) bool {
@@ -111,10 +130,18 @@ fn (m &MenuScreen) clicked(name string) bool {
 }
 
 fn (mut m MenuScreen) show_best() {
-	best := m.scene().store.get_int('best', 0)
+	st := m.scene().store
+	best := st.get_int('best', 0)
+	who := st.get_string('best_name', '')
 	if mut n := m.node.find('Best') {
 		if mut l := n.get_component[render.Label]() {
-			l.text = if best > 0 { 'Best: ${best}' } else { 'Collect as many coins as you can!' }
+			l.text = if best > 0 && who != '' {
+				'Best: ${best} (${who})'
+			} else if best > 0 {
+				'Best: ${best}'
+			} else {
+				'Collect as many coins as you can!'
+			}
 		}
 	}
 }

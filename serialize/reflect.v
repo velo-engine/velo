@@ -6,7 +6,7 @@ import velo.assets
 // Automatic serialization via V's comptime reflection: NO need to write read/write code for each component.
 //
 // Supported field types: f32, f64, int, bool, string, []int, core.Vec2, core.Color,
-// assets.AssetRef[Texture | SceneAsset | AudioClip | TextAsset].
+// assets.AssetRef[Texture | SceneAsset | AudioClip | TextAsset | Font].
 // Fields of other types (pointers, maps, ...) are skipped automatically. Hide a field with the @[hide] attribute:
 //
 //   velocity core.Vec2 @[hide]
@@ -59,6 +59,10 @@ pub fn set_fields[T](mut obj T, props map[string]Value) ! {
 					obj.$(field.name) = assets.AssetRef[assets.TextAsset]{
 						id: v.as_asset()!
 					}
+				} $else $if field.typ is assets.AssetRef[assets.Font] {
+					obj.$(field.name) = assets.AssetRef[assets.Font]{
+						id: v.as_asset()!
+					}
 				} $else {
 					used[field.name] = false
 				}
@@ -100,6 +104,8 @@ pub fn dump_fields[T](obj T) map[string]Value {
 			} $else $if field.typ is assets.AssetRef[assets.AudioClip] {
 				out[field.name] = Value(AssetId{obj.$(field.name).id})
 			} $else $if field.typ is assets.AssetRef[assets.TextAsset] {
+				out[field.name] = Value(AssetId{obj.$(field.name).id})
+			} $else $if field.typ is assets.AssetRef[assets.Font] {
 				out[field.name] = Value(AssetId{obj.$(field.name).id})
 			}
 		}
@@ -144,6 +150,8 @@ pub fn describe_fields[T]() []FieldInfo {
 			kinds[field.name] = .audio
 		} $else $if field.typ is assets.AssetRef[assets.TextAsset] {
 			kinds[field.name] = .text
+		} $else $if field.typ is assets.AssetRef[assets.Font] {
+			kinds[field.name] = .font
 		}
 	}
 	mut out := []FieldInfo{}

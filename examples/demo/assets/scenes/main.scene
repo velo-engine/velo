@@ -105,7 +105,7 @@ node Main {
     }
     node Help {
       position = [20, 526]
-      Label { text = "Arrows / WASD / joystick: move    R: more coins    P: pause    T: slow motion    M: menu    Esc: quit"  size = 18  color = [255, 255, 255, 210]  valign = "bottom" }
+      Label { text = "Arrows / WASD / joystick: move    R: more coins    P: pause    T: slow motion    M: menu    Esc: quit"  size = 18  color = [255, 255, 255, 230]  valign = "bottom"  shadow_color = [0, 0, 0, 160]  shadow_offset = [1, 2] }
       Widget { align_left = true  left = 20  align_bottom = true  bottom = 14 }
     }
     node MoreCoins {

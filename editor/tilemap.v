@@ -207,7 +207,7 @@ fn (mut e Editor) draw_tile_palette(x f32, y0 f32, w f32, n &core.Node, ro bool)
 				else { 'Pick I' }
 			}
 
-			active := e.tile_tool == t && e.doc.selected == n
+			active := e.tile_tool == t && voidptr(e.doc.selected) == voidptr(n)
 			if e.ui.toggle_button(Rect{x + f32(i) * (bw + 3), y, bw, row_h}, label, active,
 				c_select)
 			{
@@ -260,7 +260,7 @@ fn (mut e Editor) draw_tile_palette(x f32, y0 f32, w f32, n &core.Node, ro bool)
 		}
 		if !ro && e.ui.click(cr) {
 			e.tile_brush = i
-			if e.tile_tool in [.none, .erase, .pick] || e.doc.selected != n {
+			if e.tile_tool in [.none, .erase, .pick] || voidptr(e.doc.selected) != voidptr(n) {
 				e.set_tile_tool(.paint)
 			}
 		}

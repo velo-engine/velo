@@ -60,7 +60,7 @@ pub fn (mut n Node) insert_child(mut child Node, index int) &Node {
 		index
 	}
 	n.children.insert(i, child)
-	if n.scene != unsafe { nil } && child.scene != n.scene {
+	if n.scene != unsafe { nil } && voidptr(child.scene) != voidptr(n.scene) {
 		child.attach_to_scene(n.scene)
 	}
 	return child
@@ -72,7 +72,7 @@ pub fn (n &Node) child_index() int {
 		return -1
 	}
 	for i, c in n.parent.children {
-		if c == n {
+		if voidptr(c) == voidptr(n) { // `==` on references would compare contents
 			return i
 		}
 	}
@@ -83,7 +83,7 @@ pub fn (n &Node) child_index() int {
 pub fn (n &Node) is_ancestor_of(other &Node) bool {
 	mut cur := unsafe { other }
 	for cur != unsafe { nil } {
-		if cur == n {
+		if voidptr(cur) == voidptr(n) {
 			return true
 		}
 		cur = cur.parent
@@ -105,7 +105,7 @@ pub fn (mut n Node) remove_from_parent() {
 	}
 	mut p := n.parent
 	for i, c in p.children {
-		if c == n {
+		if voidptr(c) == voidptr(n) { // `==` on references would compare contents
 			p.children.delete(i)
 			break
 		}

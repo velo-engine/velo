@@ -53,12 +53,13 @@ pub mut:
 	// The player's saved data, given to every scene (scene.store); saved on quit and when sent to the background.
 	store &core.Store
 mut:
-	fade         SceneFade
-	mode         core.ScaleMode
-	last_ticks   i64
-	reload_timer f32
-	fps          f32
-	safe_timer   f32
+	keyboard_shown bool
+	fade           SceneFade
+	mode           core.ScaleMode
+	last_ticks     i64
+	reload_timer   f32
+	fps            f32
+	safe_timer     f32
 }
 
 // new opens the AssetDatabase and registers built-in components. Call app.register[T]() for the game's components,
@@ -174,6 +175,7 @@ fn on_frame(mut a App) {
 	}
 	a.apply_fit(mut a.scene)
 	a.scene.update(dt)
+	a.sync_keyboard()
 	a.input.end_frame()
 	a.update_scene_change(dt)
 	audio.pump()
@@ -202,6 +204,16 @@ fn on_frame(mut a App) {
 		if a.reload_timer >= 0.5 {
 			a.reload_timer = 0
 			a.check_hot_reload()
+		}
+	}
+}
+
+// sync_keyboard shows the phone's on-screen keyboard while a text field is being edited.
+fn (mut a App) sync_keyboard() {
+	if a.input.text_editing != a.keyboard_shown {
+		a.keyboard_shown = a.input.text_editing
+		$if android || ios || emscripten ? {
+			sapp.show_keyboard(a.keyboard_shown)
 		}
 	}
 }
@@ -363,10 +375,17 @@ fn (mut a App) check_hot_reload() {
 fn on_event(e &gg.Event, mut a App) {
 	match e.typ {
 		.key_down {
-			a.input.key_down(int(e.key_code))
-			if e.key_code == .escape {
+			if e.key_repeat {
+				a.input.key_repeat(int(e.key_code))
+			} else {
+				a.input.key_down(int(e.key_code))
+			}
+			if e.key_code == .escape && !a.keyboard_shown { // Esc while typing leaves the text field instead
 				a.ctx.quit()
 			}
+		}
+		.char {
+			a.input.type_char(e.char_code)
 		}
 		.key_up {
 			a.input.key_up(int(e.key_code))

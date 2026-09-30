@@ -42,7 +42,7 @@ pub fn (mut s ColliderState) collider_state() &ColliderState {
 // is_touching: true while this collider touches a collider of `n`.
 pub fn (s &ColliderState) is_touching(n &core.Node) bool {
 	for c in s.touching {
-		if c.node == n {
+		if voidptr(c.node) == voidptr(n) {
 			return true
 		}
 	}

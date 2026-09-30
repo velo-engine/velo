@@ -163,6 +163,7 @@ pub fn (mut b ScoreBoard) add(v int) {
 	mut st := b.scene().store
 	if b.score > st.get_int('best', 0) {
 		st.set_int('best', b.score)
+		st.set_string('best_name', st.get_string('name', ''))
 	}
 	// a little bounce on every point
 	b.node.kill_tweens()

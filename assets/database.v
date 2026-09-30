@@ -22,11 +22,12 @@ mut:
 	scene   &SceneAsset = unsafe { nil }
 	text    &TextAsset  = unsafe { nil }
 	audio   &AudioClip  = unsafe { nil }
+	font    &Font       = unsafe { nil }
 }
 
 pub fn (e &AssetEntry) is_loaded() bool {
 	return e.texture != unsafe { nil } || e.scene != unsafe { nil } || e.text != unsafe { nil }
-		|| e.audio != unsafe { nil }
+		|| e.audio != unsafe { nil } || e.font != unsafe { nil }
 }
 
 pub enum AssetEventKind {
@@ -151,6 +152,16 @@ pub fn (mut db AssetDatabase) load[T](key string) !&T {
 		}
 		e.refs++
 		return e.text
+	} $else $if T is Font {
+		db.expect_kind(e, .font, 'Font')!
+		if e.font == unsafe { nil } {
+			e.font = &Font{
+				id:   e.id
+				path: db.abs_path(e)
+			}
+		}
+		e.refs++
+		return e.font
 	} $else $if T is AudioClip {
 		db.expect_kind(e, .audio, 'AudioClip')!
 		if e.audio == unsafe { nil } {
@@ -184,6 +195,7 @@ pub fn (mut db AssetDatabase) release(id string) {
 		e.scene = unsafe { nil }
 		e.text = unsafe { nil }
 		e.audio = unsafe { nil }
+		e.font = unsafe { nil }
 		db.events << AssetEvent{.unloaded, e.id, e.path}
 	}
 }
@@ -336,6 +348,11 @@ fn (mut db AssetDatabase) import_file(rel string) !string {
 	mut write := false
 	if os.exists(meta_path) {
 		meta = read_meta(meta_path)!
+		// a file type added in a later engine version (e.g. .ttf fonts) was imported as unknown: upgrade it
+		if meta.kind == 'unknown' && kind != .unknown {
+			meta.kind = kind.str()
+			write = true
+		}
 	} else {
 		meta = Meta{
 			id:       new_id()
@@ -411,6 +428,9 @@ fn (mut db AssetDatabase) reload_in_place(mut e AssetEntry) ! {
 	if e.text != unsafe { nil } {
 		e.text.text = os.read_file(db.abs_path(e))!
 		e.text.version++
+	}
+	if e.font != unsafe { nil } {
+		e.font.version++
 	}
 	if e.audio != unsafe { nil } {
 		fresh := db.read_audio(e)

@@ -99,12 +99,12 @@ pub fn (d &Document) has_selection() bool {
 
 // contains: whether the node still belongs to the tree being edited (after undo, old pointers are no longer valid).
 pub fn (d &Document) contains(n &core.Node) bool {
-	return n != unsafe { nil } && n.scene == d.scene && !n.destroyed
+	return n != unsafe { nil } && voidptr(n.scene) == voidptr(d.scene) && !n.destroyed
 }
 
 // rel_path: the node's path from the document root ('' = root).
 pub fn (d &Document) rel_path(n &core.Node) string {
-	if n == unsafe { nil } || n == d.scene.root || n.parent == unsafe { nil } {
+	if n == unsafe { nil } || voidptr(n) == voidptr(d.scene.root) || n.parent == unsafe { nil } {
 		return ''
 	}
 	parent := d.rel_path(n.parent)
@@ -231,7 +231,7 @@ pub fn (mut d Document) reference_of(n &core.Node) ?&core.Node {
 
 // is_prefab_owned: the node is part of a prefab whose parent is an instance (cannot be deleted/renamed/moved).
 pub fn (mut d Document) is_prefab_owned(n &core.Node) bool {
-	if n == d.scene.root || n.parent == unsafe { nil } {
+	if voidptr(n) == voidptr(d.scene.root) || n.parent == unsafe { nil } {
 		return false
 	}
 	pr := d.reference_of(n.parent) or { return false }
@@ -293,7 +293,7 @@ pub fn (mut d Document) add_node(mut parent core.Node, name string) !&core.Node 
 // delete deletes a node (the root and nodes owned by the source prefab cannot be deleted).
 pub fn (mut d Document) delete(mut n core.Node) ! {
 	d.expect_mine(n)!
-	if n == d.scene.root {
+	if voidptr(n) == voidptr(d.scene.root) {
 		return error('cannot delete the root node')
 	}
 	if d.is_prefab_owned(n) {
@@ -316,7 +316,7 @@ pub fn (mut d Document) delete(mut n core.Node) ! {
 // duplicate duplicates the node (and its subtree) right after itself.
 pub fn (mut d Document) duplicate(n &core.Node) !&core.Node {
 	d.expect_mine(n)!
-	if n == d.scene.root {
+	if voidptr(n) == voidptr(d.scene.root) {
 		return error('cannot duplicate the root node')
 	}
 	text := d.loader.save_node(n)!
@@ -348,7 +348,7 @@ pub fn (mut d Document) rename(mut n core.Node, name string) ! {
 	}
 	d.checkpoint()!
 	n.name = new_name
-	if n == d.scene.root {
+	if voidptr(n) == voidptr(d.scene.root) {
 		d.scene.name = new_name
 	}
 }
@@ -357,7 +357,7 @@ pub fn (mut d Document) rename(mut n core.Node, name string) ! {
 pub fn (mut d Document) reparent(mut n core.Node, mut new_parent core.Node, index int) ! {
 	d.expect_mine(n)!
 	d.expect_mine(new_parent)!
-	if n == d.scene.root {
+	if voidptr(n) == voidptr(d.scene.root) {
 		return error('cannot move the root node')
 	}
 	if n.is_ancestor_of(new_parent) {
@@ -366,7 +366,7 @@ pub fn (mut d Document) reparent(mut n core.Node, mut new_parent core.Node, inde
 	if d.is_prefab_owned(n) {
 		return error('"${n.name}" belongs to the source prefab and cannot be moved')
 	}
-	same_parent := n.parent == new_parent
+	same_parent := voidptr(n.parent) == voidptr(new_parent)
 	if !same_parent {
 		if _ := serialize.direct_child(new_parent, n.name) {
 			return error('"${new_parent.name}" already has a child node named "${n.name}"')
@@ -392,7 +392,7 @@ pub fn (mut d Document) reparent(mut n core.Node, mut new_parent core.Node, inde
 // move_sibling swaps order with a sibling node (delta = -1 up, +1 down). Draw order follows tree order.
 pub fn (mut d Document) move_sibling(mut n core.Node, delta int) ! {
 	d.expect_mine(n)!
-	if n == d.scene.root {
+	if voidptr(n) == voidptr(d.scene.root) {
 		return error('the root node has no siblings')
 	}
 	if _ := d.reference_of(n.parent) {
@@ -533,7 +533,7 @@ pub fn (mut d Document) instantiate_prefab(key string, mut parent core.Node) !&c
 // make_prefab writes the subtree of `n` to a new prefab file `rel_path`, then turns `n` into an instance of it.
 pub fn (mut d Document) make_prefab(mut n core.Node, rel_path string) !string {
 	d.expect_mine(n)!
-	if n == d.scene.root {
+	if voidptr(n) == voidptr(d.scene.root) {
 		return error('cannot turn the root node into a prefab of its own file (use "Save as")')
 	}
 	rel := normalize_scene_path(rel_path)!

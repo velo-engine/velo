@@ -292,8 +292,9 @@ node MoreCoins {
 | Component | What it does |
 |---|---|
 | `UITransform` | `size` + `anchor` of the node's rectangle (used by everything below, and for picking in the editor) |
-| `Panel` | fills the rectangle: `color`, `radius` (rounded corners when not rotated), `border_color`, `border_width` |
-| `Label` | text; `align` left/center/right, `valign` top/middle/bottom. With a UITransform it aligns inside the rectangle |
+| `Panel` | fills the rectangle: `color`, `radius` (rounded corners when not rotated), `border_color`, `border_width`; stops clicks from reaching UI under it unless `block_input = false` |
+| `Label` | text (`\n` = new line); `align` left/center/right, `valign` top/middle/bottom, `font`, `line_spacing`. With a UITransform it aligns inside the rectangle, `wrap` breaks lines at its width and `shrink` lowers the size until the text fits. `shadow_color`/`shadow_offset` and `outline_color`/`outline_width` (alpha 0 = off) keep it readable on busy backgrounds |
+| `TextInput` | a one-line text field in the rectangle: click/tap to type (any language), arrows, Home/End, Backspace/Delete (held keys repeat), Enter submits, Esc or a click elsewhere stops. `text`, `placeholder`, `max_length`, `password`, `font`, `size`, colors; poll `changed` / `submitted`, or `focus()` / `blur()`. Phones and browsers show their keyboard while it has focus, and Esc does not quit the game then |
 | `Button` | click (or tap, with any finger) on the rectangle (UITransform or Sprite). `btn.on_click(fn (mut b render.Button) {...})` or poll `btn.clicked` (true for one frame). Tints the Panel/Sprite of `target` by state (`normal/hover/pressed/disabled_color`, multiplied with its own color); `interactable = false` disables it |
 | `Toggle` | with a Button on the same node: each click flips `is_on` and shows/hides the `checkmark` child (`changed` is true for that frame) |
 | `ProgressBar` | draws `back_color` + a `fill_color` part for `progress` (0..1); `direction` horizontal/vertical, `reverse` |
@@ -307,10 +308,22 @@ Touch: `input.touches` lists every finger (`id`, `pos`, `start`, `phase` began/m
 the first finger also drives the mouse fields; `input.pointers()` is every finger plus the held mouse, for code that
 should work the same with both. `scene.safe_insets` holds the safe area (screen units, from the edges of the visible
 area); on desktop, `VELO_SAFE_AREA="left,top,right,bottom"` (window points) fakes one to try a phone layout, and F1 outlines it.
-The demo's HUD uses a Button (`SpawnButton`) and a ScrollView + Layout pickup log (`PickupLog`, see `examples/demo/hud.v`).
+The demo's HUD uses a Button (`SpawnButton`) and a ScrollView + Layout pickup log (`PickupLog`, see `examples/demo/hud.v`);
+its menu has a TextInput for the player's name (saved) and a title with an outline and a shadow.
 
-Limits: overlapping buttons all receive the click (no event blocking yet); Widget/Layout run in `update`, so the editor
-shows them at their saved positions until you press Play; the anchor gizmo (Y) only edits Sprite anchors.
+**Clicks go to the topmost UI only.** Buttons, ScrollViews, Joysticks, TextInputs and Panels take the pointer in draw
+order (z_index and Canvas included): a dialog Panel over buttons stops them, and of two overlapping buttons only the
+one on top is clicked or hovered. An element still gets presses on its own children (a ScrollView can be dragged from
+a button inside it). For gameplay clicks, `render.pointer_over_ui(scene, input.mouse)` tells whether the UI took it;
+`render.pointer_target(scene, p)` returns the element.
+
+**Fonts.** `.ttf` and `.otf` files are Font assets: set a Label's or TextInput's `font` to one (in the Inspector, or
+`font = @asset("...")`), or `label.set_font(ref)` from code. Unset, text uses the app's font (`font_path` in `app.new`).
+`Input.text` holds what was typed this frame, and `input.was_typed(.backspace)` includes key repeats, for custom fields.
+
+Limits: text ignores rotation; no rich text (colors/bold inside one Label), text selection, clipboard or IME
+candidate window in TextInput; a font file edited on disk needs a restart; Widget/Layout run in `update`, so the
+editor shows them at their saved positions until you press Play; the anchor gizmo (Y) only edits Sprite anchors.
 
 ## Particles
 

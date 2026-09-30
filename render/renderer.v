@@ -217,6 +217,8 @@ fn (mut r Renderer) draw_node(n &core.Node, m core.Affine2) {
 			r.draw_progress(c, m)
 		} else if c is TileMap {
 			r.draw_tilemap(c, m)
+		} else if c is TextInput {
+			r.draw_text_input(c, m)
 		} else if c is MeshDrawable {
 			for mesh in c.meshes() {
 				r.draw_mesh(mesh, m)
@@ -364,32 +366,169 @@ fn (mut r Renderer) draw_sprite(s &Sprite, m core.Affine2) {
 	}
 }
 
+// GgMeasure measures text with gg (see TextMeasurer).
+struct GgMeasure {
+	ctx    &gg.Context
+	family string
+}
+
+fn (g GgMeasure) width(s string, size f32) f32 {
+	g.ctx.set_text_cfg(size: int(size + 0.5), family: g.family)
+	return g.ctx.text_width_f(s)
+}
+
+// label_layout lays out a label's text (wrapped / shrunk), recomputing only when something it depends on changed.
+fn (r &Renderer) label_layout(l &Label) TextBlock {
+	mut box := Rect{}
+	if t := l.node.get_component[UITransform]() {
+		box = t.rect()
+	}
+	family := font_family(l.font_data)
+	key := '${l.text}|${l.size}|${l.wrap}|${l.shrink}|${l.line_spacing}|${box.w}|${box.h}|${family}'
+	if key == l.layout_key {
+		return l.layout
+	}
+	block := layout_text(l.text, l.size, l.line_spacing, l.wrap, l.shrink, if l.wrap || l.shrink {
+		box.w
+	} else {
+		0
+	}, if l.shrink { box.h } else { 0 }, 6, GgMeasure{r.ctx, family})
+	mut ml := unsafe { l }
+	ml.layout_key = key
+	ml.layout = block
+	return block
+}
+
 fn (mut r Renderer) draw_label(l &Label, m core.Affine2) {
 	if l.text == '' {
 		return
 	}
-	p := m.apply(l.text_point())
 	sc := m.scale()
+	k := if sc.y < 0 { -sc.y } else { sc.y }
 	align := match l.align {
 		'center' { gg.HorizontalAlign.center }
 		'right' { gg.HorizontalAlign.right }
 		else { gg.HorizontalAlign.left }
 	}
 
-	valign := match l.valign {
-		'middle' { gg.VerticalAlign.middle }
-		'bottom' { gg.VerticalAlign.bottom }
-		else { gg.VerticalAlign.top }
+	family := font_family(l.font_data)
+	anchor := l.text_point()
+	if !l.wrap && !l.shrink && !l.text.contains('\n') {
+		// one line: gg aligns it vertically itself
+		valign := match l.valign {
+			'middle' { gg.VerticalAlign.middle }
+			'bottom' { gg.VerticalAlign.bottom }
+			else { gg.VerticalAlign.top }
+		}
+
+		p := m.apply(anchor)
+		r.draw_text_fx(l, p, l.text, gg.TextCfg{
+			size:           int(f32(l.size) * k)
+			color:          to_gg(l.color)
+			align:          align
+			vertical_align: valign
+			family:         family
+		}, k)
+		return
+	}
+	block := r.label_layout(l)
+	top := match l.valign {
+		'middle' { anchor.y - block.height() / 2 }
+		'bottom' { anchor.y - block.height() }
+		else { anchor.y }
 	}
 
-	r.ctx.draw_text(int(p.x), int(p.y), l.text,
-		size:           int(f32(l.size) * (if sc.y < 0 { -sc.y } else { sc.y }))
+	cfg := gg.TextCfg{
+		size:           int(block.size * k)
 		color:          to_gg(l.color)
 		align:          align
-		vertical_align: valign
-	)
+		vertical_align: .top
+		family:         family
+	}
+	for i, line in block.lines {
+		if line == '' {
+			continue
+		}
+		r.draw_text_fx(l, m.apply(core.vec2(anchor.x, top + i * block.line_height)), line, cfg, k)
+	}
+}
+
+// draw_text_fx draws one line with the label's outline and shadow under it (`k` = node scale, for offsets).
+fn (mut r Renderer) draw_text_fx(l &Label, p core.Vec2, text string, cfg gg.TextCfg, k f32) {
+	if l.shadow_color.a > 0 {
+		o := l.shadow_offset.mul(k)
+		r.ctx.draw_text(int(p.x + o.x), int(p.y + o.y), text, gg.TextCfg{
+			...cfg
+			color: to_gg(l.shadow_color)
+		})
+		r.draw_calls++
+	}
+	if l.outline_color.a > 0 && l.outline_width > 0 {
+		w := l.outline_width * k
+		oc := gg.TextCfg{
+			...cfg
+			color: to_gg(l.outline_color)
+		}
+		for d in outline_dirs {
+			r.ctx.draw_text(int(p.x + d.x * w + 0.5), int(p.y + d.y * w + 0.5), text, oc)
+		}
+		r.draw_calls += outline_dirs.len
+	}
+	r.ctx.draw_text(int(p.x), int(p.y), text, cfg)
 	r.draw_calls++
 }
+
+// draw_text_input draws the field's text (or placeholder) and caret, clipped to its box and scrolled so the
+// caret stays visible.
+fn (mut r Renderer) draw_text_input(t &TextInput, m core.Affine2) {
+	tr := t.node.get_component[UITransform]() or { return }
+	rc := tr.rect()
+	sc := m.scale()
+	k := if sc.y < 0 { -sc.y } else { sc.y }
+	family := font_family(t.font_data)
+	meas := GgMeasure{r.ctx, family}
+	shown := t.shown()
+	runes := shown.runes()
+	ci := if t.caret < 0 {
+		0
+	} else if t.caret > runes.len {
+		runes.len
+	} else {
+		t.caret
+	}
+	caret_x := meas.width(runes[..ci].string(), t.size)
+	text_w := meas.width(shown, t.size)
+	mut mt := unsafe { t }
+	scroll := mt.update_scroll(caret_x, text_w, rc.w - 2 * t.padding)
+
+	old := r.clip
+	r.clip = old.intersect(screen_bounds(m, rc))
+	r.set_scissor(r.clip)
+	mid := rc.y + rc.h / 2
+	x0 := rc.x + t.padding - scroll
+	p := m.apply(core.vec2(x0, mid))
+	empty := shown == ''
+	if !empty || t.placeholder != '' {
+		r.ctx.draw_text(int(p.x), int(p.y), if empty { t.placeholder } else { shown },
+			size:           int(f32(t.size) * k)
+			color:          to_gg(if empty { t.placeholder_color } else { t.color })
+			vertical_align: .middle
+			family:         family
+		)
+		r.draw_calls++
+	}
+	if t.caret_visible() {
+		cx := if empty { rc.x + t.padding } else { x0 + caret_x }
+		half := f32(t.size) * 0.55
+		r.fill_quad(m, Rect{cx, mid - half, 1.5, half * 2}, 0, t.caret_color)
+	}
+	r.clip = old
+	r.set_scissor(old)
+}
+
+const outline_dirs = [core.vec2(-1, 0), core.vec2(1, 0), core.vec2(0, -1),
+	core.vec2(0, 1), core.vec2(-0.7, -0.7), core.vec2(0.7, -0.7),
+	core.vec2(-0.7, 0.7), core.vec2(0.7, 0.7)]
 
 // image_for uploads the texture to the GPU on first use, and re-uploads it when the file changes (hot reload).
 fn (mut r Renderer) image_for(t &assets.Texture) ?gg.Image {

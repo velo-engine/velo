@@ -20,6 +20,7 @@ pub fn register_builtins(mut r serialize.Registry) {
 	r.register[Widget]()
 	r.register[Layout]()
 	r.register[Joystick]()
+	r.register[TextInput]()
 	r.register[ParticleSystem]()
 	r.register[TileMap]()
 }
@@ -155,7 +156,7 @@ pub fn (mut a SpriteAnimator) update(dt f32) {
 }
 
 // Label — draws text (ignores rotation). With a UITransform on the node, the text is aligned inside its
-// rectangle; otherwise it is aligned around the node's position.
+// rectangle; otherwise it is aligned around the node's position. `\n` starts a new line.
 pub struct Label {
 	core.Component
 pub mut:
@@ -164,6 +165,62 @@ pub mut:
 	color  core.Color = core.white
 	align  string     = 'left' @[choices: 'left|center|right']
 	valign string     = 'top' @[choices: 'top|middle|bottom']
+	font   assets.AssetRef[assets.Font] // .ttf/.otf; unset = the app's font
+	// With a UITransform: `wrap` breaks lines at its width; `shrink` lowers the size until the text fits it.
+	wrap         bool
+	shrink       bool
+	line_spacing f32 = 1.25 // line height, in font sizes
+	// Readability over busy backgrounds (alpha 0 = off): a copy drawn behind at `shadow_offset`, and an
+	// outline `outline_width` thick.
+	shadow_color  core.Color   = core.rgba(0, 0, 0, 0)
+	shadow_offset core.Vec2    = core.Vec2{2, 2}
+	outline_color core.Color   = core.rgba(0, 0, 0, 0)
+	outline_width f32          = 1.5
+	font_data     &assets.Font = unsafe { nil } @[hide]
+	layout_key    string       @[hide] // what `layout` was computed for
+	layout        TextBlock    @[hide]
+}
+
+pub fn (mut l Label) on_load() {
+	l.font_data = load_font(l.node, l.font)
+}
+
+pub fn (mut l Label) on_destroy() {
+	l.font_data = release_font(l.node, l.font_data)
+}
+
+// set_font changes the font from code.
+pub fn (mut l Label) set_font(r assets.AssetRef[assets.Font]) {
+	l.font_data = release_font(l.node, l.font_data)
+	l.font = r
+	l.font_data = load_font(l.node, r)
+}
+
+fn load_font(n &core.Node, r assets.AssetRef[assets.Font]) &assets.Font {
+	if !r.is_set() || n == unsafe { nil } || n.scene == unsafe { nil }
+		|| n.scene.assets == unsafe { nil } {
+		return unsafe { nil }
+	}
+	mut db := n.scene.assets
+	return db.get(r) or {
+		eprintln('[render] ${n.path()}: ${err}')
+		unsafe { nil }
+	}
+}
+
+// release_font gives the font back to the asset database; returns nil for the caller to store.
+fn release_font(n &core.Node, f &assets.Font) &assets.Font {
+	if f != unsafe { nil } && n != unsafe { nil } && n.scene != unsafe { nil }
+		&& n.scene.assets != unsafe { nil } {
+		mut db := n.scene.assets
+		db.release(f.id)
+	}
+	return unsafe { nil }
+}
+
+// font_family: what gg draws the text with ('' = the default font).
+fn font_family(f &assets.Font) string {
+	return if f != unsafe { nil } { f.path } else { '' }
 }
 
 // text_point: where the text is anchored, in node space (for the given align/valign).

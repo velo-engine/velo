@@ -33,7 +33,7 @@ fn (mut e Editor) frame_all() {
 }
 
 fn (mut e Editor) frame_selected() {
-	if !e.doc.has_selection() || e.doc.selected == e.doc.scene.root {
+	if !e.doc.has_selection() || voidptr(e.doc.selected) == voidptr(e.doc.scene.root) {
 		e.frame_all()
 		return
 	}
@@ -205,7 +205,7 @@ fn (mut e Editor) handle_scene_view_input(r Rect) {
 	}
 	e.doc.select(hit)
 	// dragging the node's body moves it freely (Move tool only, so rotating/scaling can't nudge it by accident)
-	if hit != e.doc.scene.root && e.tool == .move {
+	if voidptr(hit) != voidptr(e.doc.scene.root) && e.tool == .move {
 		e.begin_transform_drag(.move_node, hit, .none)
 		e.drag_offset = world - hit.world_position()
 	}
@@ -356,7 +356,8 @@ fn (mut e Editor) drop() {
 	}
 	// asset
 	if e.view_rect.has(e.ui.mouse) && e.modal == .none {
-		mut parent := if e.doc.has_selection() && e.doc.selected != e.doc.scene.root {
+		mut parent := if e.doc.has_selection()
+			&& voidptr(e.doc.selected) != voidptr(e.doc.scene.root) {
 			e.doc.selected.parent
 		} else {
 			e.doc.scene.root
@@ -452,7 +453,7 @@ fn (mut e Editor) draw_hierarchy(r Rect) {
 	for row in rows {
 		n := row.node
 		rr := row.rect
-		if n == selected {
+		if voidptr(n) == voidptr(selected) {
 			e.ui.fill(rr, c_select)
 		} else if e.ui.hover(rr) {
 			e.ui.fill(rr, gg.Color{60, 60, 68, 255})
@@ -483,7 +484,7 @@ fn (mut e Editor) draw_hierarchy(r Rect) {
 				e.doc.select(n)
 				if e.ui.double {
 					e.frame_selected()
-				} else if n != e.doc.scene.root {
+				} else if voidptr(n) != voidptr(e.doc.scene.root) {
 					e.drag = .hier_node
 					e.drag_node = n
 					e.drag_start = e.ui.mouse
@@ -604,6 +605,7 @@ fn (mut e Editor) draw_assets(r Rect) {
 			.texture { 'image', c_ok }
 			.audio { 'audio', c_override }
 			.text { 'text', c_dim }
+			.font { 'font', c_text }
 			.unknown { '?', c_dim }
 		}
 
@@ -715,7 +717,7 @@ fn (mut e Editor) draw_inspector(r Rect) {
 				c_prefab_owned, 0)
 			y += row_h + 6
 		}
-		if n != e.doc.scene.root && !owned {
+		if voidptr(n) != voidptr(e.doc.scene.root) && !owned {
 			if e.ui.button(Rect{x, y, w, row_h}, 'Create prefab from this node…', true) {
 				e.open_modal(.make_prefab, 'prefabs/${n.name.to_lower().replace(' ', '_')}.scene')
 			}
