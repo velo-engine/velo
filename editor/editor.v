@@ -61,7 +61,9 @@ pub mut:
 	db       &assets.AssetDatabase
 	registry &serialize.Registry
 	loader   &serialize.SceneLoader
-	doc      &scenedoc.Document = unsafe { nil }
+	// Save data while playing: kept in memory for the editor session (the game's real save file is not touched).
+	play_store &core.Store        = &core.Store{}
+	doc        &scenedoc.Document = unsafe { nil }
 mut:
 	ctx      &gg.Context      = unsafe { nil }
 	renderer &render.Renderer = unsafe { nil }
@@ -210,6 +212,7 @@ fn on_frame(mut e Editor) {
 	if e.play != unsafe { nil } {
 		e.play.update(dt)
 		e.play_input.end_frame()
+		e.change_play_scene()
 		audio.pump()
 	} else if e.doc != unsafe { nil } {
 		preview_tree(mut e.doc.scene.root, dt)
@@ -648,13 +651,50 @@ fn (mut e Editor) start_play() {
 		return
 	}
 	e.play_input = &core.Input{}
-	s.input = e.play_input
-	s.view_size = core.vec2(e.cfg.game_width, e.cfg.game_height)
+	e.setup_play_scene(mut s)
 	e.play = s
 	e.play_selected = unsafe { nil }
 	e.add_menu_open = false
 	e.set_status('playing — Esc or the Stop button to return to editing (changes made while playing are not saved)',
 		false)
+}
+
+fn (mut e Editor) setup_play_scene(mut s core.Scene) {
+	s.input = e.play_input
+	s.view_size = core.vec2(e.cfg.game_width, e.cfg.game_height)
+	s.store = e.play_store
+	if s.key == '' {
+		s.key = e.doc.asset_id
+	}
+}
+
+// change_play_scene carries out change_scene while playing (at once, without the fade). Reloading the
+// scene being edited plays its current state, unsaved changes included.
+fn (mut e Editor) change_play_scene() {
+	key := e.play.next_scene
+	if key == '' {
+		return
+	}
+	e.play.next_scene = ''
+	id := e.db.resolve(key) or { key }
+	mut next := if id == e.doc.asset_id && id != '' {
+		e.doc.play_scene() or {
+			e.report(err)
+			return
+		}
+	} else {
+		e.loader.load_scene(key) or {
+			e.report(err)
+			return
+		}
+	}
+	next.key = id
+	e.setup_play_scene(mut next)
+	next.take_persistent(mut e.play)
+	e.play.unload()
+	e.play = next
+	e.play_selected = unsafe { nil }
+	e.set_status('playing ${e.db.path_of(id) or { key }}', false)
 }
 
 fn (mut e Editor) stop_play() {
@@ -758,6 +798,7 @@ fn node_prop_value(n &core.Node, prop string) serialize.Value {
 		'z_index' { serialize.Value(f64(n.z_index)) }
 		'y_sort' { serialize.Value(n.y_sort) }
 		'unscaled_time' { serialize.Value(n.unscaled_time) }
+		'persistent' { serialize.Value(n.persistent) }
 		'scale' { serialize.vec2_value(n.scale) }
 		else { serialize.Value(n.active) }
 	}

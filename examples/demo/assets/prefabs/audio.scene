@@ -1,0 +1,7 @@
+# Music and sound effects, shared by the menu and the game. `persistent`: when a scene changes, this node moves
+# to the next scene (whose own Audio is dropped), so the music keeps playing across scenes.
+node Audio {
+  persistent = true
+  node Music { AudioSource { clip = @asset("5c01a7d4")  looping = true  bus = "music"  volume = 0.35 } }   # sounds/music.wav
+  node Coin { AudioSource { clip = @asset("5c01a7d3")  play_on_start = false  volume = 0.6 } }             # sounds/coin.wav, played by Pickup
+}

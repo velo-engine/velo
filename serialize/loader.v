@@ -187,8 +187,11 @@ pub fn apply_node_props(mut n core.Node, props map[string]Value) ! {
 			'unscaled_time' {
 				n.unscaled_time = v.as_bool()!
 			}
+			'persistent' {
+				n.persistent = v.as_bool()!
+			}
 			else {
-				return error('node has no property "${k}" (only position, rotation, scale, active, z_index, y_sort, unscaled_time)')
+				return error('node has no property "${k}" (only position, rotation, scale, active, z_index, y_sort, unscaled_time, persistent)')
 			}
 		}
 	}

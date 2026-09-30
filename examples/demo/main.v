@@ -27,7 +27,8 @@ fn main() {
 	mut game := app.new(
 		title:      'Velo Engine — coin collector demo'
 		assets_dir: assets_dir
-		scene:      'scenes/main.scene'
+		scene:      'scenes/menu.scene' // title screen; Play goes to scenes/main.scene
+		app_id:     'velo-demo'         // save data (best score) folder name
 	) or {
 		eprintln(err)
 		exit(1)
@@ -47,5 +48,6 @@ fn register_components(mut r serialize.Registry) {
 	r.register[SpawnButton]()
 	r.register[PickupLog]()
 	r.register[PauseControls]()
+	r.register[MenuScreen]()
 	r.register[TouchMarkers]()
 }

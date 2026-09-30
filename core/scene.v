@@ -38,6 +38,67 @@ pub mut:
 	safe_insets Insets
 	// Cameras in the scene (they add themselves in on_load); see active_camera.
 	cameras []&Camera
+	// The scene's asset ID or path (what App loaded it from); reload() loads it again.
+	key string
+	// The player's saved data, shared by every scene (App opens it and saves it; see Store).
+	store &Store = &Store{}
+	// Set by change_scene: App switches after this frame.
+	next_scene  string
+	next_change SceneChange
+}
+
+// SceneChange — how change_scene switches: a fade to `color` and back, `fade` seconds each way (0 = cut).
+@[params]
+pub struct SceneChange {
+pub:
+	fade  f32   = 0.25
+	color Color = rgba(0, 0, 0, 255)
+}
+
+// change_scene switches to another scene (path or asset ID) once this frame is over; App fades out, loads it,
+// and fades in. Direct children of the root with `persistent = true` move to the new scene (a node of the
+// same name there is dropped for them). The Store stays. Calling it again before the switch replaces the target.
+//
+//   c.scene().change_scene('scenes/level2.scene')
+//   c.scene().change_scene('scenes/menu.scene', fade: 0.6)
+pub fn (mut s Scene) change_scene(key string, opts SceneChange) {
+	s.next_scene = key
+	s.next_change = opts
+}
+
+// reload restarts the current scene (see change_scene).
+pub fn (mut s Scene) reload(opts SceneChange) {
+	s.change_scene(s.key, opts)
+}
+
+// take_persistent moves the persistent root children of `from` into this scene without running any lifecycle
+// method (they keep their state, timers, tweens and loaded assets). A root child of this scene with the same
+// name is destroyed first. Used by App when switching scenes.
+pub fn (mut s Scene) take_persistent(mut from Scene) {
+	mut keep := from.root.children.filter(it.persistent && !it.destroyed)
+	for mut n in keep {
+		for mut other in s.root.children.filter(it.name == n.name) {
+			other.destroy()
+		}
+		s.flush_destroyed()
+		n.remove_from_parent()
+		n.move_to_scene(mut from, mut s)
+		s.root.children << n
+		n.parent = s.root
+	}
+}
+
+// move_to_scene points the subtree at `to` without on_load/on_destroy, carrying its cameras over.
+fn (mut n Node) move_to_scene(mut from Scene, mut to Scene) {
+	n.scene = to
+	moved := from.cameras.filter(voidptr(it.node) == voidptr(n))
+	if moved.len > 0 {
+		from.cameras = from.cameras.filter(voidptr(it.node) != voidptr(n))
+		to.cameras << moved
+	}
+	for mut ch in n.children {
+		ch.move_to_scene(mut from, mut to)
+	}
 }
 
 pub fn Scene.new(name string) &Scene {

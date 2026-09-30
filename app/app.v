@@ -25,6 +25,10 @@ pub:
 	background    core.Color = core.rgba(30, 30, 40, 255)
 	hot_reload    bool       = true // always off on Android/iOS
 	font_path     string // .ttf used for text; empty = the platform default
+	// Names the save data folder (see open_store); '' = made from the title. Keep it once the game ships.
+	app_id string
+	// Where to save the player's data instead of the platform's usual place (desktop and phones).
+	save_file string
 	// Set this hook to run code after each time the scene is (re)loaded.
 	on_scene_loaded fn (mut a App) = unsafe { nil }
 }
@@ -46,7 +50,10 @@ pub mut:
 	fit core.ScreenFit
 	// The safe area insets in window points, refreshed twice a second (the scene gets them in screen units).
 	safe_insets core.Insets
+	// The player's saved data, given to every scene (scene.store); saved on quit and when sent to the background.
+	store &core.Store
 mut:
+	fade         SceneFade
 	mode         core.ScaleMode
 	last_ticks   i64
 	reload_timer f32
@@ -77,6 +84,7 @@ pub fn new(config Config) !&App {
 		loader:   serialize.new_loader(reg, db)
 		input:    &core.Input{}
 		mode:     mode
+		store:    open_store(cfg)
 	}
 	a.update_fit()
 	println('[velo] ${db.len()} assets in ${db.root}')
@@ -92,12 +100,15 @@ pub fn (mut a App) register[T]() {
 pub fn (mut a App) load_scene(key string) ! {
 	mut next := a.loader.load_scene(key)!
 	next.input = a.input
+	next.store = a.store
+	next.key = a.db.resolve(key) or { key }
 	a.apply_fit(mut next)
 	if a.scene != unsafe { nil } {
+		next.take_persistent(mut a.scene)
 		a.scene.unload()
 	}
 	a.scene = next
-	a.scene_id = a.db.resolve(key) or { key }
+	a.scene_id = next.key
 	if a.cfg.on_scene_loaded != unsafe { nil } {
 		a.cfg.on_scene_loaded(mut a)
 	}
@@ -164,12 +175,14 @@ fn on_frame(mut a App) {
 	a.apply_fit(mut a.scene)
 	a.scene.update(dt)
 	a.input.end_frame()
+	a.update_scene_change(dt)
 	audio.pump()
 
 	a.ctx.begin()
 	a.renderer.base_clip =
 		render.Rect{a.fit.area_pos.x, a.fit.area_pos.y, a.fit.area_size.x, a.fit.area_size.y}
 	a.renderer.draw_scene(a.scene, a.fit.to_window())
+	a.draw_fade()
 	a.draw_bars()
 	if a.renderer.debug {
 		a.ctx.draw_text(int(a.window_points().x) - 10, 10,
@@ -193,8 +206,64 @@ fn on_frame(mut a App) {
 	}
 }
 
-fn on_cleanup(mut _ App) {
+fn on_cleanup(mut a App) {
+	a.store.save_if_changed()
 	audio.shutdown()
+}
+
+// SceneFade — the fade of a scene change in progress (see core.Scene.change_scene).
+struct SceneFade {
+mut:
+	target   string
+	change   core.SceneChange
+	alpha    f32 // 0 = clear, 1 = covered
+	fading   bool
+	coming   bool // fading back in, after loading
+	web_save f32
+}
+
+// update_scene_change carries out scene.change_scene: fade out (the old scene keeps running), load, fade in.
+fn (mut a App) update_scene_change(dt f32) {
+	mut f := &a.fade
+	if a.scene.next_scene != '' && !f.fading {
+		f.target = a.scene.next_scene
+		f.change = a.scene.next_change
+		f.fading = true
+		f.coming = false
+		a.scene.next_scene = ''
+	}
+	if f.fading {
+		step := if f.change.fade > 0 { dt / f.change.fade } else { f32(1) }
+		if !f.coming {
+			f.alpha = if f.alpha + step > 1 { f32(1) } else { f.alpha + step }
+			if f.alpha >= 1 {
+				a.load_scene(f.target) or { eprintln('[velo] change_scene("${f.target}"): ${err}') }
+				f.coming = true
+			}
+		} else {
+			f.alpha = if f.alpha - step < 0 { f32(0) } else { f.alpha - step }
+			if f.alpha <= 0 {
+				f.fading = false
+			}
+		}
+	}
+	$if emscripten ? {
+		// a browser tab can close without warning: keep localStorage up to date
+		f.web_save += dt
+		if f.web_save >= 1 {
+			f.web_save = 0
+			a.store.save_if_changed()
+		}
+	}
+}
+
+fn (mut a App) draw_fade() {
+	if a.fade.alpha <= 0 {
+		return
+	}
+	c := a.fade.change.color
+	w := a.window_points()
+	a.ctx.draw_rect_filled(0, 0, w.x, w.y, gg.Color{c.r, c.g, c.b, u8(f32(c.a) * a.fade.alpha)})
 }
 
 // on_asset_event: the renderer frees GPU images, the mixer forgets decoded sounds.
@@ -327,6 +396,7 @@ fn on_event(e &gg.Event, mut a App) {
 		.suspended, .iconified {
 			mut m := audio.mixer()
 			m.set_paused(true) // app in the background (phones) or minimized
+			a.store.save_if_changed() // a phone may kill a background app without warning
 		}
 		.resumed, .restored {
 			mut m := audio.mixer()

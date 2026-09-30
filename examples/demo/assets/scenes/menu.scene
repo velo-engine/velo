@@ -1,0 +1,36 @@
+# Title screen: shows the best score (saved data) and starts the game (change_scene).
+node Menu {
+  node Background {
+    position = [480, 270]
+    Sprite { texture = @asset("b8c1e2a3")  size = [960, 540]  color = [150, 160, 170, 255] }
+  }
+  node Audio from @asset("7a0d10a5") { }
+  node UI {
+    Canvas { }
+    MenuScreen { }
+    node Title {
+      UITransform { size = [700, 90] }
+      Widget { align_center_x = true  align_top = true  top = 110 }
+      Label { text = "Coin Collector"  size = 64  align = "center"  valign = "middle"  color = [255, 236, 150, 255] }
+    }
+    node Best {
+      UITransform { size = [400, 40] }
+      Widget { align_center_x = true  align_top = true  top = 205 }
+      Label { text = "Best: 0"  size = 28  align = "center"  valign = "middle" }
+    }
+    node Play {
+      UITransform { size = [220, 60] }
+      Widget { align_center_x = true  align_center_y = true  center_y = 60 }
+      Panel { color = [70, 130, 220, 255]  radius = 10  border_width = 1 }
+      Button { }
+      node Text { Label { text = "Play"  size = 28  align = "center"  valign = "middle" } }
+    }
+    node Reset {
+      UITransform { size = [180, 36] }
+      Widget { align_center_x = true  align_center_y = true  center_y = 140 }
+      Panel { color = [0, 0, 0, 110]  radius = 8 }
+      Button { }
+      node Text { Label { text = "Reset best score"  size = 18  align = "center"  valign = "middle" } }
+    }
+  }
+}

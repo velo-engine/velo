@@ -86,10 +86,7 @@ node Main {
       position = [482.663, 205.8465]
     }
   }
-  node Audio {
-    node Music { AudioSource { clip = @asset("5c01a7d4")  looping = true  bus = "music"  volume = 0.35 } }
-    node Coin { AudioSource { clip = @asset("5c01a7d3")  play_on_start = false  volume = 0.6 } }   # played by Pickup
-  }
+  node Audio from @asset("7a0d10a5") { }                             # persistent: the menu's music keeps playing
   node HUD {
     unscaled_time = true                                              # keeps running while paused (P)
     Canvas { }                                                        # screen space: the camera does not move it
@@ -108,7 +105,7 @@ node Main {
     }
     node Help {
       position = [20, 526]
-      Label { text = "Arrows / WASD / joystick: move    R: more coins    P: pause    T: slow motion    F1: debug    Esc: quit"  size = 18  color = [255, 255, 255, 210]  valign = "bottom" }
+      Label { text = "Arrows / WASD / joystick: move    R: more coins    P: pause    T: slow motion    M: menu    Esc: quit"  size = 18  color = [255, 255, 255, 210]  valign = "bottom" }
       Widget { align_left = true  left = 20  align_bottom = true  bottom = 14 }
     }
     node MoreCoins {

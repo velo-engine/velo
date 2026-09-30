@@ -255,6 +255,7 @@ pub fn (mut d Document) node_prop_overridden(n &core.Node, prop string) bool {
 		'z_index' { r.z_index != n.z_index }
 		'y_sort' { r.y_sort != n.y_sort }
 		'unscaled_time' { r.unscaled_time != n.unscaled_time }
+		'persistent' { r.persistent != n.persistent }
 		else { false }
 	}
 }
@@ -418,6 +419,7 @@ pub fn (mut d Document) set_node_prop(mut n core.Node, prop string, v serialize.
 		z_index:       n.z_index
 		y_sort:        n.y_sort
 		unscaled_time: n.unscaled_time
+		persistent:    n.persistent
 	}
 	serialize.apply_node_props(mut tmp, {
 		prop: v
@@ -433,6 +435,7 @@ pub fn (mut d Document) set_node_prop(mut n core.Node, prop string, v serialize.
 	n.z_index = tmp.z_index
 	n.y_sort = tmp.y_sort
 	n.unscaled_time = tmp.unscaled_time
+	n.persistent = tmp.persistent
 }
 
 // ---------- Component ----------

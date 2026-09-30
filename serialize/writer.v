@@ -56,6 +56,9 @@ fn (mut l SceneLoader) write_node(n &core.Node, reference ?&core.Node, depth int
 	if n.unscaled_time != base.unscaled_time {
 		body << '${pad}  unscaled_time = ${n.unscaled_time}'
 	}
+	if n.persistent != base.persistent {
+		body << '${pad}  persistent = ${n.persistent}'
+	}
 
 	// Component
 	for c in n.components {

@@ -18,11 +18,14 @@ pub mut:
 	// This node and its children ignore Scene.time_scale and Scene.paused: they get real time and keep
 	// updating while the game is paused (pause menus, UI animations).
 	unscaled_time bool
-	parent        &Node = unsafe { nil }
-	children      []&Node
-	components    []IComponent
-	scene         &Scene = unsafe { nil }
-	destroyed     bool
+	// A direct child of the scene root that moves to the next scene on change_scene instead of being
+	// destroyed (music that keeps playing, a player that walks to the next level). See Scene.change_scene.
+	persistent bool
+	parent     &Node = unsafe { nil }
+	children   []&Node
+	components []IComponent
+	scene      &Scene = unsafe { nil }
+	destroyed  bool
 	// ID of the prefab that created this node ('' if not an instance). Used when saving to write only the overrides.
 	prefab_id string
 	tweens    []&Tween // see tween()

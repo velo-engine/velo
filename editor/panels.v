@@ -743,6 +743,14 @@ fn (mut e Editor) draw_inspector(r Rect) {
 		}
 	}
 	y += row_h + 3
+	e.prop_label(x, y, 'persistent', e.is_overridden(n, -1, 'persistent', ro))
+	if e.ui.checkbox(Rect{x + label_w, y, 40, row_h}, n.persistent, !ro) {
+		toggled := !n.persistent
+		e.doc.set_node_prop(mut n, 'persistent', serialize.Value(toggled), true) or {
+			e.report(err)
+		}
+	}
+	y += row_h + 3
 	y += 6
 
 	// ---- Component ----

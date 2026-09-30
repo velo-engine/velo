@@ -159,6 +159,11 @@ pub fn (mut b ScoreBoard) start() {
 pub fn (mut b ScoreBoard) add(v int) {
 	b.score += v
 	b.refresh()
+	// the best score is saved data (scene.store): the app writes it to disk when the game quits
+	mut st := b.scene().store
+	if b.score > st.get_int('best', 0) {
+		st.set_int('best', b.score)
+	}
 	// a little bounce on every point
 	b.node.kill_tweens()
 	b.node.scale = core.vec2(1, 1)

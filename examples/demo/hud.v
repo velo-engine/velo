@@ -46,13 +46,14 @@ pub fn (mut l PickupLog) add(text string) {
 	sv.scroll_to_bottom()
 }
 
-// PauseControls — P pauses the game (scene.paused), T toggles slow motion (scene.time_scale).
+// PauseControls — P pauses the game (scene.paused), T toggles slow motion (scene.time_scale), M goes back to the menu.
 // It lives on the HUD, which has `unscaled_time`, so it (and the HUD's buttons and scroll view) keeps working while paused.
 pub struct PauseControls {
 	core.Component
 pub mut:
 	slow_motion f32    = 0.3
 	label       string = 'Paused' // child shown while paused
+	menu        string = 'scenes/menu.scene'
 }
 
 pub fn (mut c PauseControls) update(dt f32) {
@@ -70,5 +71,50 @@ pub fn (mut c PauseControls) update(dt f32) {
 	}
 	if input.was_pressed(.t) {
 		sc.time_scale = if sc.time_scale < 1 { f32(1) } else { c.slow_motion }
+	}
+	if input.was_pressed(.m) {
+		sc.change_scene(c.menu, fade: 0.4)
+	}
+}
+
+// MenuScreen — the title screen: shows the saved best score, Play starts the game, Reset forgets the best score.
+pub struct MenuScreen {
+	core.Component
+pub mut:
+	game string = 'scenes/main.scene'
+}
+
+pub fn (mut m MenuScreen) start() {
+	m.show_best()
+	if mut title := m.node.find('Title') {
+		title.scale = core.vec2(0.8, 0.8)
+		title.tween().scale_to(core.vec2(1, 1), 0.6, .elastic_out)
+	}
+}
+
+pub fn (mut m MenuScreen) update(dt f32) {
+	mut sc := m.scene()
+	if m.clicked('Play') || m.input().was_pressed(.enter) || m.input().was_pressed(.space) {
+		sc.change_scene(m.game, fade: 0.4)
+	}
+	if m.clicked('Reset') {
+		mut st := sc.store
+		st.delete('best')
+		m.show_best()
+	}
+}
+
+fn (m &MenuScreen) clicked(name string) bool {
+	n := m.node.find(name) or { return false }
+	b := n.get_component[render.Button]() or { return false }
+	return b.clicked
+}
+
+fn (mut m MenuScreen) show_best() {
+	best := m.scene().store.get_int('best', 0)
+	if mut n := m.node.find('Best') {
+		if mut l := n.get_component[render.Label]() {
+			l.text = if best > 0 { 'Best: ${best}' } else { 'Collect as many coins as you can!' }
+		}
 	}
 }

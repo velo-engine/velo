@@ -8,7 +8,7 @@ but with a simpler Scene/Prefab model and stricter asset management.
 ## Quick start
 
 ```bash
-v run examples/demo          # coin collector demo: arrows/WASD, R scatters more coins, F1 debug, Esc quits
+v run examples/demo          # coin collector demo: title screen, then arrows/WASD, R more coins, P pause, M menu, Esc quits
 v run examples/demo --editor # scene/prefab editor (see the "Editor" section)
 v run examples/kine2d        # skeletal animations exported from the Kine2D editor (see "Kine2D animation")
 v test tests/                # unit tests for core, asset, serialize, scenedoc, physics (no GPU needed)
@@ -98,6 +98,46 @@ Common APIs: `node.get_component[T]()`, `node.add_component(&T{...})`, `node.fin
 V's reflection (`$for field in T.fields`) handles reading/writing fields, so **no serialization code is needed**.
 Supported field types: `f32 f64 int bool string []int core.Vec2 core.Color assets.AssetRef[...]`.
 
+## Scenes and saved data
+
+Any component can switch scenes; the app fades out, loads the new scene, and fades back in:
+
+```v
+c.scene().change_scene('scenes/level2.scene')                  // path or asset ID; fades 0.25 s each way
+c.scene().change_scene('scenes/menu.scene', fade: 0.6, color: core.rgba(255, 255, 255, 255))
+c.scene().reload()                                              // play the current scene again
+```
+
+The switch happens after the current frame; the old scene is destroyed (assets it alone used are freed).
+A direct child of the root with `persistent = true` moves to the new scene instead, untouched (no `on_destroy` /
+`on_load`, timers and tweens keep going): music that keeps playing, a player carried to the next level. If the new
+scene has a root child with the same name, it is dropped for the one already running, so both scenes can include
+the same persistent prefab (the demo's `prefabs/audio.scene`). In the editor, Play follows scene changes too (without
+the fade; reloading the edited scene plays its unsaved state).
+
+`scene.store` is the player's saved data, shared by every scene: whole numbers, decimals, true/false and text.
+
+```v
+mut st := c.scene().store
+st.set_int('coins', st.get_int('coins', 0) + 5)     // get_* take the value to use when it is missing
+st.set_bool('music', false)
+st.save()!                                          // optional: the app also saves when quitting and in the background
+```
+
+It is saved as readable text (`coins = 5`, one per line) to `<config dir>/<app_id>/save.txt` on desktop
+(`~/Library/Application Support` on macOS, `~/.config` on Linux, `%AppData%` on Windows), the app's private storage on
+Android and iOS, and `localStorage` in a browser (written every second while it changes). Set `app_id` in `app.new`
+(it defaults to one made from the title) and keep it once the game ships; `save_file` picks another path. A save is
+written to a temporary file first and then renamed, so a crash never leaves half a save. Editor Play keeps its own
+save data in memory, so testing never touches the game's real save.
+
+The demo starts on a title screen (`scenes/menu.scene`) that shows the saved best score; Play (or Enter) starts the
+game, **M** goes back, and the music never stops between them.
+
+Limits: loading is synchronous (a big scene holds the frame while it loads; there is no loading screen yet); the
+save file is not encrypted or signed; a killed process (not a normal quit) loses changes since the last save on
+desktop — call `store.save()` at checkpoints.
+
 ## Time, timers and tweens
 
 `scene.time_scale` changes the game speed (0.5 = slow motion) and `scene.paused = true` stops components, timers,
@@ -149,7 +189,7 @@ node Coin {
 }
 ```
 
-- `node Name { ... }` — a node; node properties: `position rotation scale active z_index y_sort unscaled_time` (see "Camera and draw order")
+- `node Name { ... }` — a node; node properties: `position rotation scale active z_index y_sort unscaled_time persistent` (see "Camera and draw order")
 - `ComponentName { field = value }` — a component
 - `node X from @asset("id") { ... }` — an instance of another prefab; the block inside is an **override**
 - A prefab **variant** = a prefab whose root is `from` another prefab (see `prefabs/big_coin.scene`). No separate concept needed.
