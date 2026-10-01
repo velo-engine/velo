@@ -1,6 +1,7 @@
 module audio
 
 import math
+import sync
 import velo.assets
 
 // VoiceId — a playing sound, returned by Mixer.play (0 = nothing was started).
@@ -49,14 +50,16 @@ mut:
 	ended      bool
 }
 
-// Mixer — plays any number of sounds at once and mixes them into stereo samples. The device (see start/pump)
-// pulls from the global one every frame; tests and tools can call `mix` themselves.
+// Mixer — plays any number of sounds at once and mixes them into stereo samples. The device (see start) pulls
+// from the global one on its own thread; tests and tools can call `mix` themselves. Every method takes `mu`,
+// so the game may call them while the audio thread mixes.
 @[heap]
 pub struct Mixer {
 pub mut:
 	master      f32 = 1
 	sample_rate int = 44100 // output rate, set by the device
 mut:
+	mu      &sync.Mutex = sync.new_mutex()
 	buses   map[string]f32
 	voices  []&Voice
 	next_id u32 = 1
@@ -74,17 +77,25 @@ pub fn mixer() &Mixer {
 
 // load decodes the clip (once; again after the file changed on disk).
 pub fn (mut m Mixer) load(clip &assets.AudioClip) !&Sound {
+	m.mu.lock()
 	if s := m.sounds[clip.id] {
 		if s.version == clip.version {
+			m.mu.unlock()
 			return s
 		}
 	}
+	m.mu.unlock()
+	// decoding can take a while: without the lock, so the audio thread keeps playing
 	decoded := decode_file(clip.path, clip.stream) or { return error('${clip.path}: ${err.msg()}') }
 	return m.adopt(clip, decoded)
 }
 
 // has: the clip (at its current version) is already decoded.
 pub fn (m &Mixer) has(clip &assets.AudioClip) bool {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	s := m.sounds[clip.id] or { return false }
 	return s.version == clip.version
 }
@@ -96,18 +107,32 @@ pub fn (mut m Mixer) adopt(clip &assets.AudioClip, decoded Sound) &Sound {
 		id:      clip.id
 		version: clip.version
 	}
+	m.mu.lock()
 	m.sounds[clip.id] = s
+	m.mu.unlock()
 	return s
 }
 
 // forget drops the decoded data of a clip (sounds already playing finish normally).
 pub fn (mut m Mixer) forget(id string) {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	m.sounds.delete(id)
 }
 
 // play starts `s`. Returns 0 when too many sounds are playing (64) or the sound cannot be read.
 pub fn (mut m Mixer) play(s &Sound, opts PlayOptions) VoiceId {
-	if s.frames <= 0 || m.voice_count() >= max_voices {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
+	return m.start(s, opts)
+}
+
+fn (mut m Mixer) start(s &Sound, opts PlayOptions) VoiceId {
+	if s.frames <= 0 || m.live_voices() >= max_voices {
 		return 0
 	}
 	mut v := &Voice{
@@ -153,6 +178,14 @@ fn (m &Mixer) voice(id VoiceId) ?&Voice {
 
 // stop stops a sound, fading it out over `fade` seconds (0 = at once).
 pub fn (mut m Mixer) stop(id VoiceId, fade f32) {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
+	m.stop_voice(id, fade)
+}
+
+fn (mut m Mixer) stop_voice(id VoiceId, fade f32) {
 	mut v := m.voice(id) or { return }
 	if fade > 0 && !v.paused {
 		v.fade_to = 0
@@ -164,6 +197,10 @@ pub fn (mut m Mixer) stop(id VoiceId, fade f32) {
 }
 
 pub fn (mut m Mixer) stop_all() {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	for mut v in m.voices {
 		v.finish()
 	}
@@ -172,12 +209,20 @@ pub fn (mut m Mixer) stop_all() {
 }
 
 pub fn (mut m Mixer) pause(id VoiceId) {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	if mut v := m.voice(id) {
 		v.paused = true
 	}
 }
 
 pub fn (mut m Mixer) resume(id VoiceId) {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	if mut v := m.voice(id) {
 		v.paused = false
 	}
@@ -185,23 +230,39 @@ pub fn (mut m Mixer) resume(id VoiceId) {
 
 // is_playing: the sound has not finished or been stopped (a paused sound counts as playing).
 pub fn (m &Mixer) is_playing(id VoiceId) bool {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	v := m.voice(id) or { return false }
 	return !v.stop_at_zero
 }
 
 pub fn (mut m Mixer) set_volume(id VoiceId, volume f32) {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	if mut v := m.voice(id) {
 		v.volume = volume
 	}
 }
 
 pub fn (mut m Mixer) set_pan(id VoiceId, pan f32) {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	if mut v := m.voice(id) {
 		v.pan = pan
 	}
 }
 
 pub fn (mut m Mixer) set_pitch(id VoiceId, pitch f32) {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	if mut v := m.voice(id) {
 		v.pitch = pitch
 	}
@@ -209,6 +270,10 @@ pub fn (mut m Mixer) set_pitch(id VoiceId, pitch f32) {
 
 // position: seconds played (for a looping sound, within the current loop).
 pub fn (m &Mixer) position(id VoiceId) f32 {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	v := m.voice(id) or { return 0 }
 	if v.sound.streamed() {
 		return 0 // not tracked for streamed sounds
@@ -218,43 +283,75 @@ pub fn (m &Mixer) position(id VoiceId) f32 {
 
 // set_paused pauses (true) or resumes every sound, e.g. while the game is in the background.
 pub fn (mut m Mixer) set_paused(paused bool) {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	m.paused = paused
 }
 
 // set_bus_volume sets the volume of a group ("music", "sfx", or any name used in PlayOptions.bus).
 pub fn (mut m Mixer) set_bus_volume(bus string, volume f32) {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	m.buses[bus] = volume
 }
 
 pub fn (m &Mixer) bus_volume(bus string) f32 {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	return m.buses[bus] or { 1 }
 }
 
 // voice_count: sounds playing (or paused).
 pub fn (m &Mixer) voice_count() int {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
+	return m.live_voices()
+}
+
+fn (m &Mixer) live_voices() int {
 	return m.voices.filter(!it.done).len
 }
 
 // play_music plays `s` on the "music" bus, looping, cross-fading from the music playing before over `fade` seconds.
 // Playing the music that is already playing does nothing.
 pub fn (mut m Mixer) play_music(s &Sound, volume f32, fade f32) VoiceId {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	if cur := m.voice(m.music) {
 		if voidptr(cur.sound) == voidptr(s) && !cur.stop_at_zero { // same object (== would compare contents)
 			return cur.id
 		}
 	}
-	m.stop(m.music, fade)
-	m.music = m.play(s, volume: volume, looping: true, bus: 'music', fade_in: fade)
+	m.stop_voice(m.music, fade)
+	m.music = m.start(s, volume: volume, looping: true, bus: 'music', fade_in: fade)
 	return m.music
 }
 
 pub fn (mut m Mixer) stop_music(fade f32) {
-	m.stop(m.music, fade)
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
+	m.stop_voice(m.music, fade)
 	m.music = 0
 }
 
 // mix writes `frames` stereo frames (left, right interleaved) into `out` and advances every sound.
 pub fn (mut m Mixer) mix(mut out []f32, frames int) {
+	m.mu.lock()
+	defer {
+		m.mu.unlock()
+	}
 	for i in 0 .. frames * 2 {
 		out[i] = 0
 	}
@@ -286,7 +383,7 @@ fn (m &Mixer) mix_voice(mut v Voice, mut out []f32, frames int, dt f32) {
 			math.max(v.fade - step, v.fade_to)
 		}
 	}
-	gain := v.volume * v.fade * m.bus_volume(v.bus) * m.master
+	gain := v.volume * v.fade * (m.buses[v.bus] or { 1 }) * m.master
 	pan := f32(math.clamp(v.pan, -1, 1))
 	gl := gain * math.min(f32(1), 1 - pan)
 	gr := gain * math.min(f32(1), 1 + pan)
