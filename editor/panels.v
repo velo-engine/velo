@@ -856,8 +856,8 @@ fn (mut e Editor) vec2_row(x f32, y f32, w f32, id string, n &core.Node, comp in
 		fr := Rect{x + label_w + f32(i) * (fw + 4), y, fw, row_h}
 		fid := '${id}/${comp}/${field}/${i}'
 		shown := parts[i].to_text()
-		axis := if i == 0 { 'x ' } else { 'y ' }
-		if e.ui.draw_field(fid, fr, axis + shown, c_text, !ro) {
+		axis, axis_color := if i == 0 { 'x', c_axis_x } else { 'y', c_axis_y }
+		if e.ui.draw_field_tagged(fid, fr, axis, axis_color, shown, c_text, !ro) {
 			e.begin_edit(fid, shown, target_for(n, comp, field, i, .number))
 		}
 	}
@@ -906,7 +906,8 @@ fn (mut e Editor) field_row(x f32, y f32, w f32, id string, n &core.Node, comp i
 			if f.is_list {
 				// []int (e.g. TileMap.tiles): long, edited by tools rather than typed
 				e.prop_label(x, y, f.name, e.is_overridden(n, comp, f.name, ro))
-				e.ui.text_in(Rect{x + label_w, y, w - label_w, row_h}, '${v.len} values', c_dim, 0)
+				e.ui.draw_field('${id}/${comp}/${f.name}', Rect{x + label_w, y, w - label_w, row_h},
+					'${v.len} values', c_dim, false)
 				return y + row_h + 3
 			}
 			if v.len == 2 {
@@ -919,10 +920,8 @@ fn (mut e Editor) field_row(x f32, y f32, w f32, id string, n &core.Node, comp i
 			if v.len == 4 {
 				// color preview swatch
 				nums := serialize.Value(v).as_number_list() or { [0.0, 0, 0, 0] }
-				sw := Rect{x + w - 22, y + 2, 22, row_h - 4}
-				e.ui.fill(sw, gg.Color{u8(nums[0]), u8(nums[1]), u8(nums[2]), 255})
-				e.ui.outline(sw, c_border)
-				fw -= 26
+				e.ui.color_swatch(Rect{x + w - 30, y + 2, 30, row_h - 4}, gg.Color{u8(nums[0]), u8(nums[1]), u8(nums[2]), u8(nums[3])})
+				fw -= 34
 			}
 			if e.ui.draw_field(fid, Rect{x + label_w, y, fw, row_h}, shown, c_text, !ro) {
 				e.begin_edit(fid, shown, target_for(n, comp, f.name, -1, .raw))
@@ -974,11 +973,17 @@ fn (mut e Editor) asset_row(x f32, y f32, w f32, id string, n &core.Node, comp i
 	e.prop_label(x, y, f.name, e.is_overridden(n, comp, f.name, ro))
 	fid := '${id}/${comp}/${f.name}'
 	shown := if asset_id == '' {
-		'(empty)'
+		'(none)'
 	} else {
 		e.db.path_of(asset_id) or { '${asset_id} (not found!)' }
 	}
-	color := if asset_id != '' && e.db.entry(asset_id) == none { c_error } else { c_text }
+	color := if asset_id == '' {
+		c_dim
+	} else if e.db.entry(asset_id) == none {
+		c_error
+	} else {
+		c_text
+	}
 	fw := w - label_w - 48
 	if e.ui.draw_field(fid, Rect{x + label_w, y, fw, row_h}, shown, color, !ro) {
 		editable := e.db.path_of(asset_id) or { asset_id }

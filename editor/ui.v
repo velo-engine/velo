@@ -49,6 +49,9 @@ const c_override = gg.Color{255, 200, 90, 255}
 const c_error = gg.Color{255, 110, 100, 255}
 const c_ok = gg.Color{130, 210, 130, 255}
 const c_play = gg.Color{70, 110, 70, 255}
+const c_field_tag = gg.Color{44, 44, 50, 255}
+const c_checker_a = gg.Color{190, 190, 195, 255}
+const c_checker_b = gg.Color{120, 120, 128, 255}
 
 const font_size = 14
 const row_h = f32(22)
@@ -266,9 +269,38 @@ fn (mut u Ui) checkbox(r Rect, value bool, enabled bool) bool {
 	u.fill(box, c_field)
 	u.outline(box, if enabled && u.hover(r) { c_accent } else { c_border })
 	if value {
-		u.fill(box.shrink(3), if enabled { c_accent } else { c_dim })
+		u.fill(box, if enabled { c_accent } else { c_dim })
+		pen := gg.PenConfig{
+			color:     c_text
+			thickness: 2
+		}
+		u.ctx.draw_line_with_config(box.x + 3, box.y + 7, box.x + 6, box.y + 10, pen)
+		u.ctx.draw_line_with_config(box.x + 6, box.y + 10, box.x + 11, box.y + 4, pen)
 	}
 	return enabled && u.click(r)
+}
+
+// color_swatch: left half the opaque color, right half the color over a checkerboard (shows alpha).
+fn (u &Ui) color_swatch(r Rect, c gg.Color) {
+	half := f32(int(r.w / 2))
+	u.fill(Rect{r.x, r.y, half, r.h}, gg.Color{c.r, c.g, c.b, 255})
+	cs := f32(5)
+	mut cy := r.y
+	for row := 0; cy < r.y + r.h; row++ {
+		mut cx := r.x + half
+		for col := 0; cx < r.x + r.w; col++ {
+			cw := if cx + cs > r.x + r.w { r.x + r.w - cx } else { cs }
+			ch := if cy + cs > r.y + r.h { r.y + r.h - cy } else { cs }
+			u.fill(Rect{cx, cy, cw, ch},
+				if (row + col) % 2 == 0 { c_checker_a } else { c_checker_b })
+			cx += cs
+		}
+		cy += cs
+	}
+	if c.a > 0 {
+		u.fill(Rect{r.x + half, r.y, r.w - half, r.h}, c)
+	}
+	u.outline(r, c_border)
 }
 
 // triangle: expand/collapse arrow for the hierarchy tree.
@@ -298,6 +330,12 @@ fn (mut u Ui) unfocus() {
 
 // draw_field draws an input field; returns true if the user just clicked it to start editing.
 fn (mut u Ui) draw_field(id string, r Rect, shown string, color gg.Color, enabled bool) bool {
+	return u.draw_field_tagged(id, r, '', c_dim, shown, color, enabled)
+}
+
+// draw_field_tagged: like draw_field, with a small fixed label (e.g. the 'x'/'y' axis of a Vec2)
+// drawn at the left of the field, outside the editable text.
+fn (mut u Ui) draw_field_tagged(id string, r Rect, tag string, tag_color gg.Color, shown string, color gg.Color, enabled bool) bool {
 	focused := u.focus == id
 	if focused {
 		u.focus_rect = r // the position may change when scrolling
@@ -310,17 +348,27 @@ fn (mut u Ui) draw_field(id string, r Rect, shown string, color gg.Color, enable
 	} else {
 		c_border
 	})
+	mut pad := f32(5)
+	if tag != '' {
+		tr := Rect{r.x + 1, r.y + 1, u.text_width(tag) + 10, r.h - 2}
+		u.fill(tr, c_field_tag)
+		u.text_center(tr, tag, if enabled { tag_color } else { c_dim })
+		pad += tr.w
+	}
 	old := u.clip
-	u.set_clip(old.intersect(r.shrink(1)))
+	u.set_clip(old.intersect(Rect{r.x + pad - 3, r.y + 1, r.w - pad + 2, r.h - 2}))
 	if focused {
-		s := u.buf.string()
-		u.text_in(r, s, c_text, 5)
-		cx := r.x + 5 + u.text_width(u.buf[..u.cursor].string())
+		// scroll the text horizontally so the caret stays visible
+		caret := u.text_width(u.buf[..u.cursor].string())
+		avail := r.w - pad - 6
+		off := if caret > avail { caret - avail } else { f32(0) }
+		u.text_in(r, u.buf.string(), c_text, pad - off)
+		cx := r.x + pad - off + caret
 		if (time.ticks() / 500) % 2 == 0 {
 			u.ctx.draw_line(cx, r.y + 4, cx, r.y + r.h - 4, c_text)
 		}
 	} else {
-		u.text_in(r, shown, if enabled { color } else { c_dim }, 5)
+		u.text_in(r, shown, if enabled { color } else { c_dim }, pad)
 	}
 	u.set_clip(old)
 	return enabled && !focused && u.click(r)
