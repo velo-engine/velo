@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2A2470"/>
+      <stop offset="1" stop-color="#0D1030"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.62" cy="0.38" r="0.6">
+      <stop offset="0" stop-color="#4C6FFF" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#4C6FFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="v" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#9FE8FF"/>
+    </linearGradient>
+    <linearGradient id="streak" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FF8A3D" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FF8A3D"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <g transform="translate(70 0) skewX(-12) translate(108 0)">
+    <rect x="96"  y="392" width="226" height="44" rx="22" fill="url(#streak)"/>
+    <rect x="40"  y="482" width="276" height="44" rx="22" fill="url(#streak)"/>
+    <rect x="150" y="572" width="176" height="44" rx="22" fill="url(#streak)"/>
+    <polygon points="268,280 408,280 512,554 616,280 756,280 580,744 444,744" fill="url(#v)"/>
+  </g>
+</svg>

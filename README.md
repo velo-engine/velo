@@ -3,8 +3,6 @@
 A 2D game engine written in [V](https://vlang.io), with a **Node + Component** architecture like Unity / Cocos Creator,
 but with a simpler Scene/Prefab model and stricter asset management.
 
-![demo](docs/screenshot.png)
-
 ## Quick start
 
 ```bash
