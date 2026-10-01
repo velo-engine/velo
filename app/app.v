@@ -55,6 +55,7 @@ pub mut:
 mut:
 	keyboard_shown bool
 	fade           SceneFade
+	preload        Preloader
 	mode           core.ScaleMode
 	last_ticks     i64
 	reload_timer   f32
@@ -177,6 +178,7 @@ fn on_frame(mut a App) {
 	a.scene.update(dt)
 	a.sync_keyboard()
 	a.input.end_frame()
+	a.preload.pump(mut a.renderer)
 	a.update_scene_change(dt)
 	audio.pump()
 
@@ -220,6 +222,7 @@ fn (mut a App) sync_keyboard() {
 
 fn on_cleanup(mut a App) {
 	a.store.save_if_changed()
+	a.preload.pool.close()
 	audio.shutdown()
 }
 
@@ -234,7 +237,8 @@ mut:
 	web_save f32
 }
 
-// update_scene_change carries out scene.change_scene: fade out (the old scene keeps running), load, fade in.
+// update_scene_change carries out scene.change_scene: fade out (the old scene keeps running) while the textures
+// and sounds of the next scene are decoded in the background (see Preloader), load it, fade in.
 fn (mut a App) update_scene_change(dt f32) {
 	mut f := &a.fade
 	if a.scene.next_scene != '' && !f.fading {
@@ -243,13 +247,18 @@ fn (mut a App) update_scene_change(dt f32) {
 		f.fading = true
 		f.coming = false
 		a.scene.next_scene = ''
+		a.preload.start(mut a.db, a.renderer, f.target)
 	}
 	if f.fading {
 		step := if f.change.fade > 0 { dt / f.change.fade } else { f32(1) }
 		if !f.coming {
-			f.alpha = if f.alpha + step > 1 { f32(1) } else { f.alpha + step }
-			if f.alpha >= 1 {
+			// a cut (fade 0) keeps showing the old scene until the new one is decoded
+			if f.change.fade > 0 {
+				f.alpha = if f.alpha + step > 1 { f32(1) } else { f.alpha + step }
+			}
+			if (f.alpha >= 1 || f.change.fade <= 0) && a.preload.done() {
 				a.load_scene(f.target) or { eprintln('[velo] change_scene("${f.target}"): ${err}') }
+				a.preload.release(mut a.db)
 				f.coming = true
 			}
 		} else {
@@ -267,6 +276,11 @@ fn (mut a App) update_scene_change(dt f32) {
 			a.store.save_if_changed()
 		}
 	}
+}
+
+// loading_progress: 0..1 while the next scene's assets are decoded during a scene change, else 1.
+pub fn (a &App) loading_progress() f32 {
+	return a.preload.progress()
 }
 
 fn (mut a App) draw_fade() {

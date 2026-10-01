@@ -80,6 +80,17 @@ pub fn (mut m Mixer) load(clip &assets.AudioClip) !&Sound {
 		}
 	}
 	decoded := decode_file(clip.path, clip.stream) or { return error('${clip.path}: ${err.msg()}') }
+	return m.adopt(clip, decoded)
+}
+
+// has: the clip (at its current version) is already decoded.
+pub fn (m &Mixer) has(clip &assets.AudioClip) bool {
+	s := m.sounds[clip.id] or { return false }
+	return s.version == clip.version
+}
+
+// adopt keeps a sound decoded ahead of time (decode_file runs on any thread), so the first play does not decode.
+pub fn (mut m Mixer) adopt(clip &assets.AudioClip, decoded Sound) &Sound {
 	s := &Sound{
 		...decoded
 		id:      clip.id
