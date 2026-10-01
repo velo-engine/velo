@@ -158,6 +158,14 @@ fn (e &Editor) draw_quad(m core.Affine2, x f32, y f32, w f32, h f32, c gg.Color)
 	e.ui.ctx.draw_line(f.x, f.y, a.x, a.y, c)
 }
 
+fn (e &Editor) fill_quad(m core.Affine2, x f32, y f32, w f32, h f32, c gg.Color) {
+	a := m.apply(core.vec2(x, y))
+	b := m.apply(core.vec2(x + w, y))
+	d := m.apply(core.vec2(x + w, y + h))
+	f := m.apply(core.vec2(x, y + h))
+	e.ui.ctx.draw_convex_poly([a.x, a.y, b.x, b.y, d.x, d.y, f.x, f.y], c)
+}
+
 fn (mut e Editor) handle_scene_view_input(r Rect) {
 	if !e.ui.hover(r) {
 		return

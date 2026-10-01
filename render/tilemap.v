@@ -292,6 +292,40 @@ pub fn (mut r Renderer) draw_texture_frame(t &assets.Texture, frame int, x f32, 
 	)
 }
 
+// draw_tile_ghost draws one tile of the map's tileset into the map-local rect (x, y, w, h) under `m`,
+// tinted by `c`; same path as draw_tilemap, so it works under rotation and matches the real tile exactly.
+pub fn (mut r Renderer) draw_tile_ghost(tm &TileMap, m core.Affine2, tile int, x f32, y f32, w f32, h f32, c gg.Color) {
+	tex := tm.tex
+	if tex == unsafe { nil } || tex.width <= 0 || tex.height <= 0 || tile < 0
+		|| tile >= tex.frame_count() {
+		return
+	}
+	img := r.image_for(tex) or { return }
+	if !img.simg_ok {
+		return
+	}
+	tw, th := f32(tex.width), f32(tex.height)
+	eu, ev := f32(0.01) / tw, f32(0.01) / th
+	fx, fy, fw, fh := tex.frame_rect(tile)
+	u0, v0 := f32(fx) / tw + eu, f32(fy) / th + ev
+	u1, v1 := f32(fx + fw) / tw - eu, f32(fy + fh) / th - ev
+	s := r.ctx.scale
+	a := m.apply(core.vec2(x, y))
+	b := m.apply(core.vec2(x + w, y))
+	d := m.apply(core.vec2(x + w, y + h))
+	e := m.apply(core.vec2(x, y + h))
+	sgl.load_pipeline(r.ctx.pipeline.alpha)
+	sgl.enable_texture()
+	sgl.texture(img.simg, img.ssmp)
+	sgl.begin_quads()
+	sgl.v2f_t2f_c4b(a.x * s, a.y * s, u0, v0, c.r, c.g, c.b, c.a)
+	sgl.v2f_t2f_c4b(b.x * s, b.y * s, u1, v0, c.r, c.g, c.b, c.a)
+	sgl.v2f_t2f_c4b(d.x * s, d.y * s, u1, v1, c.r, c.g, c.b, c.a)
+	sgl.v2f_t2f_c4b(e.x * s, e.y * s, u0, v1, c.r, c.g, c.b, c.a)
+	sgl.end()
+	sgl.disable_texture()
+}
+
 // ---------- Assets ----------
 
 fn (mut tm TileMap) acquire() {

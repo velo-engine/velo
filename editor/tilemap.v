@@ -177,12 +177,32 @@ fn (mut e Editor) draw_tile_overlay(view core.Affine2) {
 	if !tm.in_bounds(c, r) {
 		return
 	}
-	cx, cy, cw, ch := tm.cell_local_rect(c, r)
-	if e.tile_tool == .paint && tm.tex != unsafe { nil } && m.b == 0 && m.c == 0 {
-		p := m.apply(core.vec2(cx, cy))
-		q := m.apply(core.vec2(cx + cw, cy + ch))
-		e.renderer.draw_texture_frame(tm.tex, e.tile_brush, math.min(p.x, q.x), math.min(p.y, q.y),
-			math.abs(q.x - p.x), math.abs(q.y - p.y))
+	// cells the tool would change: the flood area for fill, else just the hovered cell
+	cells := if e.tile_tool == .fill { fill_region(tm, c, r) } else { [
+			[c, r]] }
+	for p in cells {
+		cx, cy, cw, ch := tm.cell_local_rect(p[0], p[1])
+		match e.tile_tool {
+			.paint, .fill {
+				if tm.tex != unsafe { nil } {
+					e.renderer.draw_tile_ghost(tm, m, e.tile_brush, cx, cy, cw, ch, gg.Color{255, 255, 255, 170})
+				} else {
+					e.fill_quad(m, cx, cy, cw, ch, gg.Color{255, 200, 90, 90})
+				}
+			}
+			.erase {
+				e.fill_quad(m, cx, cy, cw, ch, gg.Color{255, 110, 100, 90})
+				a := m.apply(core.vec2(cx, cy))
+				b := m.apply(core.vec2(cx + cw, cy + ch))
+				d := m.apply(core.vec2(cx + cw, cy))
+				f := m.apply(core.vec2(cx, cy + ch))
+				e.ui.ctx.draw_line(a.x, a.y, b.x, b.y, c_error)
+				e.ui.ctx.draw_line(d.x, d.y, f.x, f.y, c_error)
+			}
+			else {
+				e.fill_quad(m, cx, cy, cw, ch, gg.Color{130, 210, 130, 70})
+			}
+		}
 	}
 	color := match e.tile_tool {
 		.erase { c_error }
@@ -190,7 +210,31 @@ fn (mut e Editor) draw_tile_overlay(view core.Affine2) {
 		else { c_override }
 	}
 
+	cx, cy, cw, ch := tm.cell_local_rect(c, r)
 	e.draw_quad(m, cx, cy, cw, ch, color)
+}
+
+// fill_region: the cells a flood fill from (c, r) would replace (4 neighbors, same tile as the start cell).
+fn fill_region(tm &render.TileMap, c int, r int) [][]int {
+	target := tm.get(c, r)
+	mut out := [][]int{}
+	mut seen := map[int]bool{}
+	mut stack := [c, r]
+	for stack.len > 0 && out.len < 20000 {
+		rr := stack.pop()
+		cc := stack.pop()
+		if !tm.in_bounds(cc, rr) || tm.get(cc, rr) != target {
+			continue
+		}
+		key := rr * tm.columns + cc
+		if key in seen {
+			continue
+		}
+		seen[key] = true
+		out << [cc, rr]
+		stack << [cc + 1, rr, cc - 1, rr, cc, rr + 1, cc, rr - 1]
+	}
+	return out
 }
 
 // draw_tile_palette: tool buttons + the tileset's tiles, below the TileMap's fields in the Inspector.
