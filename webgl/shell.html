@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>{{TITLE}}</title>
+<style>
+	html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+	#velo-canvas { display: none; position: fixed; inset: 0; width: 100vw; height: 100dvh; outline: none; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+	#velo-loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #b8bcc8; font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+	#velo-bar { width: min(320px, 70vw); height: 6px; border-radius: 3px; background: #262833; overflow: hidden; }
+	#velo-progress { width: 0; height: 100%; background: #6aa3ff; transition: width 0.15s; }
+</style>
+</head>
+<body>
+<canvas id="velo-canvas"></canvas>
+<div id="velo-loading"><div>{{TITLE}}</div><div id="velo-bar"><div id="velo-progress"></div></div></div>
+<script type="module" src="game.js"></script>
+{{DEV}}
+</body>
+</html>

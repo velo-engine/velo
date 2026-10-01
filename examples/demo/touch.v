@@ -29,7 +29,12 @@ pub fn (mut m TouchMarkers) update(dt f32) {
 		}
 		mut mark := core.Node.new('Touch')
 			.with(&render.UITransform{ size: core.vec2(m.size, m.size) })
-			.with(&render.Panel{ color: m.color, radius: m.size / 2, border_width: 2 })
+			.with(&render.Panel{
+				color:        m.color
+				radius:       m.size / 2
+				border_width: 2
+				block_input:  false // a marker under a finger must not take that finger's tap from the buttons
+			})
 		mut num := core.Node.new('Number')
 			.with(&render.Label{
 				text:   '${m.marks.len + 1}'

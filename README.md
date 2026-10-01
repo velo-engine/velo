@@ -24,6 +24,7 @@ v -o ~/.local/bin/velo tools/velo
 velo new mygame && cd mygame
 velo editor        # or: velo run, velo build, velo assets list
 velo run ios-sim   # or: velo run android — see "Android and iOS"
+velo run webgl     # in a browser — see "WebGL"
 ```
 
 `velo` runs `v -path "@vlib|<parent of the repo>|@vmodules" ...`, so projects find `velo.*` without symlinks or copies
@@ -52,7 +53,8 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   editor/     editor UI (gg): Hierarchy, Scene view, Inspector, Assets, Play
   examples/demo/  sample game + assets (sprites, prefabs, scenes)
   examples/kine2d/  Kine2D animation sample (three exported characters)
-  tools/          velo CLI (velo/) and asset tool (assetdb.v)
+  tools/          velo CLI (velo/), asset tool (assetdb.v), V -> JavaScript translator (v2js/)
+  webgl/          WebGL runtime: the engine ported to TypeScript, for `velo build webgl` (see "WebGL")
   tests/          unit tests
 ```
 
@@ -696,6 +698,50 @@ How it works around V 0.5.2 + Emscripten (see `tools/velo/web.v` and `tools/velo
 Limits: no `velo.physics` yet (Box2D is not built for Emscripten); avoid closures that capture variables
 (`fn [x] () {}`) in code that runs every frame — V 0.5.2's closure runtime corrupts the wasm heap;
 files written at runtime (settings, saves) live in memory and are lost on reload.
+
+## WebGL
+
+A second way to run in a browser, without Emscripten: the game's V code is **translated to JavaScript** and runs
+on the engine's TypeScript runtime, drawing with WebGL. Downloads are small (the demo is 187 KB of JavaScript,
+60 KB gzipped, plus its assets) and the page starts at once; physics works too.
+
+```bash
+velo build webgl                 # build/webgl/index.html + game.js + assets/ (upload the folder as is)
+velo build webgl --release       # minified, no source map
+velo run webgl                   # build, serve on http://localhost:8080, open the browser;
+                                 # edit a .v file or an asset and it rebuilds, the page reloads itself
+```
+
+Needs [Node.js](https://nodejs.org) (`brew install node`): the first build installs
+[esbuild](https://esbuild.github.io) into `webgl/node_modules` (`velo doctor` checks both).
+`VELO_NO_OPEN=1` keeps `velo run webgl` from opening a browser.
+
+How it works:
+- `tools/v2js` (built once into `build/tools/` of the engine) reads the game with the V compiler's own parser and
+  type checker — so the game must compile (`v -check .`) — with `-d webgl` defined: `$if webgl ? { ... }` picks
+  web-only code. Every module of the game becomes one ES module; engine calls go to the runtime.
+- `webgl/runtime/` is the engine ported to TypeScript with the same names and fields: `core` (nodes, scenes,
+  tweens, timers, input, store), `serialize` (.scene parser, prefabs and overrides, registry), `assets`, `render`
+  (sprites, sliced/tiled sprites, labels, UI, particles, tile maps; batched WebGL with an atlas for text),
+  `audio` (WebAudio), `physics` and `kine2d`. Scenes, prefabs and `.meta` files are used as they are.
+- V meets JavaScript like this: structs are classes (value structs are copied where V copies them), `?T` is the
+  value or `null`, `!T` errors are exceptions, enums are their names (`'quad_out'`), maps are `Map`. Components
+  list their serializable fields (what `$for field in T.fields` sees on desktop) in a generated `static __fields`.
+- Assets are downloaded before the game starts (`assets.json` lists them), so loading stays synchronous; sounds
+  are decoded up front. Text uses the browser's fonts (any language), and `.ttf`/`.otf` font assets work.
+  Saved data goes to `localStorage`, like `velo build web`.
+
+`cd webgl && npm test` runs the runtime tests and translates `webgl/tests/lang` (a tour of the V language);
+its output must be the same as `v run webgl/tests/lang`. In the browser's console, `velo` is the running app
+(`velo.scene`, `velo.input`, ...); debug builds come with a source map.
+
+Limits:
+- not translated: concurrency (`spawn`, `go`, channels, `lock`), C interop, comptime reflection (`$for`),
+  `$embed_file`, `asm`, `goto` — v2js reports where. The editor is desktop only.
+- numbers are JavaScript doubles: `i64`/`u64` lose precision past 2^53, and integers wrap only on casts and
+  multiplication; strings count UTF-16 units (`len`, `s[i]`), the same as V for ASCII text.
+- physics is a smaller solver than Box2D (same components and contacts, no joints, no continuous collision);
+  scenes and assets are not hot reloaded in place (`velo run webgl` reloads the page).
 
 ## Current limitations and next steps
 

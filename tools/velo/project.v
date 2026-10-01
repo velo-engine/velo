@@ -118,6 +118,7 @@ fn new_project(name string) {
 	println('  velo editor         open the editor')
 	println('  velo run            run the game')
 	println('  velo run ios-sim    run it in the iOS Simulator (or: android)')
+	println('  velo run webgl      run it in a browser (JavaScript + WebGL)')
 }
 
 const main_v = "module main

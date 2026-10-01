@@ -11,3 +11,5 @@ library/
 # mobile/desktop build output of `velo build`
 build/
 examples/kine2d
+# WebGL runtime build tools (npm install in webgl/)
+webgl/node_modules/

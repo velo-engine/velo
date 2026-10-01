@@ -20,6 +20,8 @@ Targets:
   ios        iPhone/iPad device, via Xcode (needs a signing identity + provisioning profile)
   ios-sim    iOS Simulator, via Xcode
   web        browser (WebAssembly), via Emscripten; `velo run web` serves it on localhost:8080
+  webgl      browser (JavaScript + WebGL): the V code of the game translated to JavaScript (tools/v2js),
+             on the TypeScript runtime of the engine; needs Node.js. `velo run webgl` serves it on localhost:8080
 
 Options:
   --release          optimized build (desktop builds are always optimized)
@@ -35,6 +37,7 @@ Examples:
   velo run android             build, install and launch on a connected device/emulator, show logs
   velo build android --release --aab
   velo build web --release     index.html + .js + .wasm + .data in build/web/, ready to upload
+  velo run webgl               translate to JavaScript, bundle, serve on http://localhost:8080
 
 App name, ID, version, icon and signing come from velo.toml in the project (see `velo new`).
 
@@ -47,7 +50,7 @@ The repo directory must be named "velo" (it is the `velo` module: velo/core, vel
 // The engine repo — baked in at compile time, overridable with VELO_HOME.
 const built_home = @VMODROOT
 
-const targets = ['desktop', 'android', 'ios', 'ios-sim', 'web']
+const targets = ['desktop', 'android', 'ios', 'ios-sim', 'web', 'webgl']
 
 fn main() {
 	args := os.args[1..].filter(it !in ['-v', '--verbose'])
@@ -77,6 +80,7 @@ fn main() {
 			match target {
 				'android' { build_android(home, p, opts) }
 				'web' { build_web(home, p, opts) }
+				'webgl' { build_webgl(home, p, opts) }
 				else { build_ios(home, p, opts, target == 'ios-sim') }
 			}
 		}

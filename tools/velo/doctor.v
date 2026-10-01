@@ -80,6 +80,17 @@ fn doctor(home string) int {
 	} else {
 		warn('Emscripten not found — only needed for `velo build web`: `brew install emscripten`')
 	}
+	if node := os.find_abs_path_of_executable('node') {
+		ok('Node.js ${os.execute('${os.quoted_path(node)} --version').output.trim_space()} (velo build webgl)')
+		if os.is_file(os.join_path(home, 'webgl', 'node_modules', '.bin', 'esbuild')) {
+			ok('esbuild in ${os.join_path(home, 'webgl', 'node_modules')}')
+		} else {
+			warn('esbuild not installed yet — the first `velo build webgl` runs `npm install` in ${os.join_path(home,
+				'webgl')}')
+		}
+	} else {
+		warn('Node.js not found — only needed for `velo build webgl`: https://nodejs.org or `brew install node`')
+	}
 
 	println('\niOS')
 	$if macos {
