@@ -432,6 +432,7 @@ fn (g &Gen) field_spec(t ast.Type) string {
 		'velo.assets.AssetRef[velo.assets.AudioClip]' { return 'asset:audio' }
 		'velo.assets.AssetRef[velo.assets.TextAsset]' { return 'asset:text' }
 		'velo.assets.AssetRef[velo.assets.Font]' { return 'asset:font' }
+		'velo.assets.AssetRef[velo.assets.Shader]' { return 'asset:shader' }
 		else { return '' }
 	}
 }

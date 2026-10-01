@@ -4,7 +4,7 @@
 
 import * as V from './v.ts'
 
-export type AssetKind = 'unknown' | 'texture' | 'audio' | 'scene' | 'text' | 'font'
+export type AssetKind = 'unknown' | 'texture' | 'audio' | 'scene' | 'text' | 'font' | 'shader'
 
 export function kind_from_ext(path: string): AssetKind {
 	const ext = V.S.all_after_last(path, '.').toLowerCase()
@@ -30,12 +30,15 @@ export function kind_from_ext(path: string): AssetKind {
 		case 'ttf':
 		case 'otf':
 			return 'font'
+		case 'glsl':
+		case 'frag':
+			return 'shader'
 	}
 	return 'unknown'
 }
 
 export function kind_from_str(s: string): AssetKind {
-	return s === 'texture' || s === 'audio' || s === 'scene' || s === 'text' || s === 'font' ? s : 'unknown'
+	return s === 'texture' || s === 'audio' || s === 'scene' || s === 'text' || s === 'font' || s === 'shader' ? s : 'unknown'
 }
 
 // AssetRef[T] — a typed asset reference, stored as a stable ID. `type` is the asset class (Texture, ...).
@@ -130,6 +133,15 @@ export class Font {
 	family = ''
 }
 
+// Shader — a .glsl fragment effect for Sprite (see render/shader.v); the renderer compiles it on first use.
+export class Shader {
+	static __vname = 'assets.Shader'
+	id = ''
+	path = ''
+	source = ''
+	version = 0
+}
+
 export class AudioClip {
 	static __vname = 'assets.AudioClip'
 	id = ''
@@ -197,9 +209,10 @@ export class AssetEntry {
 	text: TextAsset | null = null
 	audio: AudioClip | null = null
 	font: Font | null = null
+	shader: Shader | null = null
 
 	is_loaded(): boolean {
-		return this.texture !== null || this.scene !== null || this.text !== null || this.audio !== null || this.font !== null
+		return this.texture !== null || this.scene !== null || this.text !== null || this.audio !== null || this.font !== null || this.shader !== null
 	}
 }
 
@@ -344,6 +357,18 @@ export class AssetDatabase {
 			e.refs++
 			return e.font as T
 		}
+		if (t === Shader) {
+			this.expect_kind(e, 'shader', 'Shader')
+			if (e.shader === null) {
+				const s = new Shader()
+				s.id = e.id
+				s.path = this.abs_path(e)
+				s.source = this.read_text(e)
+				e.shader = s
+			}
+			e.refs++
+			return e.shader as T
+		}
 		if (t === AudioClip) {
 			this.expect_kind(e, 'audio', 'AudioClip')
 			if (e.audio === null) {
@@ -376,6 +401,7 @@ export class AssetDatabase {
 			e.text = null
 			e.audio = null
 			e.font = null
+			e.shader = null
 			this.events.push(new AssetEvent('unloaded', e.id, e.path))
 		}
 	}
@@ -496,7 +522,8 @@ export async function preload(root: string, on_progress: (done: number, total: n
 		try {
 			switch (kind_from_str(e.kind)) {
 				case 'scene':
-				case 'text': {
+				case 'text':
+				case 'shader': {
 					const r = await fetch(url(e.path))
 					if (!r.ok) throw new Error(`HTTP ${r.status}`)
 					data.text.set(e.id, await r.text())

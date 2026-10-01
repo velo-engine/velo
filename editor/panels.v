@@ -606,6 +606,7 @@ fn (mut e Editor) draw_assets(r Rect) {
 			.audio { 'audio', c_override }
 			.text { 'text', c_dim }
 			.font { 'font', c_text }
+			.shader { 'glsl', c_slice }
 			.unknown { '?', c_dim }
 		}
 

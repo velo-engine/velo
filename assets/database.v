@@ -23,11 +23,12 @@ mut:
 	text    &TextAsset  = unsafe { nil }
 	audio   &AudioClip  = unsafe { nil }
 	font    &Font       = unsafe { nil }
+	shader  &Shader     = unsafe { nil }
 }
 
 pub fn (e &AssetEntry) is_loaded() bool {
 	return e.texture != unsafe { nil } || e.scene != unsafe { nil } || e.text != unsafe { nil }
-		|| e.audio != unsafe { nil } || e.font != unsafe { nil }
+		|| e.audio != unsafe { nil } || e.font != unsafe { nil } || e.shader != unsafe { nil }
 }
 
 pub enum AssetEventKind {
@@ -162,6 +163,17 @@ pub fn (mut db AssetDatabase) load[T](key string) !&T {
 		}
 		e.refs++
 		return e.font
+	} $else $if T is Shader {
+		db.expect_kind(e, .shader, 'Shader')!
+		if e.shader == unsafe { nil } {
+			e.shader = &Shader{
+				id:     e.id
+				path:   db.abs_path(e)
+				source: os.read_file(db.abs_path(e))!
+			}
+		}
+		e.refs++
+		return e.shader
 	} $else $if T is AudioClip {
 		db.expect_kind(e, .audio, 'AudioClip')!
 		if e.audio == unsafe { nil } {
@@ -196,6 +208,7 @@ pub fn (mut db AssetDatabase) release(id string) {
 		e.text = unsafe { nil }
 		e.audio = unsafe { nil }
 		e.font = unsafe { nil }
+		e.shader = unsafe { nil }
 		db.events << AssetEvent{.unloaded, e.id, e.path}
 	}
 }
@@ -431,6 +444,10 @@ fn (mut db AssetDatabase) reload_in_place(mut e AssetEntry) ! {
 	}
 	if e.font != unsafe { nil } {
 		e.font.version++
+	}
+	if e.shader != unsafe { nil } {
+		e.shader.source = os.read_file(db.abs_path(e))!
+		e.shader.version++
 	}
 	if e.audio != unsafe { nil } {
 		fresh := db.read_audio(e)

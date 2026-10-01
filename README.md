@@ -44,7 +44,7 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   core/       Node, Component, Scene, Camera/Canvas, Input, Vec2/Color/Affine2       (no graphics dependency)
   assets/     AssetDatabase: .meta, stable IDs, AssetRef[T], reference counting, dependency graph, hot reload
   serialize/  .scene format, parser, reflection, Registry, SceneLoader (prefab + override), writer
-  render/     Renderer (gg): draw order (z_index, y_sort, Canvas), Sprite, SpriteAnimator, Label, ParticleSystem, TileMap, UI components (Button, ScrollView, Widget, Layout, ...)
+  render/     Renderer (gg): draw order (z_index, y_sort, Canvas), Sprite (+ GLSL shader effects), SpriteAnimator, Label, ParticleSystem, TileMap, UI components (Button, ScrollView, Widget, Layout, ...)
   audio/      AudioSource, Mixer (buses, fades, streaming .ogg), output device (sokol_audio)
   physics/    Box2D v3 bindings: PhysicsWorld, RigidBody, Box/Circle/CapsuleCollider (optional, no GPU needed)
   kine2d/     plays Kine2D editor exports (.skel.json + .atlas.json + .png): the Kine2D component (optional)
@@ -388,6 +388,43 @@ batch of quads, so they rotate, scale, flip and tint (Button) like any Sprite; `
 In the editor, the Inspector shows the frame with its border lines (drag them to set the borders), the scene view
 draws the lines on the selected sprite, and the **U** Size tool resizes it. The demo's `Sign` and `CrateWall` use them.
 
+## Shaders
+
+A Sprite can draw through a GLSL effect: a `.glsl` asset holding a function that returns each pixel's color.
+
+```glsl
+// shaders/flash.glsl — mixes the sprite toward PARAM_COLOR by PARAMS.x (hit flash)
+vec4 effect(vec4 color, vec2 uv) {        // color: the Sprite's tint (0..1), uv: texture coordinates
+    vec4 c = texel(uv) * color;            // texel(uv): the sprite's texture
+    return vec4(mix(c.rgb, PARAM_COLOR.rgb, PARAMS.x), c.a);
+}
+```
+
+```
+Sprite { texture = @asset("c0149b7d")  shader = @asset("a7c35e01")  shader_params = [2.5, 0.25]  shader_color = [255, 255, 230, 220] }
+```
+
+| Built in | |
+|---|---|
+| `TIME` | seconds of scene time (real time under an `unscaled_time` node); animates in the editor too |
+| `TEXTURE_SIZE` | texture size in pixels (one texel is `1.0 / TEXTURE_SIZE`) |
+| `FRAME_RECT` | the current frame's uv rectangle (u0, v0, u1, v1), for effects local to one frame of a sheet |
+| `PARAMS` | `vec2`, the Sprite's `shader_params` |
+| `PARAM_COLOR` | `vec4` (0..1), the Sprite's `shader_color` |
+
+Helper functions and constants may sit next to `effect`. From code: `sprite.set_shader(ref)` (an empty ref turns it off),
+and change `shader_params` / `shader_color` any time (e.g. tween a flash). Editing the file reloads it in the running
+game and the editor; a shader that does not compile prints the error and the sprite draws without it.
+The demo's big coins use `shaders/shine.glsl`.
+
+The same file runs on every backend: it is wrapped as GLSL 4.1 (desktop OpenGL), GLSL ES 3.0 (Android, `velo build web`),
+WebGL 1/2 (`velo build webgl`) and Metal (macOS, iOS — the code becomes the body of a Metal struct, with typedefs and
+helpers for GLSL's `vec*`/`mat*`, `mod`, `atan(y, x)`, `inversesqrt`, `dFdx`). See `render/shader.v`.
+
+Limits: Sprites only (all draw modes), fragment effects only (no vertex shaders, extra textures or render targets);
+keep to the GLSL that Metal also accepts — no `uniform`/`in`/`out` declarations, `out`/`inout` parameters or arrays,
+and sample with `texel()` rather than `texture()`; Windows' optional D3D11 backend (`-d sokol_d3d11`) draws without shaders.
+
 ## Tile maps
 
 `TileMap` (built in) draws a grid of tiles cut from one tileset. The tileset is an ordinary sprite sheet: the
@@ -722,7 +759,7 @@ How it works:
   web-only code. Every module of the game becomes one ES module; engine calls go to the runtime.
 - `webgl/runtime/` is the engine ported to TypeScript with the same names and fields: `core` (nodes, scenes,
   tweens, timers, input, store), `serialize` (.scene parser, prefabs and overrides, registry), `assets`, `render`
-  (sprites, sliced/tiled sprites, labels, UI, particles, tile maps; batched WebGL with an atlas for text),
+  (sprites, sliced/tiled sprites, shader effects, labels, UI, particles, tile maps; batched WebGL with an atlas for text),
   `audio` (WebAudio), `physics` and `kine2d`. Scenes, prefabs and `.meta` files are used as they are.
 - V meets JavaScript like this: structs are classes (value structs are copied where V copies them), `?T` is the
   value or `null`, `!T` errors are exceptions, enums are their names (`'quad_out'`), maps are `Map`. Components

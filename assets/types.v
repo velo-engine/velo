@@ -8,6 +8,7 @@ pub enum AssetKind {
 	scene
 	text
 	font
+	shader
 }
 
 pub fn kind_from_ext(path string) AssetKind {
@@ -18,6 +19,7 @@ pub fn kind_from_ext(path string) AssetKind {
 		'scene', 'prefab' { .scene }
 		'txt', 'json', 'md', 'csv' { .text }
 		'ttf', 'otf' { .font }
+		'glsl', 'frag' { .shader }
 		else { .unknown }
 	}
 }
@@ -29,6 +31,7 @@ pub fn kind_from_str(s string) AssetKind {
 		'scene' { .scene }
 		'text' { .text }
 		'font' { .font }
+		'shader' { .shader }
 		else { .unknown }
 	}
 }
@@ -122,6 +125,17 @@ pub:
 	id   string
 	path string // absolute path of the font file
 pub mut:
+	version int
+}
+
+// Shader — a .glsl fragment effect for Sprite (`shader` field); see render/shader.v for the language.
+// The renderer compiles it on first use and again when the file changes.
+pub struct Shader {
+pub:
+	id   string
+	path string
+pub mut:
+	source  string
 	version int
 }
 

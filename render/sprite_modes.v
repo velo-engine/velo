@@ -184,6 +184,25 @@ fn (s &Sprite) flipped(x f32, y f32, w f32, h f32, sx Seg, sy Seg) SpriteQuad {
 
 // draw_sprite_quads draws a sliced/tiled sprite as one batch of textured quads through the node's matrix.
 fn (mut r Renderer) draw_sprite_quads(s &Sprite, m core.Affine2) {
+	r.draw_sprite_batch(s, m, r.ctx.pipeline.alpha, []f32{})
+}
+
+// draw_sprite_shaded draws any sprite (simple, sliced or tiled) through a shader pipeline (see shader.v).
+fn (mut r Renderer) draw_sprite_shaded(s &Sprite, m core.Affine2, pip sgl.Pipeline) {
+	tex := s.tex
+	fx, fy, fw, fh := tex.frame_rect(s.frame)
+	tw, th := f32(tex.width), f32(tex.height)
+	if tw <= 0 || th <= 0 {
+		return
+	}
+	frame := [f32(fx) / tw, f32(fy) / th, f32(fx + fw) / tw, f32(fy + fh) / th]!
+	r.draw_sprite_batch(s, m, pip, shader_uniforms(shader_time(s.node), tw, th, s.shader_params,
+		s.shader_color, frame))
+}
+
+// draw_sprite_batch draws the sprite's quads with `pip`; `uniforms` (16 floats, or none) go in sokol_gl's
+// texture matrix, which a velo shader reads as its built-ins.
+fn (mut r Renderer) draw_sprite_batch(s &Sprite, m core.Affine2, pip sgl.Pipeline, uniforms []f32) {
 	tex := s.tex
 	if tex.width <= 0 || tex.height <= 0 {
 		return
@@ -199,7 +218,12 @@ fn (mut r Renderer) draw_sprite_quads(s &Sprite, m core.Affine2) {
 	tw, th := f32(tex.width), f32(tex.height)
 	sc := r.ctx.scale
 	col := s.color
-	sgl.load_pipeline(r.ctx.pipeline.alpha)
+	sgl.load_pipeline(pip)
+	if uniforms.len == 16 {
+		sgl.matrix_mode_texture()
+		sgl.push_matrix()
+		sgl.load_matrix(uniforms)
+	}
 	sgl.enable_texture()
 	sgl.texture(img.simg, img.ssmp)
 	sgl.begin_quads()
@@ -216,6 +240,12 @@ fn (mut r Renderer) draw_sprite_quads(s &Sprite, m core.Affine2) {
 	}
 	sgl.end()
 	sgl.disable_texture()
+	if uniforms.len == 16 {
+		// back to the identity texture matrix the default shader needs, and to the projection mode gg leaves set
+		sgl.pop_matrix()
+		sgl.matrix_mode_projection()
+		sgl.load_pipeline(r.ctx.pipeline.alpha)
+	}
 	r.draw_calls++
 	if r.debug {
 		x, y, w, h := s.local_rect()

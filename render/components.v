@@ -49,19 +49,35 @@ pub mut:
 	fill_center   bool = true // false: sliced/tiled draw only the border ring (frames, outlines)
 	// World units per texture pixel for the borders and the tile repeat (2 = twice as thick / big).
 	pixel_scale f32 = 1
-	// Loaded texture (runtime, not serialized).
-	tex    &assets.Texture = unsafe { nil } @[hide]
-	loaded string          @[hide]
+	// A .glsl effect to draw with (see shader.v); its PARAMS and PARAM_COLOR built-ins.
+	shader        assets.AssetRef[assets.Shader]
+	shader_params core.Vec2
+	shader_color  core.Color = core.white
+	// Loaded texture and shader (runtime, not serialized).
+	tex         &assets.Texture = unsafe { nil } @[hide]
+	loaded      string          @[hide]
+	shader_data &assets.Shader = unsafe { nil }  @[hide]
 }
 
 // on_load: fetches the texture from the AssetDatabase (increments the reference count).
 pub fn (mut s Sprite) on_load() {
 	s.acquire()
+	if s.shader_data == unsafe { nil } {
+		s.shader_data = load_shader(s.node, s.shader)
+	}
 }
 
 // on_destroy: releases the reference so the asset is freed when no one uses it anymore.
 pub fn (mut s Sprite) on_destroy() {
 	s.drop()
+	s.shader_data = release_shader_asset(s.node, s.shader_data)
+}
+
+// set_shader changes the shader effect at runtime (an unset ref draws the plain texture again).
+pub fn (mut s Sprite) set_shader(r assets.AssetRef[assets.Shader]) {
+	s.shader_data = release_shader_asset(s.node, s.shader_data)
+	s.shader = r
+	s.shader_data = load_shader(s.node, r)
 }
 
 // set_texture changes the texture at runtime, managing references automatically.
@@ -214,6 +230,27 @@ fn release_font(n &core.Node, f &assets.Font) &assets.Font {
 		&& n.scene.assets != unsafe { nil } {
 		mut db := n.scene.assets
 		db.release(f.id)
+	}
+	return unsafe { nil }
+}
+
+fn load_shader(n &core.Node, r assets.AssetRef[assets.Shader]) &assets.Shader {
+	if !r.is_set() || n == unsafe { nil } || n.scene == unsafe { nil }
+		|| n.scene.assets == unsafe { nil } {
+		return unsafe { nil }
+	}
+	mut db := n.scene.assets
+	return db.get(r) or {
+		eprintln('[render] ${n.path()}: ${err}')
+		unsafe { nil }
+	}
+}
+
+fn release_shader_asset(n &core.Node, s &assets.Shader) &assets.Shader {
+	if s != unsafe { nil } && n != unsafe { nil } && n.scene != unsafe { nil }
+		&& n.scene.assets != unsafe { nil } {
+		mut db := n.scene.assets
+		db.release(s.id)
 	}
 	return unsafe { nil }
 }

@@ -2,7 +2,8 @@
 # Only writes what differs from coin.scene — edit coin.scene and big coins change too.
 node BigCoin from @asset("d2c8f1a9") {                               # prefabs/coin.scene
   scale = [1.8, 1.8]
-  Sprite { color = [255, 170, 120, 255] }
+  Sprite { color = [255, 170, 120, 255]                               # shaders/shine.glsl
+           shader = @asset("a7c35e01")  shader_params = [2.5, 0.25]  shader_color = [255, 255, 230, 220] }
   SpriteAnimator { fps = 6 }
   Pickup { value = 5 }
 }

@@ -87,6 +87,9 @@ export class Sprite extends core.Component {
 		{ name: 'border_bottom', type: 'int' },
 		{ name: 'fill_center', type: 'bool' },
 		{ name: 'pixel_scale', type: 'f32' },
+		{ name: 'shader', type: 'asset:shader' },
+		{ name: 'shader_params', type: 'Vec2' },
+		{ name: 'shader_color', type: 'Color' },
 	]
 	texture = new assets.AssetRef('', assets.Texture)
 	color = core.white.clone()
@@ -102,14 +105,25 @@ export class Sprite extends core.Component {
 	border_bottom = 0
 	fill_center = true
 	pixel_scale = 1
+	shader = new assets.AssetRef('', assets.Shader)
+	shader_params = new Vec2()
+	shader_color = core.white.clone()
 	tex: assets.Texture | null = null
 	loaded = ''
+	shader_data: assets.Shader | null = null
 
 	on_load() {
 		this.acquire()
+		if (this.shader_data === null) this.shader_data = load_shader(this.node, this.shader)
 	}
 	on_destroy() {
 		this.drop()
+		this.shader_data = release_shader_asset(this.node, this.shader_data)
+	}
+	set_shader(r: assets.AssetRef) {
+		this.shader_data = release_shader_asset(this.node, this.shader_data)
+		this.shader = r.clone()
+		this.shader_data = load_shader(this.node, this.shader)
 	}
 	set_texture(r: assets.AssetRef) {
 		this.drop()
@@ -470,6 +484,28 @@ function load_font(n: core.Node, r: assets.AssetRef): assets.Font | null {
 function release_font(n: core.Node, f: assets.Font | null): assets.Font | null {
 	if (f !== null && n && n.scene && n.scene.assets) n.scene.assets.release(f.id)
 	return null
+}
+
+function load_shader(n: core.Node, r: assets.AssetRef): assets.Shader | null {
+	if (!r.is_set() || !n || !n.scene || !n.scene.assets) return null
+	try {
+		return n.scene.assets.get<assets.Shader>(assets.Shader, r)
+	} catch (e) {
+		console.error(`[render] ${n.path()}: ${V.as_error(e).message}`)
+		return null
+	}
+}
+
+function release_shader_asset(n: core.Node, s: assets.Shader | null): assets.Shader | null {
+	if (s !== null && n && n.scene && n.scene.assets) n.scene.assets.release(s.id)
+	return null
+}
+
+// shader_time: TIME for a node — the scene's game time, or its real time under an `unscaled_time` node.
+export function shader_time(n: core.Node): number {
+	if (!n || !n.scene) return 0
+	for (let p: core.Node | null = n; p; p = p.parent) if (p.unscaled_time) return n.scene.real_time
+	return n.scene.time
 }
 
 function font_family(f: assets.Font | null): string {
@@ -1932,7 +1968,10 @@ export class Renderer {
 	}
 
 	on_asset_event(ev: assets.AssetEvent) {
-		if (ev.kind === 'unloaded' || ev.kind === 'removed') this.gfx.release_texture(ev.id)
+		if (ev.kind === 'unloaded' || ev.kind === 'removed') {
+			this.gfx.release_texture(ev.id)
+			this.gfx.release_effect(ev.id)
+		}
 	}
 
 	draw_node(n: core.Node, m: Affine2) {
@@ -2016,10 +2055,25 @@ export class Renderer {
 		const tw = tex.width
 		const th = tex.height
 		const col = s.color
+		const sh = s.shader_data
+		const fx = sh !== null ? this.gfx.effect(sh.id, sh.version, sh.source, sh.path) : null
+		if (fx !== null) {
+			const [fx0, fy0, fw, fh] = tex.frame_rect(s.frame)
+			const p = s.shader_params
+			const c = s.shader_color
+			this.gfx.begin_effect(fx, new Float32Array([
+				shader_time(s.node), tw, th, 0,
+				p.x, p.y, 0, 0,
+				c.r / 255, c.g / 255, c.b / 255, c.a / 255,
+				fx0 / tw, fy0 / th, (fx0 + fw) / tw, (fy0 + fh) / th,
+			]))
+		}
+		const quad = fx !== null ? this.gfx.effect_quad : this.gfx.quad
 		for (const q of s.quads()) {
 			const x1 = q.x + q.w
 			const y1 = q.y + q.h
-			this.gfx.quad(
+			quad.call(
+				this.gfx,
 				gtex,
 				m.apply_x(q.x, q.y), m.apply_y(q.x, q.y), q.u0 / tw, q.v0 / th,
 				m.apply_x(x1, q.y), m.apply_y(x1, q.y), q.u1 / tw, q.v0 / th,
@@ -2028,6 +2082,7 @@ export class Renderer {
 				col,
 			)
 		}
+		if (fx !== null) this.gfx.end_effect()
 		this.draw_calls++
 		if (this.debug) {
 			const [x, y, w, h] = s.local_rect()

@@ -50,6 +50,69 @@ const FLOATS_PER_VERT = 5 // x, y, u, v, rgba (packed in one float32 slot as 4 b
 
 export const default_font_family = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
 
+// Effect shaders (render/shader.v): the .glsl file's `effect(color, uv)` is wrapped with the same built-ins as
+// on desktop. They are passed as four vec4 uniforms (desktop packs them in sokol_gl's texture matrix).
+const EFFECT_BUILTINS = `#define TIME velo_p0.x
+#define TEXTURE_SIZE velo_p0.yz
+#define PARAMS velo_p1.xy
+#define PARAM_COLOR velo_p2
+#define FRAME_RECT velo_p3
+`
+
+function effect_sources(effect: string, webgl2: boolean): [string, string] {
+	if (!effect.includes('effect')) throw new Error('no `vec4 effect(vec4 color, vec2 uv)` function')
+	const uniforms = 'uniform sampler2D u_tex;\nuniform vec4 velo_p0;\nuniform vec4 velo_p1;\nuniform vec4 velo_p2;\nuniform vec4 velo_p3;\n'
+	if (webgl2) {
+		return [
+			`#version 300 es
+in vec2 a_pos;
+in vec2 a_uv;
+in vec4 a_color;
+uniform vec2 u_scale;
+out vec2 velo_uv;
+out vec4 velo_color;
+void main() {
+	gl_Position = vec4(a_pos.x * u_scale.x - 1.0, 1.0 - a_pos.y * u_scale.y, 0.0, 1.0);
+	velo_uv = a_uv;
+	velo_color = a_color;
+}`,
+			`#version 300 es
+precision highp float;
+precision highp int;
+${uniforms}in vec2 velo_uv;
+in vec4 velo_color;
+out vec4 velo_frag_color;
+vec4 texel(vec2 uv) { return texture(u_tex, uv); }
+${EFFECT_BUILTINS}#line 1
+${effect}
+void main() { velo_frag_color = effect(velo_color, velo_uv); }
+`,
+		]
+	}
+	return [
+		VS.replace(/v_uv/g, 'velo_uv').replace(/v_color/g, 'velo_color'),
+		`precision highp float;
+${uniforms}varying vec2 velo_uv;
+varying vec4 velo_color;
+vec4 texel(vec2 uv) { return texture2D(u_tex, uv); }
+${EFFECT_BUILTINS}#line 1
+${effect}
+void main() { gl_FragColor = effect(velo_color, velo_uv); }
+`,
+	]
+}
+
+export interface EffectProgram {
+	prog: WebGLProgram
+	u_scale: WebGLUniformLocation | null
+	u_params: (WebGLUniformLocation | null)[]
+}
+
+interface GpuEffect {
+	version: number
+	program: EffectProgram | null // null: does not compile (not retried until the source changes)
+}
+
 interface GpuTex {
 	tex: WebGLTexture
 	version: number
@@ -81,6 +144,10 @@ export class Gfx {
 	scissor = { x: 0, y: 0, w: 0, h: 0 }
 	draw_calls = 0
 	text: TextAtlas
+	attribs: [number, number, number] // a_pos, a_uv, a_color locations (effect programs are linked to the same)
+	effects = new Map<string, GpuEffect>()
+	cur_effect: EffectProgram | null = null
+	cur_uniforms: Float32Array | null = null
 
 	constructor(canvas: HTMLCanvasElement) {
 		this.canvas = canvas
@@ -106,6 +173,7 @@ export class Gfx {
 		const a_pos = gl.getAttribLocation(this.prog, 'a_pos')
 		const a_uv = gl.getAttribLocation(this.prog, 'a_uv')
 		const a_color = gl.getAttribLocation(this.prog, 'a_color')
+		this.attribs = [a_pos, a_uv, a_color]
 		gl.enableVertexAttribArray(a_pos)
 		gl.vertexAttribPointer(a_pos, 2, gl.FLOAT, false, stride, 0)
 		gl.enableVertexAttribArray(a_uv)
@@ -168,9 +236,17 @@ export class Gfx {
 		gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, this.idx.subarray(0, this.nidx))
 		gl.activeTexture(gl.TEXTURE0)
 		gl.bindTexture(gl.TEXTURE_2D, this.cur_tex ?? this.white)
+		const fx = this.cur_effect
+		if (fx !== null) {
+			gl.useProgram(fx.prog)
+			gl.uniform2f(fx.u_scale, 2 / this.width, 2 / this.height)
+			const u = this.cur_uniforms!
+			for (let i = 0; i < 4; i++) gl.uniform4f(fx.u_params[i], u[i * 4], u[i * 4 + 1], u[i * 4 + 2], u[i * 4 + 3])
+		}
 		if (this.cur_additive) gl.blendFunc(gl.SRC_ALPHA, gl.ONE)
 		else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 		gl.drawElements(gl.TRIANGLES, this.nidx, gl.UNSIGNED_SHORT, 0)
+		if (fx !== null) gl.useProgram(this.prog)
 		this.draw_calls++
 		this.nverts = 0
 		this.nidx = 0
@@ -179,11 +255,95 @@ export class Gfx {
 	// prepare makes room for `nv` vertices / `ni` indices drawn with `tex` and the blend mode.
 	prepare(tex: WebGLTexture | null, additive: boolean, nv: number, ni: number) {
 		const t = tex ?? this.white
-		if (t !== (this.cur_tex ?? this.white) || additive !== this.cur_additive || this.nverts + nv > MAX_VERTS || this.nidx + ni > this.idx.length) {
+		if (t !== (this.cur_tex ?? this.white) || additive !== this.cur_additive || this.cur_effect !== null || this.nverts + nv > MAX_VERTS || this.nidx + ni > this.idx.length) {
 			this.flush()
 			this.cur_tex = t
 			this.cur_additive = additive
+			this.cur_effect = null
 		}
+	}
+
+	// begin_effect makes the following quads (until end_effect) draw through an effect program, with its
+	// built-ins in `uniforms` (16 floats: TIME, TEXTURE_SIZE, -; PARAMS; PARAM_COLOR; FRAME_RECT).
+	begin_effect(fx: EffectProgram, uniforms: Float32Array) {
+		this.flush()
+		this.cur_effect = fx
+		this.cur_uniforms = uniforms
+	}
+
+	// effect_quad adds a quad to the current effect batch (begin_effect).
+	effect_quad(
+		tex: WebGLTexture,
+		x0: number, y0: number, u0: number, v0: number,
+		x1: number, y1: number, u1: number, v1: number,
+		x2: number, y2: number, u2: number, v2: number,
+		x3: number, y3: number, u3: number, v3: number,
+		c: GfxColor,
+	) {
+		if (this.cur_tex !== tex || this.nverts + 4 > MAX_VERTS || this.nidx + 6 > this.idx.length) {
+			const fx = this.cur_effect
+			const u = this.cur_uniforms
+			this.flush()
+			this.cur_effect = fx
+			this.cur_uniforms = u
+			this.cur_tex = tex
+			this.cur_additive = false
+		}
+		const b = this.nverts
+		this.vertex(x0, y0, u0, v0, c)
+		this.vertex(x1, y1, u1, v1, c)
+		this.vertex(x2, y2, u2, v2, c)
+		this.vertex(x3, y3, u3, v3, c)
+		const ix = this.idx
+		let n = this.nidx
+		ix[n++] = b
+		ix[n++] = b + 1
+		ix[n++] = b + 2
+		ix[n++] = b
+		ix[n++] = b + 2
+		ix[n++] = b + 3
+		this.nidx = n
+	}
+
+	end_effect() {
+		this.flush()
+		this.cur_effect = null
+	}
+
+	// effect compiles a shader asset on first use (and again when its version changes); null = it does not
+	// compile (the error is printed once) and the caller draws without it.
+	effect(id: string, version: number, source: string, path: string): EffectProgram | null {
+		const cached = this.effects.get(id)
+		if (cached && cached.version === version) return cached.program
+		if (cached) this.release_effect(id)
+		let program: EffectProgram | null = null
+		try {
+			const gl = this.gl
+			const webgl2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext
+			const [vs, fs] = effect_sources(source, webgl2)
+			const [a_pos, a_uv, a_color] = this.attribs
+			const prog = link(gl, vs, fs, { a_pos, a_uv, a_color })
+			gl.useProgram(prog)
+			gl.uniform1i(gl.getUniformLocation(prog, 'u_tex'), 0)
+			program = {
+				prog,
+				u_scale: gl.getUniformLocation(prog, 'u_scale'),
+				u_params: [0, 1, 2, 3].map((i) => gl.getUniformLocation(prog, `velo_p${i}`)),
+			}
+			gl.useProgram(this.prog)
+		} catch (err) {
+			console.error(`[render] shader ${path}: ${err instanceof Error ? err.message : err}`)
+		}
+		this.effects.set(id, { version, program })
+		return program
+	}
+
+	release_effect(id: string) {
+		const cached = this.effects.get(id)
+		if (!cached) return
+		this.flush()
+		if (cached.program) this.gl.deleteProgram(cached.program.prog)
+		this.effects.delete(id)
 	}
 
 	vertex(x: number, y: number, u: number, v: number, c: GfxColor) {
@@ -385,7 +545,7 @@ export class Gfx {
 	}
 }
 
-function link(gl: WebGLRenderingContext, vs: string, fs: string): WebGLProgram {
+function link(gl: WebGLRenderingContext, vs: string, fs: string, attribs: Record<string, number> = {}): WebGLProgram {
 	const compile = (type: number, src: string) => {
 		const sh = gl.createShader(type)!
 		gl.shaderSource(sh, src)
@@ -396,6 +556,7 @@ function link(gl: WebGLRenderingContext, vs: string, fs: string): WebGLProgram {
 	const p = gl.createProgram()!
 	gl.attachShader(p, compile(gl.VERTEX_SHADER, vs))
 	gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs))
+	for (const [name, loc] of Object.entries(attribs)) if (loc >= 0) gl.bindAttribLocation(p, loc, name)
 	gl.linkProgram(p)
 	if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(`program: ${gl.getProgramInfoLog(p)}`)
 	return p

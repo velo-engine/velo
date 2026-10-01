@@ -218,6 +218,9 @@ fn on_frame(mut e Editor) {
 		audio.pump()
 	} else if e.doc != unsafe { nil } {
 		preview_tree(mut e.doc.scene.root, dt)
+		// the scene is not updated while editing: advance its clocks so shader effects (TIME) animate
+		e.doc.scene.time += dt
+		e.doc.scene.real_time += dt
 	}
 
 	e.ctx.begin()

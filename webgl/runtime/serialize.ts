@@ -359,6 +359,7 @@ const asset_classes: Record<string, V.TypeDesc> = {
 	audio: assets.AudioClip,
 	text: assets.TextAsset,
 	font: assets.Font,
+	shader: assets.Shader,
 }
 
 // fields_of: the serializable fields of a component class (see core.FieldSpec).

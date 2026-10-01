@@ -21,9 +21,10 @@ pub interface DebugShape {
 @[heap]
 pub struct Renderer {
 mut:
-	ctx &gg.Context
-	db  &assets.AssetDatabase
-	gpu map[string]GpuImage // texture ID -> GPU image
+	ctx     &gg.Context
+	db      &assets.AssetDatabase
+	gpu     map[string]GpuImage  // texture ID -> GPU image
+	shaders map[string]GpuShader // shader asset ID -> pipeline
 pub mut:
 	debug bool // F1: draw node bounds + center
 	// Draw DebugShape outlines (colliders) even when `debug` is off (the editor turns it on).
@@ -191,6 +192,7 @@ fn (mut r Renderer) set_scissor(c Rect) {
 pub fn (mut r Renderer) on_asset_event(ev assets.AssetEvent) {
 	if ev.kind in [.unloaded, .removed] {
 		r.release_gpu(ev.id)
+		r.release_shader(ev.id)
 	}
 }
 
@@ -333,6 +335,12 @@ fn (mut r Renderer) draw_progress(p &ProgressBar, m core.Affine2) {
 fn (mut r Renderer) draw_sprite(s &Sprite, m core.Affine2) {
 	if s.tex == unsafe { nil } {
 		return
+	}
+	if s.shader_data != unsafe { nil } {
+		if pip := r.pipeline_for(s.shader_data) {
+			r.draw_sprite_shaded(s, m, pip)
+			return
+		}
 	}
 	if s.is_sliced_mode() {
 		r.draw_sprite_quads(s, m)
