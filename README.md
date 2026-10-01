@@ -444,11 +444,27 @@ node Pond {
 | `tile_size` | cell size in world units; `0` = the tileset's frame size |
 | `tiles` | `columns * rows` frame indices, row by row; `-1` = empty (a short list is padded with empty cells) |
 | `anchor`, `color` | `[0, 0]` puts the map's top-left corner at the node, `[0.5, 0.5]` centers it; tint |
+| `layout` | how cells sit on the map, see below (default `orthogonal`) |
+| `stagger_odd`, `hex_side` | offset layouts: shift the odd rows/columns (`false`: the even ones); hex layouts: edge length along the stagger axis, `0` = half the tile |
+
+`layout` is one of:
+
+| Layout | Cells | Neighbors |
+|---|---|---|
+| `orthogonal` | squares | 4 |
+| `isometric` | diamonds; `col` runs down-right, `row` down-left (map is a diamond), drawn back to front | 4 |
+| `staggered` | diamonds in offset rows (odd rows half a tile right), a rectangular map | 4 (diagonal) |
+| `hex_pointy` | pointy-top hexagons in offset rows | 6 |
+| `hex_flat` | flat-top hexagons in offset columns (odd columns half a tile down) | 6 |
+
+`tile_size` is the box a tile is drawn in (a 64x32 diamond for isometric, a hexagon's bounding box for hex); the
+tileset art fills it, and picking uses the real outline, so `world_to_cell` hits the diamond / hexagon, not the box.
 
 It is drawn in one draw call, and only the cells inside the screen (or the ScrollView/scene view clip) are submitted,
 so large maps are cheap. It turns, scales and flips with its node like a Sprite. From code: `tm.get(col, row)`,
 `tm.set(col, row, tile)`, `tm.fill_rect(...)`, `tm.flood_fill(col, row, tile)`, `tm.clear()`, `tm.resize(cols, rows)`,
-`tm.count()`, `tm.world_to_cell(p)`, `tm.tile_at(p)` (the tile under a world point, e.g. to check what the player
+`tm.count()`, `tm.neighbors(col, row)` (the cells sharing an edge, for path finding), `tm.cell_polygon(col, row)`
+(a cell's outline), `tm.world_to_cell(p)`, `tm.tile_at(p)` (the tile under a world point, e.g. to check what the player
 stands on), `tm.cell_center(col, row)` (to place objects on the grid), `tm.set_tileset(ref)`.
 The demo's pond (`scenes/main.scene`, tileset `sprites/tiles.png`) is a TileMap.
 
@@ -461,7 +477,7 @@ In the editor, select the node and paint in the scene view:
 | Fill | G | flood-fills the clicked area (cells connected to it with the same tile) with the brush |
 | Pick | I | click a cell to use its tile as the brush (an empty cell picks Erase) |
 
-The scene view shows the map's grid and the cell under the mouse, with the brush previewed in it. Each drag is one undo step.
+The scene view shows the map's grid (each cell's outline for the non-orthogonal layouts) and the cell under the mouse, with the brush previewed in it. Each drag is one undo step.
 Clicking outside the map still selects other nodes. Esc or W/E/R/Y leave the tile tools. Editing `columns`/`rows` in
 the Inspector resizes the map and keeps every tile in its cell. On a prefab instance, painted tiles are an override of
 the whole `tiles` list. The Inspector shows a `[]int` field such as `tiles` as a value count, not a text field.

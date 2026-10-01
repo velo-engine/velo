@@ -1603,6 +1603,20 @@ function lerp_color(a: Color, b: Color, t: number): Color {
 
 export const no_tile = -1
 
+// inside_convex: true if (px, py) lies in the convex polygon (edges count as inside)
+function inside_convex(poly: Vec2[], px: number, py: number): boolean {
+	let pos = false
+	let neg = false
+	for (let i = 0; i < poly.length; i++) {
+		const a = poly[i]
+		const b = poly[(i + 1) % poly.length]
+		const cr = (b.x - a.x) * (py - a.y) - (b.y - a.y) * (px - a.x)
+		if (cr > 0) pos = true
+		else if (cr < 0) neg = true
+	}
+	return !(pos && neg)
+}
+
 export class TileMap extends core.Component {
 	static __vname = 'render.TileMap'
 	static __fields: FieldSpec[] = [
@@ -1612,6 +1626,9 @@ export class TileMap extends core.Component {
 		{ name: 'tile_size', type: 'Vec2' },
 		{ name: 'anchor', type: 'Vec2' },
 		{ name: 'color', type: 'Color' },
+		{ name: 'layout', type: 'string', choices: ['orthogonal', 'isometric', 'staggered', 'hex_pointy', 'hex_flat'] },
+		{ name: 'stagger_odd', type: 'bool' },
+		{ name: 'hex_side', type: 'f32' },
 		{ name: 'tiles', type: '[]int' },
 	]
 	tileset = new assets.AssetRef('', assets.Texture)
@@ -1620,6 +1637,9 @@ export class TileMap extends core.Component {
 	tile_size = new Vec2()
 	anchor = new Vec2()
 	color = core.white.clone()
+	layout = 'orthogonal'
+	stagger_odd = true
+	hex_side = 0
 	tiles: number[] = []
 	tex: assets.Texture | null = null
 	loaded = ''
@@ -1666,7 +1686,7 @@ export class TileMap extends core.Component {
 			if (this.get(c, r) !== target || !this.in_bounds(c, r)) continue
 			this.set(c, r, tile)
 			n++
-			stack.push(c + 1, r, c - 1, r, c, r + 1, c, r - 1)
+			for (const nb of this.neighbors(c, r)) stack.push(nb[0], nb[1])
 		}
 		return n
 	}
@@ -1697,16 +1717,192 @@ export class TileMap extends core.Component {
 		if (this.tex !== null && this.tex.frame_w() > 0 && this.tex.frame_h() > 0) return vec2(this.tex.frame_w(), this.tex.frame_h())
 		return vec2(16, 16)
 	}
+	shifted(i: number): boolean {
+		return (i & 1) === 1 === this.stagger_odd
+	}
+	neighbors(col: number, row: number): number[][] {
+		switch (this.layout) {
+			case 'staggered':
+			case 'hex_pointy': {
+				const d = this.shifted(row) ? 1 : -1
+				const out = [[col, row - 1], [col + d, row - 1], [col, row + 1], [col + d, row + 1]]
+				if (this.layout === 'hex_pointy') out.push([col + 1, row], [col - 1, row])
+				return out
+			}
+			case 'hex_flat': {
+				const d = this.shifted(col) ? 1 : -1
+				return [[col, row - 1], [col, row + 1], [col - 1, row], [col - 1, row + d], [col + 1, row], [col + 1, row + d]]
+			}
+			default:
+				return [[col + 1, row], [col - 1, row], [col, row + 1], [col, row - 1]]
+		}
+	}
+	hex_edge(cs: Vec2): number {
+		if (this.hex_side > 0) return this.hex_side
+		return this.layout === 'hex_flat' ? cs.x / 2 : cs.y / 2
+	}
+	step(cs: Vec2): [number, number] {
+		switch (this.layout) {
+			case 'isometric':
+				return [cs.x / 2, cs.y / 2]
+			case 'staggered':
+				return [cs.x, cs.y / 2]
+			case 'hex_pointy':
+				return [cs.x, (cs.y + this.hex_edge(cs)) / 2]
+			case 'hex_flat':
+				return [(cs.x + this.hex_edge(cs)) / 2, cs.y]
+			default:
+				return [cs.x, cs.y]
+		}
+	}
 	local_rect(): [number, number, number, number] {
 		const cs = this.cell_size()
-		const w = cs.x * Math.max(this.columns, 0)
-		const h = cs.y * Math.max(this.rows, 0)
+		const cols = Math.max(this.columns, 0)
+		const rs = Math.max(this.rows, 0)
+		const [sx, sy] = this.step(cs)
+		let w = 0
+		let h = 0
+		if (cols > 0 && rs > 0) {
+			switch (this.layout) {
+				case 'isometric':
+					w = (cols + rs) * sx
+					h = (cols + rs) * sy
+					break
+				case 'staggered':
+				case 'hex_pointy':
+					w = cols * cs.x + cs.x / 2
+					h = (rs - 1) * sy + cs.y
+					break
+				case 'hex_flat':
+					w = (cols - 1) * sx + cs.x
+					h = rs * cs.y + cs.y / 2
+					break
+				default:
+					w = cols * cs.x
+					h = rs * cs.y
+			}
+		}
 		return [-this.anchor.x * w, -this.anchor.y * h, w, h]
+	}
+	cell_origin(col: number, row: number, cs: Vec2): [number, number] {
+		const [sx, sy] = this.step(cs)
+		switch (this.layout) {
+			case 'isometric':
+				return [(this.rows - 1 + col - row) * sx, (col + row) * sy]
+			case 'staggered':
+			case 'hex_pointy':
+				return [col * cs.x + (this.shifted(row) ? cs.x / 2 : 0), row * sy]
+			case 'hex_flat':
+				return [col * sx, row * cs.y + (this.shifted(col) ? cs.y / 2 : 0)]
+			default:
+				return [col * cs.x, row * cs.y]
+		}
+	}
+	tile_outline(cs: Vec2): Vec2[] {
+		const w = cs.x
+		const h = cs.y
+		switch (this.layout) {
+			case 'isometric':
+			case 'staggered':
+				return [vec2(w / 2, 0), vec2(w, h / 2), vec2(w / 2, h), vec2(0, h / 2)]
+			case 'hex_pointy': {
+				const a = (h - this.hex_edge(cs)) / 2
+				return [vec2(w / 2, 0), vec2(w, a), vec2(w, h - a), vec2(w / 2, h), vec2(0, h - a), vec2(0, a)]
+			}
+			case 'hex_flat': {
+				const a = (w - this.hex_edge(cs)) / 2
+				return [vec2(a, 0), vec2(w - a, 0), vec2(w, h / 2), vec2(w - a, h), vec2(a, h), vec2(0, h / 2)]
+			}
+			default:
+				return [vec2(0, 0), vec2(w, 0), vec2(w, h), vec2(0, h)]
+		}
+	}
+	cell_polygon(col: number, row: number): Vec2[] {
+		const [x, y] = this.cell_local_rect(col, row)
+		return this.tile_outline(this.cell_size()).map((p) => vec2(x + p.x, y + p.y))
 	}
 	local_to_cell(p: Vec2): [number, number] {
 		const [x, y] = this.local_rect()
 		const cs = this.cell_size()
-		return [Math.floor((p.x - x) / cs.x), Math.floor((p.y - y) / cs.y)]
+		const rx = p.x - x
+		const ry = p.y - y
+		if (this.layout !== 'isometric' && this.layout !== 'staggered' && this.layout !== 'hex_pointy' && this.layout !== 'hex_flat') {
+			return [Math.floor(rx / cs.x), Math.floor(ry / cs.y)]
+		}
+		const [sx, sy] = this.step(cs)
+		if (this.layout === 'isometric') {
+			const a = rx / sx - this.rows
+			const b = ry / sy - 1
+			return [Math.floor((a + b) / 2 + 0.5), Math.floor((b - a) / 2 + 0.5)]
+		}
+		const outline = this.tile_outline(cs)
+		const cg = Math.floor(rx / sx)
+		const rg = Math.floor(ry / sy)
+		let best_c = cg
+		let best_r = rg
+		let best_d = 1e30
+		for (let r = rg - 2; r < rg + 2; r++) {
+			for (let c = cg - 2; c < cg + 2; c++) {
+				const [ox, oy] = this.cell_origin(c, r, cs)
+				const qx = rx - ox
+				const qy = ry - oy
+				if (inside_convex(outline, qx, qy)) return [c, r]
+				const d = Math.hypot(qx - cs.x / 2, qy - cs.y / 2)
+				if (d < best_d) {
+					best_c = c
+					best_r = r
+					best_d = d
+				}
+			}
+		}
+		return [best_c, best_r]
+	}
+	// visible_cells: the cells whose tile box touches the node-space rectangle, as row * columns + col, back to front
+	visible_cells(x0: number, y0: number, x1: number, y1: number): number[] {
+		const out: number[] = []
+		const [ox, oy] = this.local_rect()
+		const cs = this.cell_size()
+		const [sx, sy] = this.step(cs)
+		const rx0 = x0 - ox
+		const ry0 = y0 - oy
+		const rx1 = x1 - ox
+		const ry1 = y1 - oy
+		const cols = this.columns
+		const rows = this.rows
+		if (this.layout === 'isometric') {
+			const s_lo = Math.max(Math.floor((ry0 - cs.y) / sy) + 1, 0)
+			const s_hi = Math.min(Math.ceil(ry1 / sy) - 1, cols + rows - 2)
+			const d_lo = Math.floor((rx0 - cs.x) / sx) + 1 - (rows - 1)
+			const d_hi = Math.ceil(rx1 / sx) - 1 - (rows - 1)
+			for (let s = s_lo; s <= s_hi; s++) {
+				const c_lo = Math.max(s - rows + 1, 0, Math.ceil((s + d_lo) / 2))
+				const c_hi = Math.min(s, cols - 1, Math.floor((s + d_hi) / 2))
+				for (let c = c_lo; c <= c_hi; c++) {
+					const r = s - c
+					const d = c - r
+					if (r >= 0 && r < rows && d >= d_lo && d <= d_hi) out.push(r * cols + c)
+				}
+			}
+		} else if (this.layout === 'staggered' || this.layout === 'hex_pointy' || this.layout === 'hex_flat') {
+			const flat = this.layout === 'hex_flat'
+			const r_lo = flat ? Math.ceil((ry0 - cs.y * 1.5) / cs.y) : Math.ceil((ry0 - cs.y) / sy)
+			const r_hi = flat ? Math.floor(ry1 / cs.y) : Math.floor(ry1 / sy)
+			const c_lo = flat ? Math.ceil((rx0 - cs.x) / sx) : Math.ceil((rx0 - cs.x * 1.5) / cs.x)
+			const c_hi = flat ? Math.floor(rx1 / sx) : Math.floor(rx1 / cs.x)
+			for (let r = Math.max(r_lo, 0); r < Math.min(r_hi + 1, rows); r++) {
+				for (let c = Math.max(c_lo, 0); c < Math.min(c_hi + 1, cols); c++) {
+					const [x, y] = this.cell_origin(c, r, cs)
+					if (x < rx1 && x + cs.x > rx0 && y < ry1 && y + cs.y > ry0) out.push(r * cols + c)
+				}
+			}
+		} else {
+			const r_from = Math.max(Math.floor(ry0 / cs.y), 0)
+			const r_to = Math.min(Math.ceil(ry1 / cs.y) - 1, rows - 1)
+			const c_from = Math.max(Math.floor(rx0 / cs.x), 0)
+			const c_to = Math.min(Math.ceil(rx1 / cs.x) - 1, cols - 1)
+			for (let r = r_from; r <= r_to; r++) for (let c = c_from; c <= c_to; c++) out.push(r * cols + c)
+		}
+		return out
 	}
 	world_to_cell(p: Vec2): [number, number] {
 		return this.local_to_cell(this.node.world_matrix().inverse().apply(p))
@@ -1718,7 +1914,8 @@ export class TileMap extends core.Component {
 	cell_local_rect(col: number, row: number): [number, number, number, number] {
 		const [x, y] = this.local_rect()
 		const cs = this.cell_size()
-		return [x + col * cs.x, y + row * cs.y, cs.x, cs.y]
+		const [cx, cy] = this.cell_origin(col, row, cs)
+		return [x + cx, y + cy, cs.x, cs.y]
 	}
 	cell_center(col: number, row: number): Vec2 {
 		const [x, y, w, h] = this.cell_local_rect(col, row)
@@ -2254,13 +2451,8 @@ export class Renderer {
 			lx1 = Math.max(lx1, qx)
 			ly1 = Math.max(ly1, qy)
 		}
-		const [c0, r0] = tm.local_to_cell(vec2(lx0, ly0))
-		const [c1, r1] = tm.local_to_cell(vec2(lx1, ly1))
-		const col_from = Math.max(c0, 0)
-		const col_to = Math.min(c1, tm.columns - 1)
-		const row_from = Math.max(r0, 0)
-		const row_to = Math.min(r1, tm.rows - 1)
-		if (col_from > col_to || row_from > row_to) return
+		const cells = tm.visible_cells(lx0, ly0, lx1, ly1)
+		if (cells.length === 0) return
 		const [ox, oy] = tm.local_rect()
 		const cs = tm.cell_size()
 		const frames = tex.frame_count()
@@ -2269,28 +2461,29 @@ export class Renderer {
 		const eu = 0.01 / tw
 		const ev = 0.01 / th
 		const col = tm.color
-		for (let row = row_from; row <= row_to; row++) {
-			for (let c = col_from; c <= col_to; c++) {
-				const t = tm.get(c, row)
-				if (t < 0 || t >= frames) continue
-				const [fx, fy, fw, fh] = tex.frame_rect(t)
-				const u0 = fx / tw + eu
-				const v0 = fy / th + ev
-				const u1 = (fx + fw) / tw - eu
-				const v1 = (fy + fh) / th - ev
-				const x = ox + c * cs.x
-				const y = oy + row * cs.y
-				const x1 = x + cs.x
-				const y1 = y + cs.y
-				this.gfx.quad(
-					gtex,
-					m.apply_x(x, y), m.apply_y(x, y), u0, v0,
-					m.apply_x(x1, y), m.apply_y(x1, y), u1, v0,
-					m.apply_x(x1, y1), m.apply_y(x1, y1), u1, v1,
-					m.apply_x(x, y1), m.apply_y(x, y1), u0, v1,
-					col,
-				)
-			}
+		for (const i of cells) {
+			const c = i % tm.columns
+			const row = Math.floor(i / tm.columns)
+			const t = tm.get(c, row)
+			if (t < 0 || t >= frames) continue
+			const [fx, fy, fw, fh] = tex.frame_rect(t)
+			const u0 = fx / tw + eu
+			const v0 = fy / th + ev
+			const u1 = (fx + fw) / tw - eu
+			const v1 = (fy + fh) / th - ev
+			const [cx, cy] = tm.cell_origin(c, row, cs)
+			const x = ox + cx
+			const y = oy + cy
+			const x1 = x + cs.x
+			const y1 = y + cs.y
+			this.gfx.quad(
+				gtex,
+				m.apply_x(x, y), m.apply_y(x, y), u0, v0,
+				m.apply_x(x1, y), m.apply_y(x1, y), u1, v0,
+				m.apply_x(x1, y1), m.apply_y(x1, y1), u1, v1,
+				m.apply_x(x, y1), m.apply_y(x, y1), u0, v1,
+				col,
+			)
 		}
 		this.draw_calls++
 	}

@@ -13,21 +13,53 @@ import velo.assets
 //   TileMap { tileset = @asset("e71a0c3d")  columns = 4  rows = 2  tiles = [0, 1, 1, 2, 4, 5, 5, 6] }
 //
 // The node's position is the map's top-left corner (anchor [0, 0]); paint it in the editor's Inspector.
+//
+// `layout` picks how the cells sit on the map (a cell is always `tile_size` big: the box its tile is drawn in):
+//   orthogonal  square grid (default)
+//   isometric   diamond grid; col runs down-right, row down-left; drawn back to front
+//   staggered   isometric diamonds in offset rows: odd rows are shifted half a tile right
+//               (stagger_odd = false: the even rows)
+//   hex_pointy  pointy-top hexagons in offset rows (rows touch at 3/4 of the tile height)
+//   hex_flat    flat-top hexagons in offset columns (odd columns shifted half a tile down)
+// For the hex layouts `hex_side` is the length of the edge parallel to the stagger axis (0 = half the tile).
 pub struct TileMap {
 	core.Component
 pub mut:
-	tileset   assets.AssetRef[assets.Texture]
-	columns   int = 16 // map size in cells; change it with `resize` so existing tiles keep their place
-	rows      int = 10
-	tile_size core.Vec2 // cell size in world units; 0 = the tileset's frame size
-	anchor    core.Vec2 // (0,0) top-left corner of the map at the node, (0.5,0.5) centered
-	color     core.Color = core.white
-	tiles     []int // columns * rows frame indices, row by row; -1 = empty (missing entries are empty too)
-	tex       &assets.Texture = unsafe { nil } @[hide]
-	loaded    string          @[hide]
+	tileset     assets.AssetRef[assets.Texture]
+	columns     int = 16 // map size in cells; change it with `resize` so existing tiles keep their place
+	rows        int = 10
+	tile_size   core.Vec2 // cell size in world units; 0 = the tileset's frame size
+	anchor      core.Vec2 // (0,0) top-left corner of the map at the node, (0.5,0.5) centered
+	color       core.Color = core.white
+	layout      string     = 'orthogonal' @[choices: 'orthogonal|isometric|staggered|hex_pointy|hex_flat']
+	stagger_odd bool       = true // staggered and hex layouts: shift the odd rows / columns (false: the even ones)
+	hex_side    f32   // hex layouts: edge length along the stagger axis, 0 = half the tile
+	tiles       []int // columns * rows frame indices, row by row; -1 = empty (missing entries are empty too)
+	tex         &assets.Texture = unsafe { nil } @[hide]
+	loaded      string          @[hide]
 }
 
 pub const no_tile = -1
+
+// TileLayout — the parsed `layout` of a TileMap.
+pub enum TileLayout {
+	orthogonal
+	isometric
+	staggered
+	hex_pointy
+	hex_flat
+}
+
+// tile_layout: the map's `layout` (an unknown name means orthogonal).
+pub fn (tm &TileMap) tile_layout() TileLayout {
+	return match tm.layout {
+		'isometric' { TileLayout.isometric }
+		'staggered' { TileLayout.staggered }
+		'hex_pointy' { TileLayout.hex_pointy }
+		'hex_flat' { TileLayout.hex_flat }
+		else { TileLayout.orthogonal }
+	}
+}
 
 pub fn (mut tm TileMap) on_load() {
 	tm.acquire()
@@ -80,7 +112,8 @@ pub fn (mut tm TileMap) fill_rect(col0 int, row0 int, col1 int, row1 int, tile i
 	}
 }
 
-// flood_fill replaces the connected area (4 neighbors) of cells equal to the one at (col, row) with `tile`.
+// flood_fill replaces the connected area (cells sharing an edge, see `neighbors`) of cells equal to the one at
+// (col, row) with `tile`.
 // Returns the number of cells changed.
 pub fn (mut tm TileMap) flood_fill(col int, row int, tile int) int {
 	target := tm.get(col, row)
@@ -101,9 +134,43 @@ pub fn (mut tm TileMap) flood_fill(col int, row int, tile int) int {
 		}
 		tm.set(c, r, tile)
 		n++
-		stack << [c + 1, r, c - 1, r, c, r + 1, c, r - 1]
+		for nb in tm.neighbors(c, r) {
+			stack << nb[0]
+			stack << nb[1]
+		}
 	}
 	return n
+}
+
+// shifted: true when row (pointy / staggered) or column (flat) `i` sits half a tile off.
+fn (tm &TileMap) shifted(i int) bool {
+	return (i & 1 == 1) == tm.stagger_odd
+}
+
+// neighbors: the cells sharing an edge with (col, row), as [col, row] pairs (they may lie outside the map):
+// 4 for orthogonal, isometric and staggered, 6 for the hex layouts.
+pub fn (tm &TileMap) neighbors(col int, row int) [][]int {
+	match tm.tile_layout() {
+		.orthogonal, .isometric {
+			return [[col + 1, row], [col - 1, row], [col, row + 1],
+				[col, row - 1]]
+		}
+		.staggered, .hex_pointy {
+			d := if tm.shifted(row) { 1 } else { -1 } // the rows above and below touch columns col and col + d
+			mut out := [[col, row - 1], [col + d, row - 1], [col, row + 1],
+				[col + d, row + 1]]
+			if tm.tile_layout() == .hex_pointy {
+				out << [col + 1, row]
+				out << [col - 1, row]
+			}
+			return out
+		}
+		.hex_flat {
+			d := if tm.shifted(col) { 1 } else { -1 }
+			return [[col, row - 1], [col, row + 1], [col - 1, row],
+				[col - 1, row + d], [col + 1, row], [col + 1, row + d]]
+		}
+	}
 }
 
 // clear empties every cell.
@@ -163,19 +230,235 @@ pub fn (tm &TileMap) cell_size() core.Vec2 {
 	return core.vec2(16, 16)
 }
 
+// hex_edge: the hex layouts' edge length along the stagger axis.
+fn (tm &TileMap) hex_edge(cs core.Vec2) f32 {
+	if tm.hex_side > 0 {
+		return tm.hex_side
+	}
+	return if tm.tile_layout() == .hex_flat { cs.x / 2 } else { cs.y / 2 }
+}
+
+// step: the distance between neighboring cells along x and y (the layout's lattice spacing).
+fn (tm &TileMap) step(cs core.Vec2) (f32, f32) {
+	match tm.tile_layout() {
+		.orthogonal {
+			return cs.x, cs.y
+		}
+		.isometric {
+			return cs.x / 2, cs.y / 2
+		}
+		.staggered {
+			return cs.x, cs.y / 2
+		}
+		.hex_pointy {
+			return cs.x, (cs.y + tm.hex_edge(cs)) / 2
+		}
+		.hex_flat {
+			return (cs.x + tm.hex_edge(cs)) / 2, cs.y
+		}
+	}
+}
+
 // local_rect: the rectangle (x, y, w, h) the whole map covers in node space.
 pub fn (tm &TileMap) local_rect() (f32, f32, f32, f32) {
 	cs := tm.cell_size()
-	w := cs.x * f32(math.max(tm.columns, 0))
-	h := cs.y * f32(math.max(tm.rows, 0))
+	cols := f32(math.max(tm.columns, 0))
+	rs := f32(math.max(tm.rows, 0))
+	sx, sy := tm.step(cs)
+	mut w := f32(0)
+	mut h := f32(0)
+	if cols > 0 && rs > 0 {
+		match tm.tile_layout() {
+			.orthogonal {
+				w, h = cols * cs.x, rs * cs.y
+			}
+			.isometric {
+				w, h = (cols + rs) * sx, (cols + rs) * sy
+			}
+			.staggered {
+				w, h = cols * cs.x + cs.x / 2, (rs - 1) * sy + cs.y
+			}
+			.hex_pointy {
+				w, h = cols * cs.x + cs.x / 2, (rs - 1) * sy + cs.y
+			}
+			.hex_flat {
+				w, h = (cols - 1) * sx + cs.x, rs * cs.y + cs.y / 2
+			}
+		}
+	}
 	return -tm.anchor.x * w, -tm.anchor.y * h, w, h
+}
+
+// cell_origin: the top-left corner of the cell's tile box, relative to the map's top-left corner.
+fn (tm &TileMap) cell_origin(col int, row int, cs core.Vec2) (f32, f32) {
+	sx, sy := tm.step(cs)
+	match tm.tile_layout() {
+		.orthogonal {
+			return f32(col) * cs.x, f32(row) * cs.y
+		}
+		.isometric {
+			return f32(tm.rows - 1 + col - row) * sx, f32(col + row) * sy
+		}
+		.staggered, .hex_pointy {
+			dx := if tm.shifted(row) { cs.x / 2 } else { f32(0) }
+			return f32(col) * cs.x + dx, f32(row) * sy
+		}
+		.hex_flat {
+			dy := if tm.shifted(col) { cs.y / 2 } else { f32(0) }
+			return f32(col) * sx, f32(row) * cs.y + dy
+		}
+	}
+}
+
+// tile_outline: the cell's outline inside its tile box (w x h): the box, a diamond or a hexagon.
+fn (tm &TileMap) tile_outline(cs core.Vec2) []core.Vec2 {
+	w, h := cs.x, cs.y
+	match tm.tile_layout() {
+		.orthogonal {
+			return [core.vec2(0, 0), core.vec2(w, 0), core.vec2(w, h),
+				core.vec2(0, h)]
+		}
+		.isometric, .staggered {
+			return [core.vec2(w / 2, 0), core.vec2(w, h / 2),
+				core.vec2(w / 2, h), core.vec2(0, h / 2)]
+		}
+		.hex_pointy {
+			a := (h - tm.hex_edge(cs)) / 2
+			return [core.vec2(w / 2, 0), core.vec2(w, a), core.vec2(w, h - a),
+				core.vec2(w / 2, h), core.vec2(0, h - a), core.vec2(0, a)]
+		}
+		.hex_flat {
+			a := (w - tm.hex_edge(cs)) / 2
+			return [core.vec2(a, 0), core.vec2(w - a, 0), core.vec2(w, h / 2),
+				core.vec2(w - a, h), core.vec2(a, h), core.vec2(0, h / 2)]
+		}
+	}
+}
+
+// cell_polygon: the outline of a cell in node space (4 corners, or 6 for a hex), clockwise on screen.
+pub fn (tm &TileMap) cell_polygon(col int, row int) []core.Vec2 {
+	x, y, _, _ := tm.cell_local_rect(col, row)
+	return tm.tile_outline(tm.cell_size()).map(core.vec2(x + it.x, y + it.y))
+}
+
+// inside_convex: true if `p` lies in the convex polygon `poly` (edges count as inside).
+fn inside_convex(poly []core.Vec2, p core.Vec2) bool {
+	mut pos := false
+	mut neg := false
+	for i, a in poly {
+		b := poly[(i + 1) % poly.len]
+		cr := (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
+		if cr > 0 {
+			pos = true
+		} else if cr < 0 {
+			neg = true
+		}
+	}
+	return !(pos && neg)
 }
 
 // local_to_cell: the (col, row) under a node-space point (may be outside the map, see in_bounds).
 pub fn (tm &TileMap) local_to_cell(p core.Vec2) (int, int) {
 	x, y, _, _ := tm.local_rect()
 	cs := tm.cell_size()
-	return int(math.floor((p.x - x) / cs.x)), int(math.floor((p.y - y) / cs.y))
+	rx, ry := p.x - x, p.y - y
+	lay := tm.tile_layout()
+	if lay == .orthogonal {
+		return int(math.floor(rx / cs.x)), int(math.floor(ry / cs.y))
+	}
+	sx, sy := tm.step(cs)
+	if lay == .isometric {
+		a := rx / sx - f32(tm.rows) // col - row at the cell's center
+		b := ry / sy - 1 // col + row
+		return int(math.floor((a + b) / 2 + 0.5)), int(math.floor((b - a) / 2 + 0.5))
+	}
+	// offset layouts: test the few cells around the point, each against its outline
+	outline := tm.tile_outline(cs)
+	cg := int(math.floor(rx / sx))
+	rg := int(math.floor(ry / sy))
+	mut best_c, mut best_r := cg, rg
+	mut best_d := f32(1e30)
+	for r in rg - 2 .. rg + 2 {
+		for c in cg - 2 .. cg + 2 {
+			ox, oy := tm.cell_origin(c, r, cs)
+			q := core.vec2(rx - ox, ry - oy)
+			if inside_convex(outline, q) {
+				return c, r
+			}
+			d := (q - core.vec2(cs.x / 2, cs.y / 2)).length()
+			if d < best_d {
+				best_c, best_r, best_d = c, r, d
+			}
+		}
+	}
+	return best_c, best_r
+}
+
+// visible_cells: the cells whose tile box touches the node-space rectangle (x0, y0)-(x1, y1), as
+// row * columns + col, in drawing order (back to front: rows top to bottom, isometric diagonals).
+pub fn (tm &TileMap) visible_cells(x0 f32, y0 f32, x1 f32, y1 f32) []int {
+	mut out := []int{}
+	ox, oy, _, _ := tm.local_rect()
+	cs := tm.cell_size()
+	sx, sy := tm.step(cs)
+	rx0, ry0, rx1, ry1 := x0 - ox, y0 - oy, x1 - ox, y1 - oy
+	cols, rows := tm.columns, tm.rows
+	match tm.tile_layout() {
+		.orthogonal {
+			r_from, r_to := math.max(int(math.floor(ry0 / cs.y)), 0), math.min(int(math.ceil(ry1 / cs.y)) - 1,
+				rows - 1)
+			c_from, c_to := math.max(int(math.floor(rx0 / cs.x)), 0), math.min(int(math.ceil(rx1 / cs.x)) - 1,
+				cols - 1)
+			for r in r_from .. r_to + 1 {
+				for c in c_from .. c_to + 1 {
+					out << r * cols + c
+				}
+			}
+		}
+		.isometric {
+			// diagonal s = col + row sits at y = s * sy; d = col - row at x = (rows - 1 + d) * sx
+			s_lo := math.max(int(math.floor((ry0 - cs.y) / sy)) + 1, 0)
+			s_hi := math.min(int(math.ceil(ry1 / sy)) - 1, cols + rows - 2)
+			d_lo := int(math.floor((rx0 - cs.x) / sx)) + 1 - (rows - 1)
+			d_hi := int(math.ceil(rx1 / sx)) - 1 - (rows - 1)
+			for s in s_lo .. s_hi + 1 {
+				c_lo := math.max(math.max(s - rows + 1, 0), int(math.ceil(f32(s + d_lo) / 2)))
+				c_hi := math.min(math.min(s, cols - 1), int(math.floor(f32(s + d_hi) / 2)))
+				for c in c_lo .. c_hi + 1 {
+					r := s - c
+					d := c - r
+					if r >= 0 && r < rows && d >= d_lo && d <= d_hi {
+						out << r * cols + c
+					}
+				}
+			}
+		}
+		else {
+			flat := tm.tile_layout() == .hex_flat
+			r_lo := if flat {
+				int(math.ceil((ry0 - cs.y * 1.5) / cs.y))
+			} else {
+				int(math.ceil((ry0 - cs.y) / sy))
+			}
+			r_hi := if flat { int(math.floor(ry1 / cs.y)) } else { int(math.floor(ry1 / sy)) }
+			c_lo := if flat {
+				int(math.ceil((rx0 - cs.x) / sx))
+			} else {
+				int(math.ceil((rx0 - cs.x * 1.5) / cs.x))
+			}
+			c_hi := if flat { int(math.floor(rx1 / sx)) } else { int(math.floor(rx1 / cs.x)) }
+			for r in math.max(r_lo, 0) .. math.min(r_hi + 1, rows) {
+				for c in math.max(c_lo, 0) .. math.min(c_hi + 1, cols) {
+					x, y := tm.cell_origin(c, r, cs)
+					if x < rx1 && x + cs.x > rx0 && y < ry1 && y + cs.y > ry0 {
+						out << r * cols + c
+					}
+				}
+			}
+		}
+	}
+
+	return out
 }
 
 // world_to_cell: the (col, row) under a world point, e.g. the player's feet.
@@ -193,7 +476,8 @@ pub fn (tm &TileMap) tile_at(p core.Vec2) int {
 pub fn (tm &TileMap) cell_local_rect(col int, row int) (f32, f32, f32, f32) {
 	x, y, _, _ := tm.local_rect()
 	cs := tm.cell_size()
-	return x + f32(col) * cs.x, y + f32(row) * cs.y, cs.x, cs.y
+	cx, cy := tm.cell_origin(col, row, cs)
+	return x + cx, y + cy, cs.x, cs.y
 }
 
 // cell_center: the world position of a cell's center (to place objects on the grid).
@@ -236,15 +520,12 @@ fn (mut r Renderer) draw_tilemap(tm &TileMap, m core.Affine2) {
 		lx0, ly0 = math.min(lx0, q.x), math.min(ly0, q.y)
 		lx1, ly1 = math.max(lx1, q.x), math.max(ly1, q.y)
 	}
-	c0, r0 := tm.local_to_cell(core.vec2(lx0, ly0))
-	c1, r1 := tm.local_to_cell(core.vec2(lx1, ly1))
-	col_from, col_to := math.max(c0, 0), math.min(c1, tm.columns - 1)
-	row_from, row_to := math.max(r0, 0), math.min(r1, tm.rows - 1)
-	if col_from > col_to || row_from > row_to {
+	cells := tm.visible_cells(lx0, ly0, lx1, ly1)
+	if cells.len == 0 {
 		return
 	}
-	ox, oy, _, _ := tm.local_rect()
 	cs := tm.cell_size()
+	ox, oy, _, _ := tm.local_rect()
 	frames := tex.frame_count()
 	tw, th := f32(tex.width), f32(tex.height)
 	// pull UVs a hair inside each frame so neighbouring tiles in the sheet never bleed into seams
@@ -255,26 +536,25 @@ fn (mut r Renderer) draw_tilemap(tm &TileMap, m core.Affine2) {
 	sgl.enable_texture()
 	sgl.texture(img.simg, img.ssmp)
 	sgl.begin_quads()
-	for row in row_from .. row_to + 1 {
-		for c in col_from .. col_to + 1 {
-			t := tm.get(c, row)
-			if t < 0 || t >= frames {
-				continue
-			}
-			fx, fy, fw, fh := tex.frame_rect(t)
-			u0, v0 := f32(fx) / tw + eu, f32(fy) / th + ev
-			u1, v1 := f32(fx + fw) / tw - eu, f32(fy + fh) / th - ev
-			x := ox + f32(c) * cs.x
-			y := oy + f32(row) * cs.y
-			a := m.apply(core.vec2(x, y))
-			b := m.apply(core.vec2(x + cs.x, y))
-			d := m.apply(core.vec2(x + cs.x, y + cs.y))
-			e := m.apply(core.vec2(x, y + cs.y))
-			sgl.v2f_t2f_c4b(a.x * s, a.y * s, u0, v0, col.r, col.g, col.b, col.a)
-			sgl.v2f_t2f_c4b(b.x * s, b.y * s, u1, v0, col.r, col.g, col.b, col.a)
-			sgl.v2f_t2f_c4b(d.x * s, d.y * s, u1, v1, col.r, col.g, col.b, col.a)
-			sgl.v2f_t2f_c4b(e.x * s, e.y * s, u0, v1, col.r, col.g, col.b, col.a)
+	for i in cells {
+		c, row := i % tm.columns, i / tm.columns
+		t := tm.get(c, row)
+		if t < 0 || t >= frames {
+			continue
 		}
+		fx, fy, fw, fh := tex.frame_rect(t)
+		u0, v0 := f32(fx) / tw + eu, f32(fy) / th + ev
+		u1, v1 := f32(fx + fw) / tw - eu, f32(fy + fh) / th - ev
+		cx, cy := tm.cell_origin(c, row, cs)
+		x, y := ox + cx, oy + cy
+		a := m.apply(core.vec2(x, y))
+		b := m.apply(core.vec2(x + cs.x, y))
+		d := m.apply(core.vec2(x + cs.x, y + cs.y))
+		e := m.apply(core.vec2(x, y + cs.y))
+		sgl.v2f_t2f_c4b(a.x * s, a.y * s, u0, v0, col.r, col.g, col.b, col.a)
+		sgl.v2f_t2f_c4b(b.x * s, b.y * s, u1, v0, col.r, col.g, col.b, col.a)
+		sgl.v2f_t2f_c4b(d.x * s, d.y * s, u1, v1, col.r, col.g, col.b, col.a)
+		sgl.v2f_t2f_c4b(e.x * s, e.y * s, u0, v1, col.r, col.g, col.b, col.a)
 	}
 	sgl.end()
 	sgl.disable_texture()

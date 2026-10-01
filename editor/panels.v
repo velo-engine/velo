@@ -158,6 +158,25 @@ fn (e &Editor) draw_quad(m core.Affine2, x f32, y f32, w f32, h f32, c gg.Color)
 	e.ui.ctx.draw_line(f.x, f.y, a.x, a.y, c)
 }
 
+// poly_outline / fill_poly: a convex polygon given in node space (a tile map cell), under `m`.
+fn (e &Editor) poly_outline(m core.Affine2, pts []core.Vec2, c gg.Color) {
+	for i, p in pts {
+		a := m.apply(p)
+		b := m.apply(pts[(i + 1) % pts.len])
+		e.ui.ctx.draw_line(a.x, a.y, b.x, b.y, c)
+	}
+}
+
+fn (e &Editor) fill_poly(m core.Affine2, pts []core.Vec2, c gg.Color) {
+	mut xy := []f32{}
+	for p in pts {
+		q := m.apply(p)
+		xy << q.x
+		xy << q.y
+	}
+	e.ui.ctx.draw_convex_poly(xy, c)
+}
+
 fn (e &Editor) fill_quad(m core.Affine2, x f32, y f32, w f32, h f32, c gg.Color) {
 	a := m.apply(core.vec2(x, y))
 	b := m.apply(core.vec2(x + w, y))

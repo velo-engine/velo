@@ -156,7 +156,7 @@ fn (mut e Editor) draw_tile_overlay(view core.Affine2) {
 	x, y, w, h := tm.local_rect()
 	cs := tm.cell_size()
 	cell_px := math.min(cs.x * m.scale().x, cs.y * m.scale().y)
-	if cell_px >= 6 {
+	if cell_px >= 6 && tm.tile_layout() == .orthogonal {
 		col := gg.Color{255, 255, 255, 40}
 		for c in 1 .. tm.columns {
 			a := m.apply(core.vec2(x + f32(c) * cs.x, y))
@@ -167,6 +167,13 @@ fn (mut e Editor) draw_tile_overlay(view core.Affine2) {
 			a := m.apply(core.vec2(x, y + f32(r) * cs.y))
 			b := m.apply(core.vec2(x + w, y + f32(r) * cs.y))
 			e.ui.ctx.draw_line(a.x, a.y, b.x, b.y, col)
+		}
+	} else if cell_px >= 6 && tm.columns * tm.rows <= 6000 {
+		// isometric / staggered / hex: each cell's outline (shared edges are drawn twice, which is fine)
+		for r in 0 .. tm.rows {
+			for c in 0 .. tm.columns {
+				e.poly_outline(m, tm.cell_polygon(c, r), gg.Color{255, 255, 255, 40})
+			}
 		}
 	}
 	e.draw_quad(m, x, y, w, h, gg.Color{120, 200, 255, 200})
@@ -179,7 +186,8 @@ fn (mut e Editor) draw_tile_overlay(view core.Affine2) {
 	}
 	// cells the tool would change: the flood area for fill, else just the hovered cell
 	cells := if e.tile_tool == .fill { fill_region(tm, c, r) } else { [
-			[c, r]] }
+			[c, r],
+		] }
 	for p in cells {
 		cx, cy, cw, ch := tm.cell_local_rect(p[0], p[1])
 		match e.tile_tool {
@@ -187,11 +195,11 @@ fn (mut e Editor) draw_tile_overlay(view core.Affine2) {
 				if tm.tex != unsafe { nil } {
 					e.renderer.draw_tile_ghost(tm, m, e.tile_brush, cx, cy, cw, ch, gg.Color{255, 255, 255, 170})
 				} else {
-					e.fill_quad(m, cx, cy, cw, ch, gg.Color{255, 200, 90, 90})
+					e.fill_poly(m, tm.cell_polygon(p[0], p[1]), gg.Color{255, 200, 90, 90})
 				}
 			}
 			.erase {
-				e.fill_quad(m, cx, cy, cw, ch, gg.Color{255, 110, 100, 90})
+				e.fill_poly(m, tm.cell_polygon(p[0], p[1]), gg.Color{255, 110, 100, 90})
 				a := m.apply(core.vec2(cx, cy))
 				b := m.apply(core.vec2(cx + cw, cy + ch))
 				d := m.apply(core.vec2(cx + cw, cy))
@@ -200,7 +208,7 @@ fn (mut e Editor) draw_tile_overlay(view core.Affine2) {
 				e.ui.ctx.draw_line(d.x, d.y, f.x, f.y, c_error)
 			}
 			else {
-				e.fill_quad(m, cx, cy, cw, ch, gg.Color{130, 210, 130, 70})
+				e.fill_poly(m, tm.cell_polygon(p[0], p[1]), gg.Color{130, 210, 130, 70})
 			}
 		}
 	}
@@ -210,11 +218,10 @@ fn (mut e Editor) draw_tile_overlay(view core.Affine2) {
 		else { c_override }
 	}
 
-	cx, cy, cw, ch := tm.cell_local_rect(c, r)
-	e.draw_quad(m, cx, cy, cw, ch, color)
+	e.poly_outline(m, tm.cell_polygon(c, r), color)
 }
 
-// fill_region: the cells a flood fill from (c, r) would replace (4 neighbors, same tile as the start cell).
+// fill_region: the cells a flood fill from (c, r) would replace (edge neighbors, same tile as the start cell).
 fn fill_region(tm &render.TileMap, c int, r int) [][]int {
 	target := tm.get(c, r)
 	mut out := [][]int{}
@@ -232,7 +239,10 @@ fn fill_region(tm &render.TileMap, c int, r int) [][]int {
 		}
 		seen[key] = true
 		out << [cc, rr]
-		stack << [cc + 1, rr, cc - 1, rr, cc, rr + 1, cc, rr - 1]
+		for nb in tm.neighbors(cc, rr) {
+			stack << nb[0]
+			stack << nb[1]
+		}
 	}
 	return out
 }

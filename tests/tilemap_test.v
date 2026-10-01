@@ -125,3 +125,169 @@ fn test_scene_round_trip() {
 		assert f.is_list == (f.name == 'tiles')
 	}
 }
+
+fn layout_map(layout string, columns int, rows int) &render.TileMap {
+	_, tm := tilemap(&render.TileMap{
+		columns:   columns
+		rows:      rows
+		tile_size: core.vec2(64, 32)
+		layout:    layout
+	})
+	return tm
+}
+
+// every layout: the cell under a cell's center is that cell, and so is the point just inside each corner
+fn test_layouts_pick_their_own_cells() {
+	for layout in ['orthogonal', 'isometric', 'staggered', 'hex_pointy', 'hex_flat'] {
+		tm := layout_map(layout, 6, 5)
+		for r in 0 .. 5 {
+			for c in 0 .. 6 {
+				poly := tm.cell_polygon(c, r)
+				mut mid := core.vec2(0, 0)
+				for p in poly {
+					mid = mid + p
+				}
+				mid = mid.mul(1.0 / f32(poly.len))
+				gc, gr := tm.local_to_cell(mid)
+				assert gc == c && gr == r, '${layout} (${c}, ${r}) center -> (${gc}, ${gr})'
+				for p in poly {
+					q := p + (mid - p).mul(0.06)
+					qc, qr := tm.local_to_cell(q)
+					assert qc == c && qr == r, '${layout} (${c}, ${r}) corner ${p} -> (${qc}, ${qr})'
+				}
+			}
+		}
+	}
+}
+
+fn test_isometric_geometry() {
+	tm := layout_map('isometric', 3, 2)
+	x, y, w, h := tm.local_rect()
+	assert x == 0 && y == 0 && w == 160 && h == 80 // (3 + 2) half tiles
+	assert tm.cell_center(0, 0) == core.vec2(32 * 2, 16) // top of the diamond map
+	assert tm.cell_center(1, 0) == core.vec2(32 * 3, 32) // col runs down-right
+	assert tm.cell_center(0, 1) == core.vec2(32, 32) // row runs down-left
+}
+
+fn test_staggered_and_hex_geometry() {
+	mut st := layout_map('staggered', 3, 3)
+	assert st.cell_center(0, 0) == core.vec2(32, 16)
+	assert st.cell_center(0, 1) == core.vec2(64, 32) // odd rows shift half a tile right, rows are half a tile apart
+	assert st.cell_center(0, 2) == core.vec2(32, 48)
+	st.stagger_odd = false
+	assert st.cell_center(0, 0) == core.vec2(64, 16)
+	assert st.cell_center(0, 1) == core.vec2(32, 32)
+
+	hp := layout_map('hex_pointy', 3, 3) // side = h / 2 = 16: rows 24 apart
+	assert hp.cell_center(0, 1) == core.vec2(64, 16 + 24)
+	_, _, w, h := hp.local_rect()
+	assert w == 3 * 64 + 32 && h == 2 * 24 + 32
+	hf := layout_map('hex_flat', 3, 3) // side = w / 2 = 32: columns 48 apart
+	assert hf.cell_center(1, 0) == core.vec2(32 + 48, 16 + 16)
+	_, _, w2, h2 := hf.local_rect()
+	assert w2 == 2 * 48 + 64 && h2 == 3 * 32 + 16
+}
+
+fn test_neighbors_are_symmetric() {
+	for layout in ['orthogonal', 'isometric', 'staggered', 'hex_pointy', 'hex_flat'] {
+		for odd in [true, false] {
+			mut tm := layout_map(layout, 6, 6)
+			tm.stagger_odd = odd
+			for r in 1 .. 5 {
+				for c in 1 .. 5 {
+					nbs := tm.neighbors(c, r)
+					assert nbs.len == if layout.starts_with('hex') {
+						6
+					} else {
+						4
+					}
+					for n in nbs {
+						assert [c, r] in tm.neighbors(n[0], n[1]), '${layout} odd=${odd}: (${c}, ${r}) -> ${n}'
+					}
+				}
+			}
+		}
+	}
+}
+
+// a neighbor shares an edge: its center is one lattice step away
+fn test_hex_neighbors_are_adjacent_on_screen() {
+	for layout in ['hex_pointy', 'hex_flat'] {
+		tm := layout_map(layout, 6, 6)
+		mid := tm.cell_center(3, 3)
+		for n in tm.neighbors(3, 3) {
+			d := (tm.cell_center(n[0], n[1]) - mid).length()
+			assert d > 30 && d <= 64.01, '${layout} ${n}: ${d}'
+		}
+	}
+}
+
+fn test_flood_fill_follows_layout_neighbors() {
+	mut tm := layout_map('hex_pointy', 4, 4)
+	tm.set(1, 1, 3) // an island: nothing else is painted
+	assert tm.flood_fill(0, 0, 7) == 15
+	assert tm.get(1, 1) == 3
+	assert tm.count() == 16
+	// staggered diamonds only touch diagonally, so a "vertical" pair is not connected
+	mut st := layout_map('staggered', 3, 4)
+	st.clear()
+	st.set(1, 0, 1)
+	st.set(1, 2, 1)
+	assert st.flood_fill(1, 0, 5) == 1
+}
+
+fn test_visible_cells_cover_the_view() {
+	for layout in ['orthogonal', 'isometric', 'staggered', 'hex_pointy', 'hex_flat'] {
+		tm := layout_map(layout, 9, 7)
+		x, y, w, h := tm.local_rect()
+		// whole map: every cell exactly once
+		all := tm.visible_cells(x - 5, y - 5, x + w + 5, y + h + 5)
+		assert all.len == 63, '${layout}: ${all.len}'
+		mut seen := map[int]bool{}
+		for i in all {
+			assert i !in seen
+			seen[i] = true
+		}
+		// a window: exactly the cells whose box touches it
+		wx0, wy0, wx1, wy1 := x + w * 0.3, y + h * 0.2, x + w * 0.6, y + h * 0.5
+		got := tm.visible_cells(wx0, wy0, wx1, wy1)
+		for r in 0 .. 7 {
+			for c in 0 .. 9 {
+				bx, by, bw, bh := tm.cell_local_rect(c, r)
+				touches := bx < wx1 && bx + bw > wx0 && by < wy1 && by + bh > wy0
+				assert (r * 9 + c in got) == touches, '${layout} (${c}, ${r}) touches=${touches}'
+			}
+		}
+	}
+}
+
+fn test_isometric_draws_back_to_front() {
+	tm := layout_map('isometric', 4, 4)
+	x, y, w, h := tm.local_rect()
+	mut last := -1
+	for i in tm.visible_cells(x, y, x + w, y + h) {
+		depth := i % 4 + i / 4 // col + row
+		assert depth >= last
+		last = depth
+	}
+}
+
+fn test_layout_round_trips_through_the_scene_text() {
+	mut reg := serialize.new_registry()
+	render.register_builtins(mut reg)
+	mut loader := serialize.new_loader(reg, unsafe { nil })
+	mut n := core.Node.new('Hex')
+	n.add_component(&render.TileMap{
+		layout:      'hex_flat'
+		stagger_odd: false
+		hex_side:    20
+	})
+	text := loader.save_node(n)!
+	assert text.contains('layout = "hex_flat"') || text.contains("layout = 'hex_flat'")
+	assert text.contains('stagger_odd = false') && text.contains('hex_side = 20')
+	// defaults stay out of the file
+	mut plain := core.Node.new('P')
+	plain.add_component(&render.TileMap{})
+	t2 := loader.save_node(plain)!
+	assert !t2.contains('layout') && !t2.contains('stagger_odd') && !t2.contains('hex_side')
+}
