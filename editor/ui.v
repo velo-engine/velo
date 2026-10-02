@@ -312,6 +312,29 @@ fn (u &Ui) triangle(x f32, y f32, open bool, c gg.Color) {
 	}
 }
 
+// dropdown_button: a button showing the current value with a chevron; returns true when clicked.
+// `open` draws it highlighted while its list is shown.
+fn (mut u Ui) dropdown_button(r Rect, label string, color gg.Color, open bool, enabled bool) bool {
+	hov := enabled && u.hover(r)
+	u.fill(r, if open {
+		c_field_focus
+	} else if hov {
+		c_button_hover
+	} else {
+		c_button
+	})
+	u.outline(r, if open { c_accent } else { c_border })
+	old := u.clip
+	u.set_clip(old.intersect(Rect{r.x + 2, r.y + 1, r.w - 20, r.h - 2}))
+	u.text_in(r, label, if enabled { color } else { c_dim }, 6)
+	u.set_clip(old)
+	chev := if enabled { c_text } else { c_dim }
+	cx := r.x + r.w - 12
+	cy := r.y + r.h / 2 - 2
+	u.ctx.draw_triangle_filled(cx, cy, cx + 8, cy, cx + 4, cy + 5, chev)
+	return enabled && u.click(r)
+}
+
 // ---------- Input fields ----------
 
 fn (mut u Ui) focus_field(id string, r Rect, value string, target EditTarget) {

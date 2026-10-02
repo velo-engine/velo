@@ -885,9 +885,8 @@ fn (mut e Editor) vec2_row(x f32, y f32, w f32, id string, n &core.Node, comp in
 		fid := '${id}/${comp}/${field}/${i}'
 		shown := parts[i].to_text()
 		axis, axis_color := if i == 0 { 'x', c_axis_x } else { 'y', c_axis_y }
-		if e.ui.draw_field_tagged(fid, fr, axis, axis_color, shown, c_text, !ro) {
-			e.begin_edit(fid, shown, target_for(n, comp, field, i, .number))
-		}
+		e.number_input(fid, fr, axis, axis_color, parts[i].as_f64() or { 0.0 }, shown, target_for(n,
+			comp, field, i, .number), ro)
 	}
 	return y + row_h + 3
 }
@@ -896,10 +895,53 @@ fn (mut e Editor) number_row(x f32, y f32, w f32, id string, n &core.Node, comp 
 	e.prop_label(x, y, field, e.is_overridden(n, comp, field, ro))
 	fid := '${id}/${comp}/${field}'
 	shown := v.to_text()
-	if e.ui.draw_field(fid, Rect{x + label_w, y, w - label_w, row_h}, shown, c_text, !ro) {
-		e.begin_edit(fid, shown, target_for(n, comp, field, -1, .number))
-	}
+	e.number_input(fid, Rect{x + label_w, y, w - label_w, row_h}, '', c_dim, v.as_f64() or { 0.0 },
+		shown, target_for(n, comp, field, -1, .number), ro)
 	return y + row_h + 3
+}
+
+// number_input: a numeric field. Click to type; drag left/right to scrub the value
+// (Shift = coarse, Alt = fine). The change is applied once, on release (a single undo step).
+fn (mut e Editor) number_input(fid string, r Rect, tag string, tag_color gg.Color, value f64, shown string, target EditTarget, ro bool) {
+	scrubbing := e.scrub_id == fid
+	mut text := shown
+	if scrubbing {
+		if e.ui.mouse_down {
+			dx := e.ui.mouse.x - e.scrub_x
+			if dx > 3 || dx < -3 {
+				e.scrub_moved = true
+			}
+			if e.scrub_moved {
+				mut step := f64(1)
+				if e.ui.shift() {
+					step = 10
+				} else if e.ui.alt() {
+					step = 0.1
+				}
+				v := f64(int((e.scrub_start + f64(dx) * step) * 10000 + if e.scrub_start +
+					f64(dx) * step < 0 { -0.5 } else { 0.5 })) / 10000
+				text = serialize.Value(v).to_text()
+			}
+		} else {
+			e.scrub_id = ''
+			if e.scrub_moved {
+				e.apply_edit(e.scrub_target, text) or { e.report(err) }
+			} else {
+				e.ui.focus_rect = r
+				e.begin_edit(fid, shown, e.scrub_target)
+			}
+			return
+		}
+	}
+	col := if scrubbing && e.scrub_moved { c_accent } else { c_text }
+	if e.ui.draw_field_tagged(fid, r, tag, tag_color, text, col, !ro) {
+		e.commit_edit()
+		e.scrub_id = fid
+		e.scrub_x = e.ui.mouse.x
+		e.scrub_start = value
+		e.scrub_moved = false
+		e.scrub_target = target
+	}
 }
 
 fn (mut e Editor) field_row(x f32, y f32, w f32, id string, n &core.Node, comp int, f serialize.FieldInfo, v serialize.Value, ro bool) f32 {
@@ -959,39 +1001,13 @@ fn (mut e Editor) field_row(x f32, y f32, w f32, id string, n &core.Node, comp i
 	}
 }
 
-// choice_row: a string field with @[choices] — one button per value, or (when the labels don't fit)
-// a single button that cycles to the next value.
+// choice_row: a string field with @[choices], picked from a dropdown list.
 fn (mut e Editor) choice_row(x f32, y f32, w f32, n &core.Node, comp int, f serialize.FieldInfo, v string, ro bool) f32 {
-	mut nn := unsafe { n }
 	e.prop_label(x, y, f.name, e.is_overridden(n, comp, f.name, ro))
-	fw := w - label_w
-	bw := (fw - f32(f.choices.len - 1) * 2) / f32(f.choices.len)
-	mut fits := true
-	for c in f.choices {
-		if e.ui.text_width(c) + 8 > bw {
-			fits = false
-		}
-	}
-	mut picked := ''
-	if fits {
-		for i, c in f.choices {
-			r := Rect{x + label_w + f32(i) * (bw + 2), y, bw, row_h}
-			if ro {
-				e.ui.fill(r, if c == v { c_select } else { c_field })
-				e.ui.text_center(r, c, if c == v { c_text } else { c_dim })
-			} else if e.ui.toggle_button(r, c, c == v, c_select) && c != v {
-				picked = c
-			}
-		}
-	} else {
-		r := Rect{x + label_w, y, fw, row_h}
-		if e.ui.button(r, '${v}  ▸', !ro) {
-			i := f.choices.index(v)
-			picked = f.choices[(i + 1) % f.choices.len]
-		}
-	}
-	if picked != '' {
-		e.doc.set_field(mut nn, comp, f.name, serialize.Value(picked)) or { e.report(err) }
+	fid := '${voidptr(n)}/${comp}/${f.name}'
+	r := Rect{x + label_w, y, w - label_w, row_h}
+	if e.ui.dropdown_button(r, v, c_text, e.dd_open && e.dd_id == fid, !ro) {
+		e.toggle_dropdown(fid, r, f.choices, f.choices, v, n, comp, f.name)
 	}
 	return y + row_h + 3
 }
@@ -1013,9 +1029,17 @@ fn (mut e Editor) asset_row(x f32, y f32, w f32, id string, n &core.Node, comp i
 		c_text
 	}
 	fw := w - label_w - 48
-	if e.ui.draw_field(fid, Rect{x + label_w, y, fw, row_h}, shown, color, !ro) {
-		editable := e.db.path_of(asset_id) or { asset_id }
-		e.begin_edit(fid, editable, target_for(n, comp, f.name, -1, .asset))
+	ar := Rect{x + label_w, y, fw, row_h}
+	if e.ui.dropdown_button(ar, shown, color, e.dd_open && e.dd_id == fid, !ro) {
+		mut labels := ['(none)']
+		mut values := ['']
+		for a in e.db.all() {
+			if a.kind == f.asset_kind {
+				labels << a.path
+				values << a.id
+			}
+		}
+		e.toggle_dropdown(fid, ar, labels, values, asset_id, n, comp, f.name)
 	}
 	// assign the asset selected in the Assets panel (if the kind matches)
 	sel_kind := if ent := e.db.entry(e.selected_asset) { ent.kind } else { assets.AssetKind.unknown }
@@ -1026,6 +1050,114 @@ fn (mut e Editor) asset_row(x f32, y f32, w f32, id string, n &core.Node, comp i
 		}
 	}
 	return y + row_h + 3
+}
+
+// ---------- Dropdown list ----------
+
+const dd_max_rows = 12
+
+fn (mut e Editor) toggle_dropdown(id string, anchor Rect, labels []string, values []string, cur string, n &core.Node, comp int, field string) {
+	if e.dd_open && e.dd_id == id {
+		e.dd_open = false
+		return
+	}
+	e.add_menu_open = false
+	e.dd_open = true
+	e.dd_id = id
+	e.dd_anchor = anchor
+	e.dd_labels = labels
+	e.dd_values = values
+	e.dd_cur = cur
+	e.dd_node = unsafe { n }
+	e.dd_comp = comp
+	e.dd_field = field
+	// start with the current value in view
+	idx := values.index(cur)
+	e.dd_scroll = if idx > dd_max_rows - 1 { f32(idx - dd_max_rows / 2) * row_h } else { 0 }
+}
+
+fn (mut e Editor) draw_dropdown() {
+	if !e.dd_open {
+		return
+	}
+	if e.play != unsafe { nil } || !e.doc.has_selection() || e.doc.selected != e.dd_node
+		|| e.modal != .none {
+		e.dd_open = false
+		return
+	}
+	mut wmax := e.dd_anchor.w
+	for l in e.dd_labels {
+		tw := e.ui.text_width(l) + 24
+		if tw > wmax {
+			wmax = tw
+		}
+	}
+	w := if wmax > 420 { f32(420) } else { wmax }
+	rows := if e.dd_labels.len > dd_max_rows { dd_max_rows } else { e.dd_labels.len }
+	h := f32(rows) * row_h + 4
+	mut x := e.dd_anchor.x
+	if x + w > e.ui.win_w - 4 {
+		x = e.ui.win_w - w - 4
+	}
+	mut y := e.dd_anchor.y + e.dd_anchor.h + 1
+	if y + h > e.ui.win_h - 4 {
+		y = e.dd_anchor.y - h - 1
+	}
+	r := Rect{x, y, w, h}
+	e.ui.overlay_next = r
+	e.ui.layer = 1
+	e.ui.reset_clip()
+	max_scroll := f32(e.dd_labels.len - rows) * row_h
+	if e.ui.hover(r) && e.ui.scroll != 0 {
+		e.dd_scroll = clampf(e.dd_scroll - e.ui.scroll * 30, 0, max_scroll)
+	} else if e.ui.scroll != 0 {
+		e.dd_open = false // the inspector is scrolling under the list
+	}
+	e.dd_scroll = clampf(e.dd_scroll, 0, max_scroll)
+	e.ui.fill(Rect{r.x + 2, r.y + 2, r.w, r.h}, gg.Color{0, 0, 0, 90})
+	e.ui.fill(r, c_header)
+	e.ui.outline(r, c_accent)
+	e.ui.set_clip(Rect{r.x, r.y + 1, r.w, r.h - 2})
+	mut picked := -1
+	for i, label in e.dd_labels {
+		rr := Rect{r.x + 2, r.y + 2 + f32(i) * row_h - e.dd_scroll, r.w - 4, row_h}
+		if rr.y + rr.h < r.y || rr.y > r.y + r.h {
+			continue
+		}
+		cur := e.dd_values[i] == e.dd_cur
+		if e.ui.hover(rr) {
+			e.ui.fill(rr, c_select)
+		} else if cur {
+			e.ui.fill(rr, c_field)
+		}
+		e.ui.text_in(rr, label, if cur {
+			c_accent
+		} else if label == '(none)' {
+			c_dim
+		} else {
+			c_text
+		}, 8)
+		if e.ui.click(rr) {
+			picked = i
+		}
+	}
+	// scrollbar
+	if max_scroll > 0 {
+		th := h * h / (h + max_scroll)
+		ty := r.y + (h - th) * e.dd_scroll / max_scroll
+		e.ui.fill(Rect{r.x + r.w - 4, ty, 3, th}, c_button_hover)
+	}
+	e.ui.reset_clip()
+	if picked >= 0 {
+		mut nn := e.dd_node
+		e.doc.set_field(mut nn, e.dd_comp, e.dd_field, serialize.Value(e.dd_values[picked])) or {
+			e.report(err)
+		}
+		e.dd_open = false
+	} else if e.ui.pressed && !e.ui.consumed && !r.has(e.ui.mouse) {
+		e.dd_open = false
+	}
+	e.ui.layer = 0
 }
 
 // ---------- Add component menu ----------

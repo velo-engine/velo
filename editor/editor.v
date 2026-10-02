@@ -121,6 +121,23 @@ mut:
 	asset_scroll   f32
 	selected_asset string
 	add_menu_open  bool
+	// dropdown list (choices, asset picker) — see panels.v
+	dd_open   bool
+	dd_id     string
+	dd_anchor Rect
+	dd_labels []string
+	dd_values []string
+	dd_cur    string
+	dd_scroll f32
+	dd_node   &core.Node = unsafe { nil }
+	dd_comp   int
+	dd_field  string
+	// number field scrubbing (drag to change the value)
+	scrub_id     string
+	scrub_x      f32
+	scrub_start  f64
+	scrub_moved  bool
+	scrub_target EditTarget
 	// dialogs
 	modal         Modal
 	modal_message string
@@ -276,6 +293,7 @@ fn (mut e Editor) layout_and_draw() {
 	e.draw_status(Rect{0, h - status_h, w, status_h})
 	e.draw_drag_ghost()
 	e.draw_add_component_menu()
+	e.draw_dropdown()
 	e.draw_modal()
 }
 
@@ -422,6 +440,7 @@ fn (mut e Editor) on_key_down(key gg.KeyCode) {
 				e.set_tile_tool(.none)
 			} else {
 				e.add_menu_open = false
+				e.dd_open = false
 			}
 		}
 		.b {
