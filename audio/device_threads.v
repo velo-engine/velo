@@ -2,10 +2,13 @@ module audio
 
 import time
 
+// Chosen at compile time: the web and iOS builds have no usable threads/semaphores (V needs sem_timedwait on iOS).
+
+$if !(emscripten ? || ios) {
 // how often the audio thread tops up the device queue (it holds ~46 ms)
 const fill_interval = 4 * time.millisecond
 
-// AudioThread (desktop, Android, iOS) — mixes into the device queue every few milliseconds, independent of the
+// AudioThread (desktop, Android) — mixes into the device queue every few milliseconds, independent of the
 // frame rate. It is a V thread (known to the GC); the game reaches the mixer through its lock.
 struct AudioThread {
 mut:
@@ -43,4 +46,5 @@ fn audio_loop(quit chan bool) {
 			fill_interval {}
 		}
 	}
+}
 }

@@ -2,7 +2,10 @@ module app
 
 import runtime
 
-// WorkerPool (desktop, Android, iOS) — a few threads that decode assets (see Preloader). They only run run_job,
+// Chosen at compile time: the web and iOS builds have no usable threads/semaphores (V needs sem_timedwait on iOS).
+
+$if !(emscripten ? || ios) {
+// WorkerPool (desktop, Android) — a few threads that decode assets (see Preloader). They only run run_job,
 // which reads files and returns fresh buffers, so no engine state is shared with the main thread.
 struct WorkerPool {
 mut:
@@ -60,4 +63,5 @@ fn load_worker(jobs chan LoadJob, results chan LoadResult) {
 		job := <-jobs or { return }
 		results <- run_job(job)
 	}
+}
 }

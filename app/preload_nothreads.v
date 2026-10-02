@@ -2,6 +2,9 @@ module app
 
 import time
 
+// Chosen at compile time: the web and iOS builds have no usable threads/semaphores (V needs sem_timedwait on iOS).
+
+$if emscripten ? || ios {
 // a frame may spend this long decoding before the rest waits for the next frame
 const web_load_budget = 8 * time.millisecond
 
@@ -33,3 +36,4 @@ fn (mut w WorkerPool) poll() ?LoadResult {
 }
 
 fn (mut w WorkerPool) close() {}
+}

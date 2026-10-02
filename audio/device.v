@@ -7,7 +7,7 @@ import sokol.audio as saudio
 
 // The device runs in push mode: we mix and hand the samples to sokol_audio, which plays them from a small queue
 // (~40 ms). sokol's own callback thread never touches V memory (the GC does not know about it).
-// On desktop and phones the mixing runs on a thread of ours (see device_notd_emscripten.v), so a long frame
+// On desktop and phones the mixing runs on a thread of ours (see device_threads.v), so a long frame
 // (scene load, GC pause) does not starve the queue; on the web, which has no threads, the app's pump() does it
 // once per frame.
 const device_buffer_frames = 2048
