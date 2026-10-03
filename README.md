@@ -348,8 +348,14 @@ node Main {
 | `follow`, `follow_offset` | path (from the scene root) of a node to move to every frame, after all updates; offset added to it |
 | `smoothing` | how fast it catches up (1/s); `0` = sticks to the target |
 | `limit_min`, `limit_max` | world rectangle the view stays inside (an axis with `limit_max <= limit_min` is unlimited); a smaller rectangle is centered |
+| `deadzone` | `[w, h]` box around the camera in which the target moves without moving the camera (it moves just enough to keep the target on the edge) |
+| `look_ahead` | seconds of the target's velocity the camera leads by; the lead fades when it stops |
+| `follow = "A/P1, A/P2"` | several targets: the camera follows the middle of their bounding box |
+| `fit_margin`, `min_zoom` | with `follow`: zoom out (down to `min_zoom`) so every target stays in view with this margin; `zoom` is the closest it gets |
+| `priority`, `blend_time` | with several cameras the highest `priority` shows (ties: the first); on a change the view moves from the old camera to the new one over `blend_time` seconds (0 = cut) |
 
-The first enabled Camera on an active node is used (`scene.active_camera()`). From code: `cam.shake(strength, seconds)`,
+The enabled Camera on an active node with the highest `priority` is used (`scene.active_camera()`). From code:
+`cam.zoom_to(3, 0.8, ease: .cubic_out)` (eases the zoom; `ease` defaults to `.sine_in_out`), `cam.shake(strength, seconds)`,
 `cam.center()`, `cam.visible_rect()`, `scene.screen_to_world(input.mouse)`, `scene.world_to_screen(p)`,
 `node.screen_matrix()`. UI components (Button, ScrollView, Joystick, Widget) go through the camera by themselves, so
 a Button in the world still clicks where it is drawn; `render.hit_test(n, screen_point)` does the same.
@@ -360,8 +366,14 @@ children ordered by their y (each with its whole subtree), for top-down scenes. 
 this order, draws each Camera's frame (purple) and shows `z_index` / `y_sort` under Transform. The demo uses all of them
 (`Camera`, y-sorted `World`, `HUD` Canvas; big coins shake the camera).
 
-Limits: one camera at a time (no split screen or minimap render targets), no parallax layers, the editor scene view
-shows the world without the camera (Play shows it through the camera).
+**Parallax:** `Parallax { factor = [0.3, 0.1] }` on a node makes it move that fraction of the camera's movement (1 = with
+the world, 0.5 = half as fast, far away; 0 = fixed on the screen; above 1 = in front). It moves the node's position from
+where it was when the camera first showed it, so give a background layer its own node and keep its children's local
+positions. With a camera blend in progress it follows the blended view.
+
+Limits: one camera shows at a time (no split screen or minimap render targets), the editor scene view shows the world
+without the camera (Play shows it through the camera), and the WebGL runtime (`velo build webgl`) has none of the new
+camera fields or `Parallax` yet.
 
 ## UI
 

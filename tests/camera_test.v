@@ -179,3 +179,154 @@ node Main {
 	assert text.contains('zoom = 1.5')
 	assert !text.contains('shake')
 }
+
+fn node_at(mut s core.Scene, name string, x f32, y f32) &core.Node {
+	mut n := core.Node.new(name)
+	n.position = core.vec2(x, y)
+	s.add(mut n)
+	return n
+}
+
+fn test_deadzone_lets_target_roam() {
+	mut s, mut cam := cam_scene()
+	mut p := node_at(mut s, 'P', 0, 0)
+	mut c := cam.get_component[core.Camera]()?
+	c.follow = 'P'
+	c.deadzone = core.vec2(100, 60)
+	s.update(0.016)
+	assert near(cam.world_position(), core.vec2(0, 0))
+	p.position = core.vec2(40, -20) // inside the 100x60 box
+	s.update(0.016)
+	assert near(cam.world_position(), core.vec2(0, 0))
+	p.position =
+		core.vec2(80, 0) // 30 beyond the box edge (x 50): the camera moves just enough to keep it on the edge
+	s.update(0.016)
+	assert near(cam.world_position(), core.vec2(30, 0))
+	p.position = core.vec2(80, -100) // above the box too (edge y -30)
+	s.update(0.016)
+	assert near(cam.world_position(), core.vec2(30, -70))
+}
+
+fn test_look_ahead_leads_the_movement() {
+	mut s, mut cam := cam_scene()
+	mut p := node_at(mut s, 'P', 0, 0)
+	mut c := cam.get_component[core.Camera]()?
+	c.follow = 'P'
+	c.look_ahead = 0.5
+	for i in 0 .. 60 { // moving right at 200 units/s for a second
+		p.position = core.vec2(f32(i + 1) * 200.0 / 60.0, 0)
+		s.update(1.0 / 60.0)
+	}
+	lead := cam.world_position().x - p.position.x
+	assert lead > 60 && lead <= 100 // approaches 200 * 0.5 = 100
+	for _ in 0 .. 120 { // stops: the lead fades
+		s.update(1.0 / 60.0)
+	}
+	assert math.abs(cam.world_position().x - p.position.x) < 3
+}
+
+fn test_zoom_to_eases_and_ends_exactly() {
+	mut s, mut cam := cam_scene()
+	mut c := cam.get_component[core.Camera]()?
+	c.zoom_to(3, 1.0)
+	s.update(0.5)
+	assert c.zoom > 1.5 && c.zoom < 2.5 // sine in-out: about the middle at half time
+	s.update(0.6)
+	assert c.zoom == 3
+	c.zoom_to(1, 0) // 0 seconds = at once
+	assert c.zoom == 1
+}
+
+fn test_follow_several_targets_and_fit() {
+	mut s, mut cam := cam_scene()
+	node_at(mut s, 'A', 0, 0)
+	node_at(mut s, 'B', 400, 0)
+	mut c := cam.get_component[core.Camera]()?
+	c.follow = 'A, B'
+	c.zoom = 2
+	s.update(0.016)
+	assert near(cam.world_position(), core.vec2(200, 0)) // the middle
+	assert c.fit_zoom == 0 // fit is off without a margin
+	c.fit_margin = 100
+	s.update(0.016)
+	// the 800 px wide view must show 400 + 2 * 100 = 600 world units: zoom 800 / 600
+	assert math.abs(c.fit_zoom - 800.0 / 600.0) < 0.01
+	assert math.abs(c.view().zoom - c.fit_zoom) < 0.001
+	// alone near each other, it zooms in only up to `zoom`
+	mut b := s.find('B')?
+	b.position = core.vec2(10, 0)
+	s.update(0.016)
+	assert c.fit_zoom == 2
+}
+
+fn test_priority_picks_camera_and_blends() {
+	mut s := core.Scene.new('Test')
+	s.view_size = core.vec2(800, 600)
+	mut a := core.Node.new('A').with(&core.Camera{})
+	a.position = core.vec2(0, 0)
+	s.add(mut a)
+	mut b := core.Node.new('B').with(&core.Camera{
+		priority:   5
+		blend_time: 1
+		zoom:       2
+	})
+	b.position = core.vec2(1000, 0)
+	b.active = false
+	s.add(mut b)
+	s.update(0.016)
+	assert s.active_camera()?.node.name == 'A'
+	assert near(s.camera_center(), core.vec2(0, 0))
+	b.active = true // higher priority: takes over, blending from A's view
+	s.update(0.016)
+	assert s.active_camera()?.node.name == 'B'
+	assert s.camera_center().x < 100 // just started: still near A
+	s.update(0.5)
+	mid := s.camera_center().x
+	assert mid > 300 && mid < 700 // about half way
+	assert s.view_matrix().apply(core.vec2(mid, 0)).x > 399 // the blended center is drawn at the screen middle
+	s.update(0.6)
+	assert near(s.camera_center(), core.vec2(1000, 0))
+	assert s.shown_view()?.zoom == 2
+	// switching back to a camera with blend_time 0 is a cut
+	a.get_component[core.Camera]()?.blend_time = 0
+	b.active = false
+	s.update(0.016)
+	assert near(s.camera_center(), core.vec2(0, 0))
+}
+
+fn test_blend_zoom_is_by_ratio_and_rotation_short_way() {
+	a := core.CameraView{
+		zoom:     1
+		rotation: 350
+	}
+	b := core.CameraView{
+		zoom:     4
+		rotation: 10
+	}
+	m := core.lerp_view(a, b, 0.5)
+	assert math.abs(m.zoom - 2) < 0.001
+	assert math.abs(m.rotation - 360) < 0.01 // through 0, not back through 180
+}
+
+fn test_parallax_moves_layers_with_the_camera() {
+	mut s, mut cam := cam_scene()
+	mut far := node_at(mut s, 'Far', 100, 50)
+	far.add_component(&core.Parallax{
+		factor: core.vec2(0.25, 0)
+	})
+	mut near_n := node_at(mut s, 'Near', 0, 0)
+	near_n.add_component(&core.Parallax{
+		factor: core.vec2(1, 1)
+	})
+	cam.position = core.vec2(500, 300)
+	s.update(0.016) // first apply: remembers where the camera was
+	assert near(far.position, core.vec2(100, 50))
+	cam.position = core.vec2(900, 300) // camera moved 400 right
+	s.update(0.016)
+	// the layer should look like it moved 0.25 * 400 on screen: the node shifts by (1 - 0.25) * 400
+	assert near(far.position, core.vec2(100 + 300, 50))
+	assert near(near_n.position, core.vec2(0, 0)) // factor 1: the world moves it, nothing added
+	far.destroy()
+	s.update(0)
+	assert s.parallaxes.len == 1
+}

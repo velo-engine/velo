@@ -8,6 +8,7 @@ import velo.serialize
 pub fn register_builtins(mut r serialize.Registry) {
 	r.register[core.Camera]()
 	r.register[core.Canvas]()
+	r.register[core.Parallax]()
 	r.register[Sprite]()
 	r.register[SpriteAnimator]()
 	r.register[Animator]()

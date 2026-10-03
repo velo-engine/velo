@@ -38,6 +38,13 @@ pub mut:
 	safe_insets Insets
 	// Cameras in the scene (they add themselves in on_load); see active_camera.
 	cameras []&Camera
+	// Blending between cameras (see Camera.priority): what was shown last frame and the move in progress.
+	last_cam   &Camera = unsafe { nil }
+	last_view  CameraView
+	blend_from CameraView
+	blend_t    f32
+	blend_dur  f32 // 0 = not blending
+	parallaxes []&Parallax
 	// The scene's asset ID or path (what App loaded it from); reload() loads it again.
 	key string
 	// The player's saved data, shared by every scene (App opens it and saves it; see Store).
@@ -186,6 +193,10 @@ pub fn (mut s Scene) update(real_dt f32) {
 	if mut cam := s.active_camera() {
 		cam.late_update(if cam.node.unscaled_time { real_dt } else { dt })
 	}
+	s.update_camera_blend(real_dt)
+	for mut p in s.parallaxes {
+		p.apply()
+	}
 	s.flush_destroyed()
 }
 
@@ -194,21 +205,72 @@ pub fn (s &Scene) view_center() Vec2 {
 	return s.view_origin + s.view_size.mul(0.5)
 }
 
-// active_camera: the first enabled Camera on an active node (none = world coordinates are screen coordinates).
+// active_camera: the enabled Camera on an active node with the highest `priority` (ties: the first one added);
+// none = world coordinates are screen coordinates.
 pub fn (s &Scene) active_camera() ?&Camera {
+	mut best := unsafe { &Camera(nil) }
 	for c in s.cameras {
 		if c.enabled && c.node != unsafe { nil } && !c.node.destroyed
 			&& c.node.is_active_in_hierarchy() {
-			return c
+			if best == unsafe { nil } || c.priority > best.priority {
+				unsafe {
+					best = c
+				}
+			}
 		}
 	}
-	return none
+	if best == unsafe { nil } {
+		return none
+	}
+	return best
+}
+
+// shown_view: what is on screen now: the active camera's view, or the blend from the previous camera's.
+pub fn (s &Scene) shown_view() ?CameraView {
+	c := s.active_camera() or { return none }
+	if s.blend_dur > 0 && s.blend_t < s.blend_dur {
+		k := Ease.sine_in_out.apply(s.blend_t / s.blend_dur)
+		return lerp_view(s.blend_from, c.view(), k)
+	}
+	return c.view()
+}
+
+// camera_center: the world point at the middle of the screen (blending included); the origin without a camera.
+pub fn (s &Scene) camera_center() Vec2 {
+	v := s.shown_view() or { return Vec2{} }
+	return v.center
+}
+
+// update_camera_blend starts a blend when the active camera changed and moves it along (called by update).
+fn (mut s Scene) update_camera_blend(real_dt f32) {
+	cam := s.active_camera() or {
+		s.last_cam = unsafe { nil }
+		s.blend_dur = 0
+		return
+	}
+	if voidptr(cam) != voidptr(s.last_cam) {
+		if s.last_cam != unsafe { nil } && cam.blend_time > 0 {
+			s.blend_from = s.last_view
+			s.blend_t = 0
+			s.blend_dur = cam.blend_time
+		} else {
+			s.blend_dur = 0
+		}
+		s.last_cam = cam
+	}
+	if s.blend_dur > 0 {
+		s.blend_t += real_dt
+		if s.blend_t >= s.blend_dur {
+			s.blend_dur = 0
+		}
+	}
+	s.last_view = s.shown_view() or { return }
 }
 
 // view_matrix: world -> screen through the active camera (identity without one).
 pub fn (s &Scene) view_matrix() Affine2 {
-	if c := s.active_camera() {
-		return c.view_matrix()
+	if v := s.shown_view() {
+		return v.matrix(s.view_center())
 	}
 	return Affine2.identity()
 }
