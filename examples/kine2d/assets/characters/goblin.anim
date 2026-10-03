@@ -1,0 +1,10 @@
+# Goblin: idles, attacks when asked, and uses its skill when the "rage" trigger fires.
+#   anim.params().trigger('attack')      kine.params().trigger('rage')
+default = idle
+state idle   clip=idle   loop
+state attack clip=attack once
+state skill  clip=skill  once
+any    -> attack when trigger attack
+any    -> skill  when trigger rage
+attack -> idle   when finished
+skill  -> idle   when finished

@@ -1,0 +1,61 @@
+node Main {
+  node Background {
+    position = [480, 270]
+    UITransform { size = [960, 540] }
+    Widget { align_left = true  align_right = true  align_top = true  align_bottom = true  safe_area = false }
+    Panel { color = [44, 52, 72, 255] }
+  }
+  node Ground {
+    position = [480, 490]
+    UITransform { size = [960, 100] }
+    Widget { align_left = true  align_right = true  align_bottom = true  safe_area = false }
+    Panel { color = [70, 84, 64, 255] }
+  }
+  node World {
+    node Capybara {                                                   # skinned meshes, 35 animations
+      position = [180, 440]
+      scale = [1.6, 1.6]
+      Kine2D { data = @asset("4b1e0a01")  atlas = @asset("4b1e0a02")  animation = "stand1" }
+    }
+    node Rock {                                                       # region attachments only
+      position = [480, 440]
+      scale = [1.4, 1.4]
+      Kine2D { data = @asset("4b1e0b01")  atlas = @asset("4b1e0b02")  animation = "walk" }
+      Patrol { min_x = 380  max_x = 600  speed = 50 }
+    }
+    node Goblin {
+      position = [790, 440]
+      scale = [-1.6, 1.6]                                             # mirrored to face the others
+      Kine2D { data = @asset("4b1e0c11")  atlas = @asset("4b1e0c12")  animation = "idle" }
+    }
+  }
+  node HUD {
+    node Title {
+      position = [20, 14]
+      Label { text = "Kine2D animation"  size = 28 }
+      Widget { align_left = true  left = 20  align_top = true  top = 14 }
+    }
+    node NextAnimation {
+      position = [110, 500]
+      UITransform { size = [200, 40] }
+      Widget { align_left = true  left = 20  align_bottom = true  bottom = 20 }
+      Panel { color = [70, 130, 220, 255]  radius = 8  border_width = 1 }
+      Button {  }
+      AnimationPicker { target = "World/Capybara"  prefix = "Capybara: " }
+      node Text {
+        Label { text = "Capybara"  size = 18  align = "center"  valign = "middle" }
+      }
+    }
+    node Attack {
+      position = [850, 500]
+      UITransform { size = [180, 40] }
+      Widget { align_right = true  right = 20  align_bottom = true  bottom = 20 }
+      Panel { color = [200, 90, 70, 255]  radius = 8  border_width = 1 }
+      Button {  }
+      PlayOnce { target = "World/Goblin"  action = "skill" }
+      node Text {
+        Label { text = "Goblin: skill (Space)"  size = 18  align = "center"  valign = "middle" }
+      }
+    }
+  }
+}
