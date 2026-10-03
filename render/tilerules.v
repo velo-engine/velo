@@ -304,3 +304,14 @@ pub fn (tm &TileMap) solid_rects(solid []int) []core.SolidRect {
 pub fn (tm &TileMap) solid_revision() int {
 	return tm.revision
 }
+
+// solid_bounds: the whole map in the node's space (core.SolidTiles).
+pub fn (tm &TileMap) solid_bounds() core.SolidRect {
+	x, y, w, h := tm.local_rect()
+	return core.SolidRect{core.vec2(x, y), core.vec2(w, h)}
+}
+
+// solid_cell: one cell's size (core.SolidTiles).
+pub fn (tm &TileMap) solid_cell() core.Vec2 {
+	return tm.cell_size()
+}

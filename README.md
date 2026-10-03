@@ -662,6 +662,81 @@ Limits: one layer per TileMap (stack nodes for layers), no per-tile flip/rotatio
 tiles by hand over a terrain cell is overwritten the next time the rules apply); the WebGL runtime knows none of this
 yet; `tiles` and `terrain` are saved on one line each.
 
+## Path finding and AI
+
+Everything here is plain code that needs no GPU (so it also runs in tests and on a server).
+
+**Path finding.** `NavMap` is the walkable grid of a scene; `NavAgent` walks its node along a path over it:
+
+```
+node Level {
+  TileMap { tileset = ... tiles = [...] }
+  NavMap { solid_tiles = [1, 2, 3] }                   # next to a TileMap: solid tiles block (empty = every non-empty tile)
+  node Goblin { NavAgent { speed = 90  clearance = 1 } }
+}
+```
+```v
+mut agent := goblin.get_component[core.NavAgent]()!
+agent.move_to(scene.screen_to_world(input.mouse))     // false: no way there
+agent.on_arrive = fn () { ... }                       // or check agent.arrived (true for one frame)
+if agent.sees(player_pos, 90, 200) { ... }            // vision cone (degrees, range) that walls block
+```
+
+The grid follows the tile map's cells, position and scale and is rebuilt when tiles change (the agent then repaths by
+itself). Without a tile map it is an empty `columns x rows` grid of `cell_size` at the node that you fill from code
+(`nm.on_build = fn (mut g core.NavGrid) { g.block_rect(...) }` re-applies your obstacles after every rebuild).
+`NavAgent` options: `diagonal`, `smooth` (pull the path straight where it can), `closest` (a blocked or unreachable goal
+sends it to the nearest reachable spot instead of nowhere), `clearance` (keep that many cells from walls, for wide
+bodies), `rotate` (face where it walks).
+
+Use the grid directly for your own logic:
+
+```v
+mut g := scene.nav_map()!.nav_grid()
+path := g.find_path(from, to, diagonal: true, smooth: true, closest: false, clearance: 0) or { return }
+g.set_cost(col, row, 3)            // mud: three times as costly to cross; paths go around when that is cheaper
+g.line_clear(a, b)                 // straight line free of walls?  g.can_see(from, facing, fov, range, target)
+```
+
+A* never cuts a corner (a diagonal step needs both neighbors free), expands at most `max_nodes` cells, and takes about
+0.2 ms for a straight run across a 256x256 grid and 15 ms for a worst-case serpentine maze of the same size (release build,
+desktop). Ask for a path when the target changes, not every frame.
+
+**Steering.** `core.SteerAgent` gives the force each behavior wants; add them up, weighted, and `apply` the sum:
+
+```v
+mut me := core.SteerAgent{ pos: node.position, vel: vel, max_speed: 120, max_force: 400 }
+f := me.arrive(goal, 80) + me.separate(neighbors, 40).mul(1.5) + me.avoid(rocks, 60)
+me.apply(f, dt)
+node.position = me.pos
+```
+`seek`, `flee`, `arrive` (slows down and stops), `pursue`/`evade` (aim where a moving target will be), `wander`,
+`separate`/`align`/`cohere` (flocking), `avoid` (circular obstacles ahead) and `follow_path` (waypoints).
+
+**Behavior trees and state machines.** Trees are built in code from closures and share a `Blackboard`:
+
+```v
+tree := core.bt_selector([
+    core.bt_reactive_sequence([                                   // re-checks its condition every tick
+        core.bt_cond(fn (mut bb core.Blackboard) bool { return bb.get_bool('sees_player') }),
+        core.bt_action(fn (mut bb core.Blackboard, dt f32) core.BtStatus { chase(); return .running }),
+    ]),
+    core.bt_action(fn (mut bb core.Blackboard, dt f32) core.BtStatus { patrol(); return .running }),
+])
+mut bt := node.add_component(&core.BehaviorTree{})
+bt.set_tree(tree)                                                // ticked every frame; bt.blackboard.set_bool(...)
+```
+
+Nodes return `.success`, `.failure` or `.running`. `bt_sequence` remembers its running child (earlier conditions are not
+checked again), `bt_reactive_sequence` starts over every tick, `bt_selector` tries children in order and lets a
+higher-priority one interrupt a running lower one. Also `bt_inverter`, `bt_succeeder`, `bt_repeat(n, child)` (0 =
+forever) and `bt_wait(seconds)`. For simple logic there is `core.Fsm`: `fsm.add('chase', FsmState{enter, update, exit})`,
+`fsm.go('chase')`, `fsm.update(dt)`.
+
+Limits: grid path finding only (no navigation meshes, no hierarchical search for huge maps, no flow fields); agents do
+not avoid each other by themselves (add `separate` / `avoid` steering); behavior trees are code, not `.scene` data, and the
+editor does not draw the grid; the WebGL runtime has none of this yet.
+
 ## Audio
 
 `AudioSource` plays a `.wav` (PCM 8/16/24/32-bit or float) or `.ogg` (Vorbis) clip. Sound works in the game, in the

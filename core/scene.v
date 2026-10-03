@@ -46,6 +46,7 @@ pub mut:
 	blend_dur  f32 // 0 = not blending
 	parallaxes []&Parallax
 	lights     []&Light2D
+	navmaps    []&NavMap
 	lightings  []&Lighting
 	// The scene's asset ID or path (what App loaded it from); reload() loads it again.
 	key string
@@ -225,6 +226,17 @@ pub fn (s &Scene) active_camera() ?&Camera {
 		return none
 	}
 	return best
+}
+
+// nav_map: the first enabled NavMap on an active node (none = no path finding grid in this scene).
+pub fn (s &Scene) nav_map() ?&NavMap {
+	for n in s.navmaps {
+		if n.enabled && n.node != unsafe { nil } && !n.node.destroyed
+			&& n.node.is_active_in_hierarchy() {
+			return n
+		}
+	}
+	return none
 }
 
 // lighting: the first enabled Lighting on an active node (none = the world is drawn unlit).
