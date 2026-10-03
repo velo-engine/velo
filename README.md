@@ -764,6 +764,20 @@ if '--editor' in os.args {
   keeping unsaved overrides.
 - All editing logic lives in `scenedoc.Document` (no graphics dependency) and is unit tested; `editor/` is just the UI.
 
+## Texture atlas
+
+Plain sprites (simple draw mode, no shader) on textures up to 512x512 are packed together into shared 2048x2048 pages,
+so sprites that alternate between many textures do not switch GPU textures. Nothing to configure: textures are
+packed when first drawn or preloaded, each with a 1 pixel edge border so filtering never pulls in a neighbour.
+Sliced and tiled sprites, meshes and tile maps keep their texture on its own (they need repeat or their own UVs).
+`atlas: false` in `app.new` turns it off.
+
+Why: on Android (BlueStacks, arm64) `examples/bench` with 20000 sprites on 16 alternating textures took 53 ms per
+frame, against 19.6 ms on one texture; with the atlas both take 18.4 ms. On desktop and the iOS Simulator the
+difference was only about 5%, so this matters most on phones. Limits: the space of an unloaded texture is only
+reclaimed when no texture is left in the atlas (a scene change that keeps one persistent texture does not clean up),
+and adding a texture uploads its whole page again.
+
 ## Shipping a desktop game
 
 ```bash

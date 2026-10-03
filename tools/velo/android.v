@@ -106,9 +106,9 @@ fn build_android(home string, p Project, o MobileOptions) {
 	if p.icon != '' {
 		args << ['--icon', p.icon]
 	}
-	if p.min_sdk > 0 {
-		args << ['--min-sdk-version', p.min_sdk.str()]
-	}
+	// sokol_audio uses AAudio, which the NDK only declares from API 26 (Android 8)
+	min_sdk := if p.min_sdk > 26 { p.min_sdk } else { 26 }
+	args << ['--min-sdk-version', min_sdk.str()]
 	if p.keystore != '' {
 		args << ['--keystore', p.keystore]
 		if p.keystore_alias != '' {

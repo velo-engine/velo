@@ -29,6 +29,8 @@ pub:
 	language string = 'en'
 	// The developer tools: F1 overlay, F2 profiler, ` console (see core.Console). Turn off for the shipped game.
 	debug_tools bool = true
+	// Pack small textures into shared pages so sprites on different textures draw as one batch (see render/atlas.v).
+	atlas bool = true
 	// Names the save data folder (see open_store); '' = made from the title. Keep it once the game ships.
 	app_id string
 	// Where to save the player's data instead of the platform's usual place (desktop and phones).
@@ -189,6 +191,7 @@ pub fn (mut a App) run() {
 
 fn on_init(mut a App) {
 	a.renderer = render.new_renderer(a.ctx, a.db)
+	a.renderer.atlas_on = a.cfg.atlas
 	audio.start()
 	a.load_scene(a.cfg.scene) or {
 		eprintln('[velo] scene load error: ${err}')

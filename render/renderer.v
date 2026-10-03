@@ -24,9 +24,12 @@ mut:
 	ctx     &gg.Context
 	db      &assets.AssetDatabase
 	gpu     map[string]GpuImage  // texture ID -> GPU image
+	atlas   Atlas                // small textures packed together (see atlas.v)
 	shaders map[string]GpuShader // shader asset ID -> pipeline
 pub mut:
 	debug bool // F1: draw node bounds + center
+	// Pack small textures into shared pages for plain sprites (see atlas.v). Off: every texture is its own GPU image.
+	atlas_on bool = true
 	// Draw DebugShape outlines (colliders) even when `debug` is off (the editor turns it on).
 	show_shapes bool
 	draw_calls  int
@@ -202,6 +205,7 @@ fn (mut r Renderer) set_scissor(c Rect) {
 pub fn (mut r Renderer) on_asset_event(ev assets.AssetEvent) {
 	if ev.kind in [.unloaded, .removed] {
 		r.release_gpu(ev.id)
+		r.atlas_forget(ev.id)
 		r.release_shader(ev.id)
 	}
 }
@@ -356,7 +360,15 @@ fn (mut r Renderer) draw_sprite(s &Sprite, m core.Affine2) {
 		r.draw_sprite_quads(s, m)
 		return
 	}
-	img := r.image_for(s.tex) or { return }
+	mut img_id := 0
+	mut ox := 0
+	mut oy := 0
+	if id, x, y := r.atlas_lookup(s.tex) {
+		img_id, ox, oy = id, x, y
+	} else {
+		img := r.image_for(s.tex) or { return }
+		img_id = img.id
+	}
 	sz := s.display_size()
 	sc := m.scale()
 	w := sz.x * sc.x
@@ -370,9 +382,9 @@ fn (mut r Renderer) draw_sprite(s &Sprite, m core.Affine2) {
 	center := m.position() + offset
 	fx, fy, fw, fh := s.tex.frame_rect(s.frame)
 	r.ctx.draw_image_with_config(
-		img_id:    img.id
+		img_id:    img_id
 		img_rect:  gg.Rect{center.x - aw / 2, center.y - ah / 2, aw, ah}
-		part_rect: gg.Rect{fx, fy, fw, fh}
+		part_rect: gg.Rect{fx + ox, fy + oy, fw, fh}
 		rotation:  -rot
 		flip_x:    s.flip_x != (w < 0)
 		flip_y:    s.flip_y != (h < 0)

@@ -40,6 +40,9 @@ pub fn free_decoded(img DecodedImage) {
 
 // has_image: the texture (at its current version) is already on the GPU.
 pub fn (r &Renderer) has_image(t &assets.Texture) bool {
+	if r.atlas_has(t) {
+		return true
+	}
 	g := r.gpu[t.id] or { return false }
 	return g.version == t.version
 }
@@ -48,6 +51,9 @@ pub fn (r &Renderer) has_image(t &assets.Texture) bool {
 pub fn (mut r Renderer) adopt_image(t &assets.Texture, decoded DecodedImage) {
 	if r.has_image(t) {
 		free_decoded(decoded)
+		return
+	}
+	if r.atlas_fits(t) && r.atlas_add(t, decoded) {
 		return
 	}
 	r.release_gpu(t.id)
