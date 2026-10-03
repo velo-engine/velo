@@ -812,6 +812,8 @@ fn (mut e Editor) draw_inspector(r Rect) {
 			y = e.draw_tile_palette(x, y + 2, w, n, ro)
 		} else if c is render.Sprite {
 			y = e.draw_slice_editor(x, y + 2, w, n, ro)
+		} else if c is render.ParticleSystem {
+			y = e.draw_particle_tools(x, y + 2, w, n, ro)
 		}
 		y += 6
 	}
@@ -918,8 +920,11 @@ fn (mut e Editor) number_input(fid string, r Rect, tag string, tag_color gg.Colo
 				} else if e.ui.alt() {
 					step = 0.1
 				}
-				v := f64(int((e.scrub_start + f64(dx) * step) * 10000 + if e.scrub_start +
-					f64(dx) * step < 0 { -0.5 } else { 0.5 })) / 10000
+				v := f64(int((e.scrub_start + f64(dx) * step) * 10000 + if e.scrub_start + f64(dx) * step < 0 {
+					-0.5
+				} else {
+					0.5
+				})) / 10000
 				text = serialize.Value(v).to_text()
 			}
 		} else {

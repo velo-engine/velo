@@ -18,6 +18,8 @@ pub mut:
 	rotation   f32 // degrees
 	spin       f32 // degrees per second
 	frame      int
+	trail      []core.Vec2 // recent positions, oldest first (when the system has `trail`)
+	trail_t    f32         // seconds since the last trail sample
 }
 
 // ParticleSystem — emits, moves and draws many small sprites (sparks, smoke, dust, fire, rain...).
@@ -47,17 +49,36 @@ pub mut:
 	gravity       core.Vec2 // world units / s²
 	damping       f32       // fraction of the velocity lost per second (0..1+)
 	// Where particles are born, around the node: 'point' | 'circle' (radius = shape_size.x) | 'box' (w, h).
-	shape        string = 'point' @[choices: 'point|circle|box']
-	shape_size   core.Vec2
-	start_size   f32 = 16
-	end_size     f32 = 16
-	size_var     f32 // +- random size, added to both start and end size
-	start_color  core.Color = core.white
-	end_color    core.Color = core.Color{255, 255, 255, 0}
-	spin         f32 // degrees per second
-	spin_var     f32
-	random_angle bool // start each particle at a random rotation
-	random_frame bool // pick a random frame of a sprite sheet texture (frame 0 otherwise)
+	shape       string = 'point' @[choices: 'point|circle|box']
+	shape_size  core.Vec2
+	start_size  f32 = 16
+	end_size    f32 = 16
+	size_var    f32 // +- random size, added to both start and end size
+	start_color core.Color = core.white
+	end_color   core.Color = core.Color{255, 255, 255, 0}
+	// A third color: start -> mid at `mid_time` (0..1 of the life) -> end, instead of start -> end.
+	use_mid_color bool
+	mid_color     core.Color = core.white
+	mid_time      f32        = 0.5
+	// How size and color progress over the life: linear, or an easing from core.Ease (quad_out: fast then slow,
+	// back_out: overshoots, bounce_out ...).
+	size_ease  string = 'linear' @[choices: 'linear|quad_in|quad_out|quad_in_out|cubic_in|cubic_out|sine_in_out|expo_out|back_out|elastic_out|bounce_out']
+	color_ease string = 'linear' @[choices: 'linear|quad_in|quad_out|quad_in_out|cubic_in|cubic_out|sine_in_out|expo_out|back_out|elastic_out|bounce_out']
+	// Turn each particle to face where it is going (sparks, rain, arrows).
+	align_to_velocity bool
+	// A sprite sheet texture plays its frames over each particle's life, `sheet_cycles` times (explosions, flames).
+	animate_sheet bool
+	sheet_cycles  f32 = 1
+	// A fading ribbon behind every particle: `trail_length` points sampled every `trail_interval` seconds, starting
+	// `trail_width` times the particle's size wide and thinning to nothing.
+	trail          bool
+	trail_length   int = 10
+	trail_interval f32 = 0.025
+	trail_width    f32 = 0.6
+	spin           f32 // degrees per second
+	spin_var       f32
+	random_angle   bool // start each particle at a random rotation
+	random_frame   bool // pick a random frame of a sprite sheet texture (frame 0 otherwise)
 	// true: particles stay where they were born when the node moves (trails, smoke).
 	// false: they move with the node (an aura).
 	world_space  bool = true
@@ -150,6 +171,12 @@ pub fn (mut ps ParticleSystem) stop() {
 	ps.playing = false
 }
 
+// replay restarts the effect from the beginning with no particles, without changing `playing` (the editor's Restart).
+pub fn (mut ps ParticleSystem) replay() {
+	ps.particles.clear()
+	ps.restart()
+}
+
 // clear removes every live particle at once.
 pub fn (mut ps ParticleSystem) clear() {
 	ps.particles.clear()
@@ -209,6 +236,19 @@ pub fn (mut ps ParticleSystem) simulate(dt f32) {
 		p.vel = (p.vel + ps.gravity.mul(dt)).mul(keep)
 		p.pos = p.pos + p.vel.mul(dt)
 		p.rotation += p.spin * dt
+		if ps.trail {
+			p.trail_t += dt
+			interval := math.max(ps.trail_interval, f32(0.002))
+			for p.trail_t >= interval {
+				p.trail_t -= interval
+				p.trail << p.pos
+			}
+			if p.trail.len > ps.trail_length {
+				p.trail = p.trail[p.trail.len - ps.trail_length..].clone()
+			}
+		} else if p.trail.len > 0 {
+			p.trail = []
+		}
 		ps.particles[j] = p
 		j++
 	}
@@ -242,7 +282,20 @@ fn signed_rand() f32 {
 	return rand.f32() * 2 - 1
 }
 
-// meshes is what the renderer draws (MeshDrawable): one quad per particle, in one draw call.
+// color_at: the particle color at progress `k` (0..1 of its life), with the color easing and the optional mid color.
+fn (ps &ParticleSystem) color_at(k f32, ease core.Ease) core.Color {
+	kk := ease.apply(k)
+	if ps.use_mid_color {
+		mt := math.max(math.min(ps.mid_time, f32(0.999)), f32(0.001))
+		if kk < mt {
+			return lerp_color(ps.start_color, ps.mid_color, kk / mt)
+		}
+		return lerp_color(ps.mid_color, ps.end_color, (kk - mt) / (1 - mt))
+	}
+	return lerp_color(ps.start_color, ps.end_color, kk)
+}
+
+// meshes is what the renderer draws (MeshDrawable): the trail ribbons (if any) behind one quad per particle.
 pub fn (ps &ParticleSystem) meshes() []TexturedMesh {
 	if ps.particles.len == 0 {
 		return []
@@ -259,16 +312,26 @@ pub fn (ps &ParticleSystem) meshes() []TexturedMesh {
 		&assets.Texture(unsafe { nil })
 	}
 	textured := tex != unsafe { nil }
+	size_ease := core.ease_from_str(ps.size_ease) or { core.Ease.linear }
+	color_ease := core.ease_from_str(ps.color_ease) or { core.Ease.linear }
+	sheet_frames := if textured && ps.animate_sheet { ps.tex.frame_count() } else { 0 }
 	n := ps.particles.len
 	mut positions := []f32{cap: n * 8}
 	mut uvs := []f32{cap: if textured { n * 8 } else { 0 }}
 	mut colors := []core.Color{cap: n * 4}
 	mut indices := []int{cap: n * 6}
+	mut tpos := []f32{}
+	mut tcol := []core.Color{}
+	mut tidx := []int{}
 	for i, p in ps.particles {
 		k := p.age / p.life
-		h := (p.size_start + (p.size_end - p.size_start) * k) / 2
-		col := lerp_color(ps.start_color, ps.end_color, k)
-		quad := core.Affine2.trs(p.pos, p.rotation, core.vec2(h, h))
+		h := (p.size_start + (p.size_end - p.size_start) * size_ease.apply(k)) / 2
+		col := ps.color_at(k, color_ease)
+		mut rot := p.rotation
+		if ps.align_to_velocity && p.vel.length() > 0.001 {
+			rot += f32(math.atan2(p.vel.y, p.vel.x) * 180.0 / math.pi)
+		}
+		quad := core.Affine2.trs(p.pos, rot, core.vec2(h, h))
 		for c in [core.vec2(-1, -1), core.vec2(1, -1), core.vec2(1, 1),
 			core.vec2(-1, 1)] {
 			q := to_node.apply(quad.apply(c))
@@ -277,24 +340,77 @@ pub fn (ps &ParticleSystem) meshes() []TexturedMesh {
 			colors << col
 		}
 		if textured {
-			fx, fy, fw, fh := ps.tex.frame_rect(p.frame)
+			frame := if sheet_frames > 1 {
+				int(k * ps.sheet_cycles * f32(sheet_frames)) % sheet_frames
+			} else {
+				p.frame
+			}
+			fx, fy, fw, fh := ps.tex.frame_rect(frame)
 			u0, v0 := f32(fx) / ps.tex.width, f32(fy) / ps.tex.height
 			u1, v1 := f32(fx + fw) / ps.tex.width, f32(fy + fh) / ps.tex.height
 			uvs << [u0, v0, u1, v0, u1, v1, u0, v1]
 		}
 		b := i * 4
 		indices << [b, b + 1, b + 2, b, b + 2, b + 3]
+		if ps.trail && p.trail.len > 0 {
+			ps.add_ribbon(p, h, col, to_node, mut tpos, mut tcol, mut tidx)
+		}
 	}
-	return [
-		TexturedMesh{
-			texture:   tex
-			positions: positions
-			uvs:       uvs
-			indices:   indices
-			colors:    colors
+	mut out := []TexturedMesh{}
+	if tidx.len > 0 {
+		out << TexturedMesh{
+			texture:   unsafe { nil }
+			positions: tpos
+			indices:   tidx
+			colors:    tcol
 			additive:  ps.additive
-		},
-	]
+		}
+	}
+	out << TexturedMesh{
+		texture:   tex
+		positions: positions
+		uvs:       uvs
+		indices:   indices
+		colors:    colors
+		additive:  ps.additive
+	}
+	return out
+}
+
+// add_ribbon appends one particle's trail as a strip of quads: the head is as wide as `trail_width` of the
+// particle, the tail is a point and fully transparent.
+fn (ps &ParticleSystem) add_ribbon(p Particle, half f32, col core.Color, to_node core.Affine2, mut pos []f32, mut colors []core.Color, mut idx []int) {
+	mut pts := p.trail.clone()
+	// the newest sample is often exactly where the particle is: a second, identical point would have no direction
+	if (p.pos - pts.last()).length() > 0.001 {
+		pts << p.pos
+	}
+	if pts.len < 2 {
+		return
+	}
+	base := pos.len / 2
+	for i, pt in pts {
+		// direction along the ribbon at this point
+		a := if i == 0 { pts[0] } else { pts[i - 1] }
+		b := if i == pts.len - 1 { pts[i] } else { pts[i + 1] }
+		d := (b - a).normalized()
+		t := f32(i) / f32(pts.len - 1) // 0 at the tail, 1 at the head
+		w := half * ps.trail_width * t
+		perp := core.vec2(-d.y, d.x).mul(w)
+		l := to_node.apply(pt + perp)
+		r := to_node.apply(pt - perp)
+		c := core.Color{col.r, col.g, col.b, u8(f32(col.a) * t)}
+		pos << l.x
+		pos << l.y
+		pos << r.x
+		pos << r.y
+		colors << c
+		colors << c
+	}
+	for i in 0 .. pts.len - 1 {
+		v := base + i * 2
+		idx << [v, v + 1, v + 3, v, v + 3, v + 2]
+	}
 }
 
 // debug_outline shows the emission shape in debug mode (F1) and in the editor, where particles do not run.

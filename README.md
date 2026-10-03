@@ -451,11 +451,27 @@ node Smoke {
 | `additive` | additive blending, for fire, sparks and glows |
 | `auto_destroy` | destroy the node once emission stopped and the last particle died (one-shot effects) |
 
+More over a particle's life:
+
+| Field | What it does |
+|---|---|
+| `use_mid_color`, `mid_color`, `mid_time` | a third color: start -> mid (at `mid_time`, 0..1 of the life) -> end; fire is yellow -> orange -> dark red |
+| `size_ease`, `color_ease` | how size / color progress: `linear` or an easing (`quad_out` fast then slow, `back_out` overshoots, `bounce_out` ...) |
+| `align_to_velocity` | turn each particle to face where it goes (sparks, rain, arrows) |
+| `animate_sheet`, `sheet_cycles` | a sprite sheet texture plays its frames over each particle's life, `sheet_cycles` times (flames, explosions) |
+| `trail`, `trail_length`, `trail_interval`, `trail_width` | a fading ribbon behind each particle: that many points sampled that many seconds apart, as wide as `trail_width` x the particle's size at the head, thinning to nothing, drawn behind the particles |
+
 `lifetime_var`, `speed_var`, `size_var` and `spin_var` add +- randomness. From code: `ps.play()` (restarts, fires
 the burst again), `ps.stop()`, `ps.emit(n)`, `ps.clear()`, `ps.alive()`, `ps.is_done()`, `ps.set_texture(ref)`.
 The demo's coin pickup is a one-shot burst built in code (`make_sparkle` in `examples/demo/coins.v`) and its
 fireflies are a looping emitter in `scenes/main.scene`. Particles use the renderer's `MeshDrawable` hook, whose
 `TexturedMesh` now also takes per-vertex `colors`, `additive` and no texture (plain colored triangles).
+
+**Presets.** `ps.apply_preset('fire')` resets the emitter's settings and sets those of a ready-made effect (`fire`, `smoke`,
+`sparks`, `explosion`, `rain`, `snow`, `magic`, `dust`, `confetti`, `fountain`; `render.particle_preset_names()` lists them).
+The texture and `playing` stay as they were. Without a texture the particles are plain squares, which suits most of them;
+give smoke and dust a soft round texture. `ps.replay()` restarts the effect with no particles (without touching `playing`).
+Selecting a ParticleSystem in the editor shows a button for every preset (one undo step each), plus Restart and Burst.
 
 In the editor, add it with "+ Add component", edit it in the Inspector (`shape` takes `"point"`, `"circle"` or `"box"`)
 and it previews live in the scene view without pressing Play: the effect runs and one-shot bursts replay every
@@ -463,7 +479,7 @@ half second, without changing saved fields (`playing` stays on, `auto_destroy` d
 Click inside its orange emission outline to select it. Any component can preview this way by implementing
 `render.Previewable` (`preview(dt f32)`).
 
-Limits: no sub-emitters, collisions, or color/size curves beyond start→end; particles draw at their node's place in the draw order (use `z_index`).
+Limits: no sub-emitters or collisions, no free-form curves (a mid color and an easing each); trails are straight segments between samples, so a very short `trail_interval` on fast particles looks smoother; particles draw at their node's place in the draw order (use `z_index`); the WebGL runtime has none of the new fields.
 
 ## Sliced and tiled sprites
 
