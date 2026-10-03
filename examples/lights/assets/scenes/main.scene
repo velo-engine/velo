@@ -1,0 +1,34 @@
+# Night scene: a dark world lit by a torch, a spot light and a light that follows the mouse; the HUD stays bright.
+node Main {
+  node Level {
+    Lighting { ambient = [28, 34, 70, 255] }
+    node Ground { position = [480, 270]  Sprite { texture = @asset("c0de9084")  size = [960, 540] } }
+    node Tree1 { position = [200, 300]  Sprite { texture = @asset("a1fd10d3") } }
+    node Tree2 { position = [740, 200]  Sprite { texture = @asset("a1fd10d3") } }
+    node Crates {
+      node A { position = [430, 330]  Sprite { texture = @asset("1faf3d0a") } }
+      node B { position = [470, 345]  Sprite { texture = @asset("1faf3d0a") } }
+      node C { position = [610, 400]  Sprite { texture = @asset("26c2570c") } }
+    }
+    node Torch {
+      position = [300, 250]
+      Light2D { color = [255, 170, 80, 255]  radius = 190  flicker = 0.3 }
+    }
+    node Lamp {
+      position = [860, 90]
+      rotation = 120
+      Light2D { kind = "spot"  cone = 55  radius = 380  color = [200, 230, 255, 255] }
+    }
+    node Cursor {
+      Light2D { color = [255, 255, 255, 255]  radius = 120  intensity = 0.8 }
+      FollowMouse { }
+    }
+  }
+  node HUD {
+    Canvas { }
+    node Title {
+      position = [20, 14]
+      Label { text = "Lighting demo: the HUD is not darkened"  size = 22 }
+    }
+  }
+}

@@ -45,6 +45,8 @@ pub mut:
 	blend_t    f32
 	blend_dur  f32 // 0 = not blending
 	parallaxes []&Parallax
+	lights     []&Light2D
+	lightings  []&Lighting
 	// The scene's asset ID or path (what App loaded it from); reload() loads it again.
 	key string
 	// The player's saved data, shared by every scene (App opens it and saves it; see Store).
@@ -223,6 +225,17 @@ pub fn (s &Scene) active_camera() ?&Camera {
 		return none
 	}
 	return best
+}
+
+// lighting: the first enabled Lighting on an active node (none = the world is drawn unlit).
+pub fn (s &Scene) lighting() ?&Lighting {
+	for l in s.lightings {
+		if l.enabled && l.node != unsafe { nil } && !l.node.destroyed
+			&& l.node.is_active_in_hierarchy() {
+			return l
+		}
+	}
+	return none
 }
 
 // shown_view: what is on screen now: the active camera's view, or the blend from the previous camera's.

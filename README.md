@@ -524,6 +524,38 @@ Limits: Sprites only (all draw modes), fragment effects only (no vertex shaders,
 keep to the GLSL that Metal also accepts — no `uniform`/`in`/`out` declarations, `out`/`inout` parameters or arrays,
 and sample with `texel()` rather than `texture()`; Windows' optional D3D11 backend (`-d sokol_d3d11`) draws without shaders.
 
+## 2D lighting
+
+`Lighting` makes the world dark and every `Light2D` adds light to it:
+
+```
+node Level {
+  Lighting { ambient = [28, 34, 70, 255] }                      # the darkness: black = pitch dark, white = no effect
+  node Torch { position = [300, 250]  Light2D { color = [255, 170, 80, 255]  radius = 190  flicker = 0.3 } }
+  node Lamp  { position = [860, 90]  rotation = 120  Light2D { kind = "spot"  cone = 55  radius = 380 } }
+  node HUD   { Canvas { } ... }                                  # not darkened
+}
+```
+
+| Field | What it does |
+|---|---|
+| `Lighting.ambient` | light everywhere, as a color; the first enabled `Lighting` on an active node counts |
+| `Lighting.resolution` | the light map is `1/resolution` of the window (4 = quarter size: soft and cheap; 1 = full size) |
+| `Light2D.color`, `intensity` | color of the light; above 1 it burns brighter (the light is drawn more than once) |
+| `Light2D.radius` | world units; the light fades smoothly to 0 at the edge and follows the node's scale |
+| `Light2D.kind`, `cone` | `point`, or a `spot` shining along the node's +x axis (turn the node to aim it) with this opening angle in degrees |
+| `Light2D.flicker` | 0..1, how much the intensity wobbles (torches, candles) |
+
+How it works: each frame the lights are added together on top of the ambient color in a small off-screen light map, then
+the world drawn so far is multiplied by it with one full-screen quad. That happens just before the first Canvas node, so
+HUDs and menus stay bright. The same code runs on Metal, OpenGL, GLES (Android) and WebGL. `examples/lights` is a night
+scene with a flickering torch, a spot light and a light that follows the mouse (`v run examples/lights`).
+
+Limits: no shadows (lights shine through walls), no normal maps, and since the world is multiplied by the light map it
+cannot be brightened beyond its own colors; lights do not show in the editor's scene view (Play shows them); one light
+map for the whole scene, so a `Lighting` cannot be limited to part of it; no post-processing (bloom, blur, color
+grading) yet, which needs the whole frame rendered to a texture; the WebGL runtime (`velo build webgl`) has no lighting.
+
 ## Tile maps
 
 `TileMap` (built in) draws a grid of tiles cut from one tileset. The tileset is an ordinary sprite sheet: the

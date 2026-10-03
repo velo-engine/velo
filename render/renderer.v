@@ -21,11 +21,15 @@ pub interface DebugShape {
 @[heap]
 pub struct Renderer {
 mut:
-	ctx     &gg.Context
-	db      &assets.AssetDatabase
-	gpu     map[string]GpuImage  // texture ID -> GPU image
-	atlas   Atlas                // small textures packed together (see atlas.v)
-	shaders map[string]GpuShader // shader asset ID -> pipeline
+	ctx   &gg.Context
+	db    &assets.AssetDatabase
+	gpu   map[string]GpuImage // texture ID -> GPU image
+	atlas Atlas               // small textures packed together (see atlas.v)
+	light LightGpu            // the light map of core.Lighting (see lighting.v)
+	// Set by draw_scene for the frame: the scene whose lights apply_lighting draws before the first Canvas node.
+	light_scene  &core.Scene = unsafe { nil }
+	light_window core.Affine2
+	shaders      map[string]GpuShader // shader asset ID -> pipeline
 pub mut:
 	debug bool // F1: draw node bounds + center
 	// Pack small textures into shared pages for plain sprites (see atlas.v). Off: every texture is its own GPU image.
@@ -48,6 +52,11 @@ pub fn new_renderer(ctx &gg.Context, db &assets.AssetDatabase) &Renderer {
 
 // draw_scene draws the scene; `window` maps screen units to window points (see core.ScreenFit.to_window).
 pub fn (mut r Renderer) draw_scene(scene &core.Scene, window core.Affine2) {
+	r.light_scene = unsafe { nil }
+	if _ := scene.lighting() {
+		r.light_scene = scene
+	}
+	r.light_window = window
 	r.draw_tree(scene.root, window, scene.view_matrix())
 	ins := scene.safe_insets
 	if r.debug && !ins.is_zero() {
@@ -64,13 +73,22 @@ pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2, camera cor
 	r.draw_calls = 0
 	base := r.base_rect()
 	r.clip = base
+	mut lit := r.light_scene == unsafe { nil }
 	for it in collect_draw_items(root, view, camera, base) {
+		if !lit && it.canvas {
+			lit = true // the world is done: light it before the HUD draws
+			r.apply_lighting(r.light_scene, r.light_window)
+		}
 		if it.clip != r.clip {
 			r.clip = it.clip
 			r.set_scissor(r.clip)
 		}
 		r.draw_node(it.node, it.m)
 	}
+	if !lit {
+		r.apply_lighting(r.light_scene, r.light_window) // no Canvas: light everything
+	}
+	r.light_scene = unsafe { nil }
 	r.clip = base
 	r.set_scissor(base)
 }

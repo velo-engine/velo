@@ -9,6 +9,8 @@ pub fn register_builtins(mut r serialize.Registry) {
 	r.register[core.Camera]()
 	r.register[core.Canvas]()
 	r.register[core.Parallax]()
+	r.register[core.Lighting]()
+	r.register[core.Light2D]()
 	r.register[Sprite]()
 	r.register[SpriteAnimator]()
 	r.register[Animator]()
