@@ -377,3 +377,281 @@ fn test_press_and_release_in_one_frame_is_still_a_click() {
 	assert s.input.touches.len == 0
 	assert !s.input.mouse_down
 }
+
+// ---------- Data binding to the saved data ----------
+
+fn bound_scene() (&core.Scene, &core.Node) {
+	mut s := core.Scene.new('t')
+	s.store = core.Store.from_text('') or { panic(err) }
+	mut root := core.Node.new('UI')
+	s.add(mut root)
+	return s, root
+}
+
+fn test_label_follows_a_store_value() {
+	mut s, mut root := bound_scene()
+	mut lbl := root.add_component(&render.Label{
+		text:        'fallback'
+		bind:        'coins'
+		bind_format: 'Coins: {}'
+	})
+	s.update(0.016)
+	assert lbl.text == 'fallback' // the key does not exist yet
+	s.store.set_int('coins', 7)
+	s.update(0.016)
+	assert lbl.text == 'Coins: 7'
+	s.store.set_f64('coins', 2.5)
+	s.update(0.016)
+	assert lbl.text == 'Coins: 2.5'
+	s.store.set_bool('coins', true)
+	s.update(0.016)
+	assert lbl.text == 'Coins: true'
+	s.store.set_string('coins', 'many')
+	s.update(0.016)
+	assert lbl.text == 'Coins: many'
+	lbl.bind_format = ''
+	s.update(0.016)
+	assert lbl.text == 'many' // no format: the value alone
+}
+
+fn test_store_display_and_number() {
+	mut st := core.Store.from_text('')!
+	st.set_f64('a', 3.0)
+	st.set_f64('b', 0.125)
+	st.set_int('c', -4)
+	assert st.get_display('a')? == '3' && st.get_display('b')? == '0.125'
+		&& st.get_display('c')? == '-4'
+	assert st.get_display('missing') == none
+	assert st.get_number('c')? == -4.0 && st.get_number('b')? == 0.125
+	st.set_string('d', 'x')
+	assert st.get_number('d') == none
+}
+
+fn test_progress_bar_binds_value_over_max() {
+	mut s, mut root := bound_scene()
+	mut bar := root.add_component(&render.ProgressBar{
+		bind:         'hp'
+		bind_max_key: 'max_hp'
+	})
+	s.update(0.016)
+	assert bar.progress == 0.5 // no value: left alone
+	s.store.set_int('hp', 30)
+	s.store.set_int('max_hp', 120)
+	s.update(0.016)
+	assert bar.progress == 0.25
+	s.store.set_int('hp', 500) // clamped
+	s.update(0.016)
+	assert bar.progress == 1
+	mut fixed := root.add_component(&render.ProgressBar{
+		bind:     'ammo'
+		bind_max: 8
+	})
+	s.store.set_int('ammo', 2)
+	s.update(0.016)
+	assert fixed.progress == 0.25
+}
+
+fn test_toggle_binds_both_ways() {
+	mut s, mut root := bound_scene()
+	mut t := root.add_component(&render.Toggle{
+		bind:  'music'
+		is_on: true
+	})
+	s.update(0.016)
+	assert t.is_on && !s.store.has('music') // untouched until a click
+	s.store.set_bool('music', false)
+	s.update(0.016)
+	assert !t.is_on // the stored value wins
+	mut btn := root.add_component(&render.Button{})
+	btn.clicked = true // a click this frame (set by hand: Button.update would clear it)
+	t.update(0.016)
+	assert t.is_on && t.changed && s.store.get_bool('music', false) // a click wrote it back
+}
+
+// ---------- UINav: keyboard / gamepad navigation ----------
+
+@[heap]
+struct Presses {
+mut:
+	names []string
+}
+
+fn nav_menu() (&core.Scene, &render.UINav, &Presses) {
+	mut s := core.Scene.new('t')
+	mut ui := core.Node.new('UI')
+	mut log := &Presses{}
+	// a 2 x 2 grid of buttons:   A B
+	//                            C D
+	for name, pos in {
+		'A': core.vec2(100, 100)
+		'B': core.vec2(300, 100)
+		'C': core.vec2(100, 200)
+		'D': core.vec2(300, 200)
+	} {
+		mut n := core.Node.new(name)
+		n.position = pos
+		n.add_component(&render.UITransform{
+			size: core.vec2(80, 40)
+		})
+		n.add_component(&render.Panel{
+			color: core.white
+		})
+		mut b := n.add_component(&render.Button{})
+		b.on_click(fn [mut log, name] (mut btn render.Button) {
+			log.names << name
+		})
+		ui.add_child(mut n)
+	}
+	mut nav_node := core.Node.new('Nav')
+	nav := nav_node.add_component(&render.UINav{})
+	ui.add_child(mut nav_node)
+	s.add(mut ui)
+	return s, nav, log
+}
+
+fn tap(mut s core.Scene, k core.Key) {
+	s.input.key_down(int(k))
+	s.update(0.016)
+	s.input.key_up(int(k))
+	s.input.end_frame()
+}
+
+fn focus_name(nav &render.UINav) string {
+	n := nav.focused_node() or { return '' }
+	return n.name
+}
+
+fn test_arrows_move_the_focus_and_the_first_press_focuses_the_top_left() {
+	mut s, nav, _ := nav_menu()
+	s.update(0.016)
+	assert focus_name(nav) == '' // nothing focused until the player uses the keys
+	tap(mut s, .down)
+	assert focus_name(nav) == 'A'
+	tap(mut s, .right)
+	assert focus_name(nav) == 'B'
+	tap(mut s, .down)
+	assert focus_name(nav) == 'D'
+	tap(mut s, .left)
+	assert focus_name(nav) == 'C'
+	tap(mut s, .up)
+	assert focus_name(nav) == 'A'
+}
+
+fn test_wrap_and_no_wrap() {
+	mut s, mut nav, _ := nav_menu()
+	tap(mut s, .down) // A
+	tap(mut s, .up) // past the top: wraps to the bottom of the same column
+	assert focus_name(nav) == 'C'
+	tap(mut s, .left) // past the left edge: wraps to the right side of the same row
+	assert focus_name(nav) == 'D'
+	nav.wrap = false
+	tap(mut s, .right)
+	assert focus_name(nav) == 'D' // stays
+	tap(mut s, .down)
+	assert focus_name(nav) == 'D'
+}
+
+fn test_accept_presses_and_cancel_reports() {
+	mut s, mut nav, log := nav_menu()
+	mut cancelled := &Presses{}
+	nav.on_cancel = fn [mut cancelled] () {
+		cancelled.names << 'cancel'
+	}
+	tap(mut s, .enter) // nothing focused: nothing to press
+	assert log.names.len == 0
+	tap(mut s, .down) // A
+	tap(mut s, .right) // B
+	tap(mut s, .space)
+	s.update(0.016) // the Button handles the press in its next update
+	assert log.names == ['B']
+	tap(mut s, .enter)
+	s.update(0.016)
+	assert log.names == ['B', 'B']
+	tap(mut s, .escape)
+	assert cancelled.names == ['cancel']
+	assert nav.cancelled
+	s.update(0.016)
+	assert !nav.cancelled // only for the frame it happened
+}
+
+fn test_disabled_buttons_are_skipped_and_the_focus_tints() {
+	mut s, nav, _ := nav_menu()
+	mut b := s.find('UI/B')?.get_component[render.Button]()?
+	b.interactable = false
+	tap(mut s, .down) // A
+	tap(mut s, .right) // B is disabled: the nearest in that direction is D (down-right)
+	assert focus_name(nav) == 'D'
+	a_panel := s.find('UI/A')?.get_component[render.Panel]()?
+	d_panel := s.find('UI/D')?.get_component[render.Panel]()?
+	s.update(0.016)
+	assert d_panel.color.r < 255 // the focused button is tinted like a hovered one
+	assert a_panel.color.r == 255
+	// a focused button that gets disabled loses the focus
+	mut d := s.find('UI/D')?.get_component[render.Button]()?
+	d.interactable = false
+	s.update(0.016)
+	assert focus_name(nav) == ''
+}
+
+fn test_holding_a_direction_repeats() {
+	mut s, nav, _ := nav_menu()
+	tap(mut s, .down) // A
+	s.input.key_down(int(core.Key.right))
+	s.update(0.016) // pressed: B
+	assert focus_name(nav) == 'B'
+	s.input.end_frame()
+	for _ in 0 .. 10 { // held 0.16 s: still before the repeat delay
+		s.update(0.016)
+		s.input.end_frame()
+	}
+	assert focus_name(nav) == 'B'
+	for _ in 0 .. 40 { // past the delay: it repeats, wrapping A -> B -> A ...
+		s.update(0.016)
+		s.input.end_frame()
+	}
+	assert nav.hold_dir == 3
+	assert focus_name(nav) in ['A', 'B']
+	s.input.key_up(int(core.Key.right))
+	s.update(0.016)
+	assert nav.hold_dir == -1
+}
+
+fn test_mouse_focuses_what_it_hovers_and_game_bindings_win() {
+	mut s, nav, _ := nav_menu()
+	s.input.mouse = core.vec2(300, 100) // over B
+	s.update(0.016)
+	assert focus_name(nav) == 'B'
+	// the game's own binding for ui_up is kept; the defaults are only added when there is none
+	mut s2 := core.Scene.new('t2')
+	s2.input.bind('ui_up', 'key:w')
+	mut n := core.Node.new('Nav')
+	n.add_component(&render.UINav{})
+	s2.add(mut n)
+	assert s2.input.bindings_of('ui_up').len == 1
+	assert s2.input.bindings_of('ui_down').len == 3 // key + stick + d-pad defaults
+}
+
+fn test_gamepad_dpad_and_the_ring_mesh() {
+	mut s, nav, log := nav_menu()
+	s.input.gamepad_connect(0, true)
+	s.input.gamepad_button(0, .dpad_down, true)
+	s.update(0.016)
+	assert focus_name(nav) == 'A'
+	s.input.gamepad_button(0, .dpad_down, false)
+	s.input.end_frame()
+	s.input.gamepad_button(0, .a, true)
+	s.update(0.016)
+	s.input.gamepad_button(0, .a, false)
+	s.input.end_frame()
+	s.update(0.016)
+	assert log.names == ['A']
+	// the focus ring: four bars around the focused button, none without focus
+	ms := nav.meshes()
+	assert ms.len == 1 && ms[0].indices.len == 4 * 6 && ms[0].positions.len == 4 * 4 * 2
+	mut nav2 := nav
+	nav2.clear_focus()
+	assert nav2.meshes().len == 0
+	assert nav2.focus(s.find('UI/C')?)
+	assert focus_name(nav2) == 'C'
+	assert !nav2.focus(s.find('UI')?) // no Button there
+}

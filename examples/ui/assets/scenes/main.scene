@@ -1,0 +1,51 @@
+# UI kit: rich text, labels / bars / toggles bound to the saved data, and a menu you can drive with the keyboard or a gamepad.
+node Main {
+  node HUD {
+    Canvas { }
+    node Title {
+      position = [480, 50]
+      UITransform { size = [800, 60] }
+      Label { rich = true  size = 34  align = "center"  valign = "middle"  shadow_color = [0, 0, 0, 160]
+              text = "[b]Velo[/b] [color=#ffd24a]UI[/color] [size=20]rich text, binding & navigation[/size]" }
+    }
+    node Story {
+      position = [480, 125]
+      UITransform { size = [600, 90] }
+      Label { rich = true  wrap = true  size = 20  align = "center"  valign = "top"
+              text = "Collect [color=#ffd24a]coins[/color] to open the [u]gate[/u]. Touching [color=red]lava[/color] is [b]bad[/b]; [s]cheating[/s] is worse. Use the arrows or a gamepad on the menu." }
+    }
+    node Coins {
+      position = [190, 250]
+      UITransform { size = [260, 30] }
+      Label { size = 22  bind = "coins"  bind_format = "Coins: {}" }
+    }
+    node Health {
+      position = [190, 290]
+      UITransform { size = [260, 20] }
+      Panel { color = [0, 0, 0, 120] }
+      node Fill { UITransform { size = [260, 20] }  ProgressBar { bind = "hp"  bind_max_key = "max_hp"  fill_color = [220, 70, 70, 255] } }
+    }
+    node MusicToggle {
+      position = [160, 340]
+      UITransform { size = [200, 36] }
+      Panel { color = [60, 60, 80, 255]  radius = 6 }
+      Button { }
+      Toggle { bind = "music"  is_on = true }
+      node Checkmark { position = [78, 0]  UITransform { size = [18, 18] }  Panel { color = [90, 220, 120, 255]  radius = 9 } }
+      node T { position = [-88, 0]  Label { text = "Music"  size = 20  valign = "middle" } }
+    }
+    node Menu {
+      position = [700, 250]
+      node Play { position = [0, 0]    UITransform { size = [200, 44] }  Panel { color = [70, 130, 220, 255]  radius = 8 }  Button { }  node T { position = [0, 0]  Label { text = "Play"  size = 22  align = "center"  valign = "middle" } } }
+      node Options { position = [0, 56]  UITransform { size = [200, 44] }  Panel { color = [70, 130, 220, 255]  radius = 8 }  Button { }  node T { position = [0, 0]  Label { text = "Options"  size = 22  align = "center"  valign = "middle" } } }
+      node Quit { position = [0, 112]  UITransform { size = [200, 44] }  Panel { color = [70, 130, 220, 255]  radius = 8 }  Button { }  node T { position = [0, 0]  Label { text = "Quit"  size = 22  align = "center"  valign = "middle" } } }
+    }
+    node Hint {
+      position = [480, 500]
+      UITransform { size = [900, 30] }
+      Label { rich = true  size = 16  align = "center"  valign = "middle"  text = "[color=gray]Arrows / d-pad: move · Enter / A: press · C: +1 coin · H: hurt[/color]" }
+    }
+    node Nav { UINav { } }
+  }
+  node Demo { Demo { } }
+}

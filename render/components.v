@@ -21,6 +21,7 @@ pub fn register_builtins(mut r serialize.Registry) {
 	r.register[Panel]()
 	r.register[Button]()
 	r.register[Toggle]()
+	r.register[UINav]()
 	r.register[ProgressBar]()
 	r.register[ScrollView]()
 	r.register[Widget]()
@@ -186,9 +187,16 @@ pub mut:
 	// A key of the game's texts (`locales/<language>.txt`): the label shows its translation instead of `text`
 	// and follows language changes. `text` stays as the placeholder when the key is unknown (and in the editor).
 	text_key string
-	size     int        = 20
-	color    core.Color = core.white
-	align    string     = 'left' @[choices: 'left|center|right']
+	// Shows a value of the saved data (`scene.store`) and follows it: `bind = "coins"`, `bind_format = "Coins: {}"`
+	// (`{}` is replaced by the value; without a format the label shows the value alone). Wins over `text` and `text_key`
+	// while the key exists.
+	bind        string
+	bind_format string
+	// BBCode tags in `text`: [b] [u] [s] [color=#ffd24a] [size=32] (see richtext.v); the plain label ignores them.
+	rich   bool
+	size   int        = 20
+	color  core.Color = core.white
+	align  string     = 'left' @[choices: 'left|center|right']
 	valign string     = 'top' @[choices: 'top|middle|bottom']
 	font   assets.AssetRef[assets.Font] // .ttf/.otf; unset = the app's font
 	// With a UITransform: `wrap` breaks lines at its width; `shrink` lowers the size until the text fits it.
@@ -204,17 +212,30 @@ pub mut:
 	font_data     &assets.Font = unsafe { nil } @[hide]
 	layout_key    string       @[hide] // what `layout` was computed for
 	layout        TextBlock    @[hide]
-	shown_version int          = -1 @[hide] // Locale.version `text` was translated at
+	rich_key      string       @[hide] // what `rich_block` was computed for
+	rich_block    RichBlock    @[hide]
+	shown_version int = -1          @[hide]    // Locale.version `text` was translated at
 	shown_key     string       @[hide]
 }
 
 pub fn (mut l Label) on_load() {
 	l.font_data = load_font(l.node, l.font)
 	l.apply_translation()
+	l.apply_bind()
 }
 
 pub fn (mut l Label) update(dt f32) {
 	l.apply_translation()
+	l.apply_bind()
+}
+
+// apply_bind sets `text` from the stored value of `bind` (when it exists).
+fn (mut l Label) apply_bind() {
+	if l.bind == '' || l.node == unsafe { nil } || l.node.scene == unsafe { nil } {
+		return
+	}
+	v := l.node.scene.store.get_display(l.bind) or { return }
+	l.text = if l.bind_format.contains('{}') { l.bind_format.replace('{}', v) } else { v }
 }
 
 // apply_translation sets `text` from `text_key` when the key or the language changed.

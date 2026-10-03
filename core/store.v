@@ -55,6 +55,44 @@ pub fn (s &Store) has(key string) bool {
 	return key in s.values
 }
 
+// get_display: the value as text for a label (a whole number as is, a decimal without trailing zeros, true/false,
+// or the string); none when the key is missing.
+pub fn (s &Store) get_display(key string) ?string {
+	v := s.values[key] or { return none }
+	return match v {
+		int {
+			v.str()
+		}
+		f64 {
+			mut t := '${v:.3f}'
+			for t.contains('.') && (t.ends_with('0') || t.ends_with('.')) {
+				t = t[..t.len - 1]
+			}
+			t
+		}
+		bool {
+			if v {
+				'true'
+			} else {
+				'false'
+			}
+		}
+		string {
+			v
+		}
+	}
+}
+
+// get_number: the value as a decimal when it is a number (a whole number counts), else none.
+pub fn (s &Store) get_number(key string) ?f64 {
+	v := s.values[key] or { return none }
+	return match v {
+		int { f64(v) }
+		f64 { v }
+		else { none }
+	}
+}
+
 pub fn (s &Store) keys() []string {
 	mut k := s.values.keys()
 	k.sort()

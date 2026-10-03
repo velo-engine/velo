@@ -236,6 +236,8 @@ pub mut:
 	pressed        bool           @[hide]
 	pointer        u64            @[hide] // the pointer (Input.pointers) holding the button down
 	clicked        bool           @[hide]
+	focused        bool           @[hide] // has the keyboard / gamepad focus (set by UINav): drawn like hovered
+	pending_click  bool           @[hide] // a press() waiting for the next update
 	handlers       []ClickHandler @[hide]
 	base_color     core.Color     @[hide] // the target's color before tinting
 	has_base       bool           @[hide]
@@ -243,6 +245,12 @@ pub mut:
 
 pub fn (mut b Button) on_click(f ClickHandler) {
 	b.handlers << f
+}
+
+// press clicks the button from code, as if it was tapped: `clicked` is true and the handlers run in its next update
+// (UINav does this for the accept key / button).
+pub fn (mut b Button) press() {
+	b.pending_click = true
 }
 
 pub fn (mut b Button) on_destroy() {
@@ -255,8 +263,16 @@ pub fn (mut b Button) update(dt f32) {
 	if !b.interactable {
 		b.hovered = false
 		b.pressed = false
+		b.pending_click = false
 		b.set_tint(b.disabled_color)
 		return
+	}
+	if b.pending_click {
+		b.pending_click = false
+		b.clicked = true
+		for h in b.handlers {
+			h(mut b)
+		}
 	}
 	input := b.input()
 	b.hovered = ui_hit(b.node, input.mouse)
@@ -292,7 +308,7 @@ pub fn (mut b Button) update(dt f32) {
 	}
 	b.set_tint(if b.pressed && inside {
 		b.pressed_color
-	} else if b.hovered || inside {
+	} else if b.hovered || inside || b.focused {
 		b.hover_color
 	} else {
 		b.normal_color
@@ -326,7 +342,10 @@ pub struct Toggle {
 pub mut:
 	is_on     bool
 	checkmark string = 'Checkmark'
-	changed   bool @[hide] // true for the frame `is_on` changed through a click
+	// Keeps `is_on` in step with a true/false value of the saved data (`scene.store`), both ways: the toggle shows it
+	// and a click writes it. A missing key leaves the toggle as it is until the first click.
+	bind    string
+	changed bool @[hide] // true for the frame `is_on` changed through a click
 }
 
 pub fn (mut t Toggle) on_load() {
@@ -335,10 +354,20 @@ pub fn (mut t Toggle) on_load() {
 
 pub fn (mut t Toggle) update(dt f32) {
 	t.changed = false
+	mut store := unsafe { &core.Store(nil) }
+	if t.bind != '' && t.node != unsafe { nil } && t.node.scene != unsafe { nil } {
+		store = t.node.scene.store
+		if store.has(t.bind) {
+			t.is_on = store.get_bool(t.bind, t.is_on)
+		}
+	}
 	if btn := t.node.get_component[Button]() {
 		if btn.clicked {
 			t.is_on = !t.is_on
 			t.changed = true
+			if store != unsafe { nil } {
+				store.set_bool(t.bind, t.is_on)
+			}
 		}
 	}
 	t.sync()
@@ -364,6 +393,26 @@ pub mut:
 	fill_color core.Color = core.rgba(90, 200, 120, 255)
 	back_color core.Color = core.rgba(0, 0, 0, 120)
 	radius     f32
+	// Fills from a number in the saved data (`scene.store`): progress = value / `bind_max` (a number, or the value of
+	// the key `bind_max_key` when set), e.g. `bind = "hp"  bind_max_key = "max_hp"`. Missing keys leave `progress` alone.
+	bind         string
+	bind_max     f32 = 1
+	bind_max_key string
+}
+
+pub fn (mut p ProgressBar) update(dt f32) {
+	if p.bind == '' || p.node == unsafe { nil } || p.node.scene == unsafe { nil } {
+		return
+	}
+	st := p.node.scene.store
+	v := st.get_number(p.bind) or { return }
+	mut max := f64(p.bind_max)
+	if p.bind_max_key != '' {
+		max = st.get_number(p.bind_max_key) or { max }
+	}
+	if max > 0 {
+		p.progress = f32(clamp01(f32(v / max)))
+	}
 }
 
 // fill_rect: the filled part, in node space.

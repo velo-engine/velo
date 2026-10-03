@@ -3,6 +3,7 @@ module render
 import gg
 import velo.core
 import velo.assets
+import math
 
 struct GpuImage {
 	img     gg.Image
@@ -447,8 +448,92 @@ fn (r &Renderer) label_layout(l &Label) TextBlock {
 	return block
 }
 
+// rich_layout lays out a rich label (wrapped / shrunk), recomputing only when something it depends on changed.
+fn (r &Renderer) rich_layout(l &Label) RichBlock {
+	mut box := Rect{}
+	if t := l.node.get_component[UITransform]() {
+		box = t.rect()
+	}
+	family := font_family(l.font_data)
+	key := '${l.text}|${l.size}|${l.wrap}|${l.shrink}|${l.line_spacing}|${box.w}|${box.h}|${family}'
+	if key == l.rich_key {
+		return l.rich_block
+	}
+	block := layout_rich_fit(parse_rich(l.text), l.size, l.line_spacing, l.wrap, l.shrink, box.w,
+		box.h, 6, GgMeasure{r.ctx, family})
+	mut ml := unsafe { l }
+	ml.rich_key = key
+	ml.rich_block = block
+	return block
+}
+
+// draw_rich_label draws a label with BBCode: every piece in its own color / size, underlines and strikes as lines.
+fn (mut r Renderer) draw_rich_label(l &Label, m core.Affine2) {
+	block := r.rich_layout(l)
+	sc := m.scale()
+	k := if sc.y < 0 { -sc.y } else { sc.y }
+	anchor := l.text_point()
+	top := match l.valign {
+		'middle' { anchor.y - block.height / 2 }
+		'bottom' { anchor.y - block.height }
+		else { anchor.y }
+	}
+
+	family := font_family(l.font_data)
+	measure := GgMeasure{r.ctx, family}
+	mut y := top
+	for li, line in block.lines {
+		x0 := match l.align {
+			'center' { anchor.x - line.width / 2 }
+			'right' { anchor.x - line.width }
+			else { anchor.x }
+		}
+
+		for pc in line.pieces {
+			text := pc.text.trim_right(' ')
+			if text == '' {
+				continue
+			}
+			mut col := if pc.style.has_color { pc.style.color } else { l.color }
+			col = core.Color{col.r, col.g, col.b, u8(u32(col.a) * l.color.a / 255)}
+			py := y + (line.size - pc.size) // bottoms of the pieces line up
+			p := m.apply(core.vec2(x0 + pc.x, py))
+			cfg := gg.TextCfg{
+				size:           int(pc.size * k + 0.5)
+				color:          to_gg(col)
+				align:          .left
+				vertical_align: .top
+				family:         family
+			}
+			r.draw_text_fx(l, p, text, cfg, k)
+			if pc.style.bold { // heavier: the same text again a pixel to the right
+				r.ctx.draw_text(int(p.x) + 1, int(p.y), text, cfg)
+			}
+			w := measure.width(text, pc.size)
+			if pc.style.underline || pc.style.strike {
+				thick := math.max(pc.size * k / 14, f32(1))
+				a := m.apply(core.vec2(x0 + pc.x, py))
+				b := m.apply(core.vec2(x0 + pc.x + w, py))
+				if pc.style.underline {
+					r.ctx.draw_rect_filled(a.x, a.y + pc.size * k * 0.98, b.x - a.x, thick,
+						to_gg(col))
+				}
+				if pc.style.strike {
+					r.ctx.draw_rect_filled(a.x, a.y + pc.size * k * 0.55, b.x - a.x, thick,
+						to_gg(col))
+				}
+			}
+		}
+		y += block.line_height[li]
+	}
+}
+
 fn (mut r Renderer) draw_label(l &Label, m core.Affine2) {
 	if l.text == '' {
+		return
+	}
+	if l.rich {
+		r.draw_rich_label(l, m)
 		return
 	}
 	sc := m.scale()

@@ -394,11 +394,12 @@ node MoreCoins {
 |---|---|
 | `UITransform` | `size` + `anchor` of the node's rectangle (used by everything below, and for picking in the editor) |
 | `Panel` | fills the rectangle: `color`, `radius` (rounded corners when not rotated), `border_color`, `border_width`; stops clicks from reaching UI under it unless `block_input = false` |
-| `Label` | text (`\n` = new line); `align` left/center/right, `valign` top/middle/bottom, `font`, `line_spacing`. With a UITransform it aligns inside the rectangle, `wrap` breaks lines at its width and `shrink` lowers the size until the text fits. `shadow_color`/`shadow_offset` and `outline_color`/`outline_width` (alpha 0 = off) keep it readable on busy backgrounds |
+| `Label` | text (`\n` = new line; `rich = true` reads BBCode, `bind` shows saved data, see below); `align` left/center/right, `valign` top/middle/bottom, `font`, `line_spacing`. With a UITransform it aligns inside the rectangle, `wrap` breaks lines at its width and `shrink` lowers the size until the text fits. `shadow_color`/`shadow_offset` and `outline_color`/`outline_width` (alpha 0 = off) keep it readable on busy backgrounds |
 | `TextInput` | a one-line text field in the rectangle: click/tap to type (any language), arrows, Home/End, Backspace/Delete (held keys repeat), Enter submits, Esc or a click elsewhere stops. `text`, `placeholder`, `max_length`, `password`, `font`, `size`, colors; poll `changed` / `submitted`, or `focus()` / `blur()`. Phones and browsers show their keyboard while it has focus, and Esc does not quit the game then |
 | `Button` | click (or tap, with any finger) on the rectangle (UITransform or Sprite). `btn.on_click(fn (mut b render.Button) {...})` or poll `btn.clicked` (true for one frame). Tints the Panel/Sprite of `target` by state (`normal/hover/pressed/disabled_color`, multiplied with its own color); `interactable = false` disables it |
-| `Toggle` | with a Button on the same node: each click flips `is_on` and shows/hides the `checkmark` child (`changed` is true for that frame) |
-| `ProgressBar` | draws `back_color` + a `fill_color` part for `progress` (0..1); `direction` horizontal/vertical, `reverse` |
+| `Toggle` | with a Button on the same node: each click flips `is_on` and shows/hides the `checkmark` child (`changed` is true for that frame); `bind` keeps it in step with a saved true/false |
+| `UINav` | keyboard / gamepad navigation of the Buttons: arrows, d-pad or left stick move a focus ring, Enter / Space / A presses, Esc / B cancels |
+| `ProgressBar` | draws `back_color` + a `fill_color` part for `progress` (0..1); `direction` horizontal/vertical, `reverse`; `bind` fills it from the saved data |
 | `ScrollView` | shows the `content` child through the rectangle: drag or mouse wheel, `inertia`, `elastic` edges, `clip`; `horizontal`/`vertical`; `scroll_to_top()`/`scroll_to_bottom()`. Buttons inside cancel their press once a drag starts, and are not clickable outside the viewport |
 | `Widget` | aligns the node to the edges/center of the parent's rectangle (or the screen if the parent has none); left + right (or top + bottom) stretches the UITransform. Aligned to the screen it stays inside the phone's safe area (notch, rounded corners, system bars); `safe_area = false` reaches the real edges (full-bleed backgrounds) |
 | `Joystick` | on-screen thumb stick: a finger (or the mouse) going down in the rectangle moves the `knob` child up to `radius` from the `base` child; read `value` (-1..1 per axis). `floating` moves the base under the thumb |
@@ -412,6 +413,37 @@ area); on desktop, `VELO_SAFE_AREA="left,top,right,bottom"` (window points) fake
 The demo's HUD uses a Button (`SpawnButton`) and a ScrollView + Layout pickup log (`PickupLog`, see `examples/demo/hud.v`);
 its menu has a TextInput for the player's name (saved) and a title with an outline and a shadow.
 
+**Rich text.** `Label { rich = true }` reads BBCode tags in its text: `[b]` bold, `[u]` underline, `[s]` strike-through,
+`[color=#ffd24a]` (`#rgb`, `#rrggbb`, `#rrggbbaa` or a name like `red`), `[size=32]` (pixels), each closed by `[/tag]`; `[i]` is
+accepted but the font has no italic. Wrapping, `shrink`, alignment, shadow and outline work across the styled pieces;
+`[[` is a literal `[`, and unknown tags are shown as written. `render.parse_rich(text)` and `render.strip_rich(text)` are
+there for your own code.
+
+```
+Label { rich = true  wrap = true  text = "Collect [color=#ffd24a]5 coins[/color] to open the [b]gate[/b]!" }
+```
+
+**Data binding.** Labels, bars and toggles can follow the saved data (`scene.store`) without code:
+
+```
+Label       { bind = "coins"  bind_format = "Coins: {}" }                   # {} = the value; no format = the value alone
+ProgressBar { bind = "hp"  bind_max_key = "max_hp" }                        # progress = hp / max_hp  (or bind_max = 8)
+Toggle      { bind = "music" }                                              # shows the saved true/false, a click writes it
+```
+
+A missing key leaves the Label's text, the bar's `progress` and the Toggle's `is_on` as they are. `store.get_display(key)`
+and `store.get_number(key)` give the same values to your own code.
+
+**Keyboard / gamepad navigation.** Put a `UINav` on the UI root, or on an empty last child of it (so the focus ring draws on
+top): it manages the Buttons below it (below its parent when there are none below itself). A direction moves the focus to
+the nearest Button that way (wrapping around with `wrap`, holding repeats), the accept key presses it (`btn.press()` from
+code does the same), cancel sets `nav.cancelled` for a frame / calls `nav.on_cancel`. The mouse focuses what it hovers
+(`follow_mouse`), so a pointer and a gamepad can share one menu; a focused Button is tinted like a hovered one. It uses the
+input actions `ui_up/down/left/right/accept/cancel`, bound to the arrows, d-pad, left stick, Enter/Space/A and Esc/B unless the
+game bound them first. `nav.focus(node)`, `nav.clear_focus()`, `nav.focused_node()`. Android and iOS have no keyboard or
+gamepad backend yet (see Input actions), so there the mouse/touch focus is what works. `examples/ui` shows all three
+(`v run examples/ui`).
+
 **Clicks go to the topmost UI only.** Buttons, ScrollViews, Joysticks, TextInputs and Panels take the pointer in draw
 order (z_index and Canvas included): a dialog Panel over buttons stops them, and of two overlapping buttons only the
 one on top is clicked or hovered. An element still gets presses on its own children (a ScrollView can be dragged from
@@ -422,8 +454,8 @@ a button inside it). For gameplay clicks, `render.pointer_over_ui(scene, input.m
 `font = @asset("...")`), or `label.set_font(ref)` from code. Unset, text uses the app's font (`font_path` in `app.new`).
 `Input.text` holds what was typed this frame, and `input.was_typed(.backspace)` includes key repeats, for custom fields.
 
-Limits: text ignores rotation; no rich text (colors/bold inside one Label), text selection, clipboard or IME
-candidate window in TextInput; a font file edited on disk needs a restart; Widget/Layout run in `update`, so the
+Limits: text ignores rotation; rich text has no italic, images or links; no text selection, clipboard or IME
+candidate window in TextInput; no themes or styles shared between components yet; a font file edited on disk needs a restart; Widget/Layout run in `update`, so the
 editor shows them at their saved positions until you press Play; the anchor gizmo (Y) only edits Sprite anchors.
 
 ## Particles
