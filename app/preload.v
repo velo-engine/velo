@@ -66,6 +66,7 @@ fn (mut p Preloader) start(mut db assets.AssetDatabase, r &render.Renderer, key 
 	if p.total == 0 {
 		p.clock = time.new_stopwatch()
 	}
+	queued := p.queue.len
 	for dep in db.dependencies_deep(id) {
 		e := db.entry(dep) or { continue }
 		if e.kind == .texture && dep !in p.textures {
@@ -92,7 +93,7 @@ fn (mut p Preloader) start(mut db assets.AssetDatabase, r &render.Renderer, key 
 			}
 		}
 	}
-	p.total += p.queue.len
+	p.total += p.queue.len - queued
 }
 
 // pump hands queued jobs to the pool and uploads the finished ones. Call it once per frame.
@@ -144,7 +145,8 @@ fn (p &Preloader) progress() f32 {
 	if p.total == 0 {
 		return 1
 	}
-	return f32(p.total - p.queue.len - p.pending) / f32(p.total)
+	done := f32(p.total - p.queue.len - p.pending) / f32(p.total)
+	return if done < 0 { f32(0) } else { done }
 }
 
 // release drops the references taken by start; call it once the new scene holds its own.
@@ -160,5 +162,6 @@ fn (mut p Preloader) release(mut db assets.AssetDatabase) {
 	}
 	p.textures.clear()
 	p.clips.clear()
+	p.queue.clear() // a cancelled preload; results already in flight are dropped by finish
 	p.total = 0
 }

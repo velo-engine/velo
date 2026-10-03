@@ -180,7 +180,7 @@ fn on_frame(mut a App) {
 	a.input.end_frame()
 	a.preload.pump(mut a.renderer)
 	a.update_scene_change(dt)
-	a.scene.loading = a.preload.progress()
+	a.scene.loading = if a.fade.fading { a.preload.progress() } else { f32(1) }
 	audio.pump()
 
 	a.ctx.begin()
@@ -242,6 +242,17 @@ mut:
 // and sounds of the next scene are decoded in the background (see Preloader), load it, fade in.
 fn (mut a App) update_scene_change(dt f32) {
 	mut f := &a.fade
+	// scene.preload: decode ahead without switching; the references are dropped when a scene change finishes
+	for key in a.scene.preload_requests {
+		a.preload.start(mut a.db, a.renderer, key)
+	}
+	a.scene.preload_requests.clear()
+	if a.scene.preload_cancel {
+		a.scene.preload_cancel = false
+		if !f.fading {
+			a.preload.release(mut a.db)
+		}
+	}
 	if a.scene.next_scene != '' && !f.fading {
 		f.target = a.scene.next_scene
 		f.change = a.scene.next_change

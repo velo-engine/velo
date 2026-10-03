@@ -48,6 +48,9 @@ pub mut:
 	// 0..1 while App decodes the next scene's assets during a scene change, else 1 (set by App every frame;
 	// a component can show it, e.g. a progress bar in a persistent loading overlay).
 	loading f32 = 1
+	// Set by preload / cancel_preload: App takes them after this frame.
+	preload_requests []string
+	preload_cancel   bool
 }
 
 // SceneChange — how change_scene switches: a fade to `color` and back, `fade` seconds each way (0 = cut).
@@ -69,6 +72,24 @@ pub:
 pub fn (mut s Scene) change_scene(key string, opts SceneChange) {
 	s.next_scene = key
 	s.next_change = opts
+}
+
+// preload decodes the textures and sounds of a scene (path or asset ID) in the background while the current one
+// keeps running, so a later change_scene to it does not wait. The decoded assets are kept until the next scene
+// change finishes (or cancel_preload), so call it only for a scene you are likely to switch to.
+//
+//   c.scene().preload('scenes/level2.scene')     // e.g. when the player enters the last room of level 1
+pub fn (mut s Scene) preload(key string) {
+	s.preload_cancel = false
+	if key !in s.preload_requests {
+		s.preload_requests << key
+	}
+}
+
+// cancel_preload drops what preload decoded, for a scene that turned out not to be needed.
+pub fn (mut s Scene) cancel_preload() {
+	s.preload_requests.clear()
+	s.preload_cancel = true
 }
 
 // reload restarts the current scene (see change_scene).
