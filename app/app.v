@@ -180,6 +180,7 @@ fn on_frame(mut a App) {
 	a.input.end_frame()
 	a.preload.pump(mut a.renderer)
 	a.update_scene_change(dt)
+	a.scene.loading = a.preload.progress()
 	audio.pump()
 
 	a.ctx.begin()
@@ -290,6 +291,16 @@ fn (mut a App) draw_fade() {
 	c := a.fade.change.color
 	w := a.window_points()
 	a.ctx.draw_rect_filled(0, 0, w.x, w.y, gg.Color{c.r, c.g, c.b, u8(f32(c.a) * a.fade.alpha)})
+	// still decoding once the screen is covered: show how far it is (white or black, whichever contrasts)
+	if a.fade.change.progress && a.fade.fading && !a.fade.coming && a.fade.alpha >= 1 && !a.preload.done() {
+		lum := int(c.r) + int(c.g) + int(c.b)
+		v := if lum > 384 { u8(0) } else { u8(255) }
+		bar_w := w.x * 0.4
+		x := (w.x - bar_w) / 2
+		y := w.y * 0.9
+		a.ctx.draw_rect_filled(x, y, bar_w, 4, gg.Color{v, v, v, 70})
+		a.ctx.draw_rect_filled(x, y, bar_w * a.preload.progress(), 4, gg.Color{v, v, v, 230})
+	}
 }
 
 // on_asset_event: the renderer frees GPU images, the mixer forgets decoded sounds.

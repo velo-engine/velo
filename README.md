@@ -134,7 +134,11 @@ save data in memory, so testing never touches the game's real save.
 The demo starts on a title screen (`scenes/menu.scene`) that shows the saved best score; Play (or Enter) starts the
 game, **M** goes back, and the music never stops between them.
 
-Limits: loading is synchronous (a big scene holds the frame while it loads; there is no loading screen yet); the
+While the next scene's textures and sounds are decoded in the background, the covered screen shows a thin progress
+bar (`progress: false` in `change_scene` hides it), and `scene.loading` (0..1, 1 when idle) lets a component draw its
+own, e.g. in a persistent overlay.
+
+Limits: building the scene itself is synchronous (a big scene still holds one frame); the
 save file is not encrypted or signed; a killed process (not a normal quit) loses changes since the last save on
 desktop — call `store.save()` at checkpoints.
 

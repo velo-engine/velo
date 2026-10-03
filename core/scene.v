@@ -45,6 +45,9 @@ pub mut:
 	// Set by change_scene: App switches after this frame.
 	next_scene  string
 	next_change SceneChange
+	// 0..1 while App decodes the next scene's assets during a scene change, else 1 (set by App every frame;
+	// a component can show it, e.g. a progress bar in a persistent loading overlay).
+	loading f32 = 1
 }
 
 // SceneChange — how change_scene switches: a fade to `color` and back, `fade` seconds each way (0 = cut).
@@ -53,6 +56,8 @@ pub struct SceneChange {
 pub:
 	fade  f32   = 0.25
 	color Color = rgba(0, 0, 0, 255)
+	// draw a thin progress bar at the bottom of the covered screen while the next scene's assets load
+	progress bool = true
 }
 
 // change_scene switches to another scene (path or asset ID) once this frame is over; App fades out, loads it,
