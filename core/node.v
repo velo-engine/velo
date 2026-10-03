@@ -324,7 +324,15 @@ fn (mut n Node) tick(dt f32, real f32, paused bool) {
 				n.components[i].started = true
 				n.components[i].start()
 			}
-			n.components[i].update(d)
+			if n.scene != unsafe { nil } && n.scene.profiler.enabled {
+				mut prof := n.scene.profiler
+				name := 'update:' + short_type_name(n.components[i].type_name())
+				prof.begin(name)
+				n.components[i].update(d)
+				prof.end(name)
+			} else {
+				n.components[i].update(d)
+			}
 		}
 		n.tick_timers(d)
 		n.tick_tweens(d)

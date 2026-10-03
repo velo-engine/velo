@@ -27,6 +27,8 @@ pub:
 	font_path     string // .ttf used for text; empty = the platform default
 	// Language used when neither the saved choice nor the system language has a table in `locales/` (see core.Locale).
 	language string = 'en'
+	// The developer tools: F1 overlay, F2 profiler, ` console (see core.Console). Turn off for the shipped game.
+	debug_tools bool = true
 	// Names the save data folder (see open_store); '' = made from the title. Keep it once the game ships.
 	app_id string
 	// Where to save the player's data instead of the platform's usual place (desktop and phones).
@@ -56,6 +58,9 @@ pub mut:
 	store &core.Store
 	// The game's texts; filled from the `locales/*.txt` assets (see core.Locale).
 	locale &core.Locale = &core.Locale{}
+	// `console.register('cmd', 'help', fn (args []string) string {...})` adds a console command.
+	console  &core.Console  = &core.Console{}
+	profiler &core.Profiler = &core.Profiler{}
 mut:
 	keyboard_shown bool
 	fade           SceneFade
@@ -94,6 +99,7 @@ pub fn new(config Config) !&App {
 	}
 	a.update_fit()
 	a.setup_locale()
+	a.setup_console()
 	println('[velo] ${db.len()} assets in ${db.root}')
 	return a
 }
@@ -145,6 +151,7 @@ pub fn (mut a App) load_scene(key string) ! {
 	next.input = a.input
 	next.store = a.store
 	next.locale = a.locale
+	next.profiler = a.profiler
 	next.key = a.db.resolve(key) or { key }
 	a.apply_fit(mut next)
 	if a.scene != unsafe { nil } {
@@ -201,9 +208,16 @@ fn on_frame(mut a App) {
 		a.fps = a.fps * 0.95 + (1.0 / dt) * 0.05
 	}
 
-	if a.input.was_pressed(.f1) {
-		a.renderer.debug = !a.renderer.debug
+	if a.cfg.debug_tools {
+		if a.input.was_pressed(.f1) {
+			a.renderer.debug = !a.renderer.debug
+		}
+		if a.input.was_pressed(.f2) {
+			a.profiler.enabled = !a.profiler.enabled
+			a.profiler.reset()
+		}
 	}
+	a.profiler.begin('update')
 	a.fit_scale()
 	a.update_fit()
 	a.safe_timer -= dt
@@ -218,28 +232,27 @@ fn on_frame(mut a App) {
 	}
 	a.apply_fit(mut a.scene)
 	a.scene.update(dt)
+	a.profiler.end('update')
 	a.sync_keyboard()
 	a.input.end_frame()
 	a.preload.pump(mut a.renderer)
 	a.update_scene_change(dt)
 	a.scene.loading = if a.fade.fading { a.preload.progress() } else { f32(1) }
+	a.profiler.begin('audio')
 	audio.pump()
+	a.profiler.end('audio')
 
+	a.profiler.begin('draw')
 	a.ctx.begin()
 	a.renderer.base_clip =
 		render.Rect{a.fit.area_pos.x, a.fit.area_pos.y, a.fit.area_size.x, a.fit.area_size.y}
 	a.renderer.draw_scene(a.scene, a.fit.to_window())
 	a.draw_fade()
 	a.draw_bars()
-	if a.renderer.debug {
-		a.ctx.draw_text(int(a.window_points().x) - 10, 10,
-			'FPS ${int(a.fps)} | node ${a.scene.node_count()} | asset ${a.db.loaded_count()}/${a.db.len()} | draw ${a.renderer.draw_calls}',
-			size:  16
-			color: gg.Color{255, 255, 0, 255}
-			align: .right
-		)
-	}
+	a.draw_debug_overlay()
 	a.ctx.end()
+	a.profiler.end('draw')
+	a.profiler.new_frame(dt * 1000)
 
 	for ev in a.db.drain_events() {
 		a.on_asset_event(ev)
@@ -454,6 +467,9 @@ fn (mut a App) check_hot_reload() {
 }
 
 fn on_event(e &gg.Event, mut a App) {
+	if a.cfg.debug_tools && a.console_event(e) {
+		return
+	}
 	match e.typ {
 		.key_down {
 			if e.key_repeat {

@@ -44,6 +44,8 @@ pub mut:
 	store &Store = &Store{}
 	// The game's texts in the available languages, shared by every scene (App fills it from `locales/*.txt`).
 	locale &Locale = &Locale{}
+	// Frame timing, shared by every scene (App turns it on with F2; see Profiler).
+	profiler &Profiler = &Profiler{}
 	// Set by change_scene: App switches after this frame.
 	next_scene  string
 	next_change SceneChange

@@ -202,6 +202,31 @@ stays as the placeholder if the key is unknown, and in the editor). Editing a `l
 the game runs. Limits: there is no per-language font yet (the default font must contain the glyphs, e.g. CJK needs a
 `font_path` that has them), and plural rules cover the common languages only (`core.plural_category`).
 
+## Debug tools
+
+Three keys while the game runs (off with `debug_tools: false` in `app.new` for the shipped game):
+
+| Key | Shows |
+|---|---|
+| **F1** | node bounds, colliders, and a stats line: FPS, nodes, loaded assets, draw calls, memory |
+| **F2** | profiler: a frame-time graph (green < 17.5 ms, red > 20 ms) and the slowest scopes, smoothed |
+| **`** | console: the log, and a command line (Tab completes, Up/Down is the history, Esc closes) |
+
+While the console is open the game gets no keys. Built-in commands: `help`, `stats`, `timescale 0.5`, `pause`,
+`scene <path>`, `reload`, `lang vi`, `profiler on|off`, `debug on|off`, `loglevel`, `clear`, `quit`. Add your own:
+
+```v
+game.console.register('give', 'give <n>: add coins', fn [mut game] (args []string) string {
+	// game.scene.store ...
+	return 'ok'
+})
+```
+
+The profiler times `update`, `draw`, `audio` and `update:<Component type>` (all instances of a type added up).
+Time your own code with `c.scene().profiler.begin('ai')` / `.end('ai')`. The log has levels:
+`core.log_info('...')`, `log_warn`, `log_error`, `log_debug`; the console shows the last 200 lines. The engine's own
+`[velo]` messages still go straight to the terminal and are not in the console yet.
+
 ## Time, timers and tweens
 
 `scene.time_scale` changes the game speed (0.5 = slow motion) and `scene.paused = true` stops components, timers,
