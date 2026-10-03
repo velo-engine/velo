@@ -55,6 +55,7 @@ pub fn (mut w PhysicsWorld) ensure() {
 	def.gravity = w.to_b2(w.gravity)
 	w.id = C.b2CreateWorld(&def)
 	w.created = true
+	C.b2World_SetPreSolveCallback(w.id, voidptr(presolve_cb), voidptr(w))
 }
 
 // set_gravity changes the gravity at runtime (pixels/s²).
@@ -104,12 +105,25 @@ pub fn (mut w PhysicsWorld) step(dt f32) {
 	w.collect_events()
 }
 
+// QueryOptions — what a query may hit: only colliders on these layers (empty = all). Sensors are never hit.
+@[params]
+pub struct QueryOptions {
+pub:
+	layers []int
+}
+
+fn (w &PhysicsWorld) query_filter(o QueryOptions) C.b2QueryFilter {
+	mut f := C.b2DefaultQueryFilter()
+	f.maskBits = layers_mask(o.layers)
+	return f
+}
+
 // raycast returns the closest collider hit by the segment `from` -> `to` (world units).
-pub fn (w &PhysicsWorld) raycast(from core.Vec2, to core.Vec2) ?RayHit {
+pub fn (w &PhysicsWorld) raycast(from core.Vec2, to core.Vec2, o QueryOptions) ?RayHit {
 	if !w.created {
 		return none
 	}
-	r := C.b2World_CastRayClosest(w.id, w.to_b2(from), w.to_b2(to - from), C.b2DefaultQueryFilter())
+	r := C.b2World_CastRayClosest(w.id, w.to_b2(from), w.to_b2(to - from), w.query_filter(o))
 	if !r.hit {
 		return none
 	}
@@ -120,6 +134,117 @@ pub fn (w &PhysicsWorld) raycast(from core.Vec2, to core.Vec2) ?RayHit {
 		normal:   from_b2(r.normal)
 		fraction: r.fraction
 	}
+}
+
+struct RayCollect {
+mut:
+	world &PhysicsWorld = unsafe { nil }
+	hits  []RayHit
+}
+
+fn ray_cb(shape C.b2ShapeId, point C.b2Vec2, normal C.b2Vec2, fraction f32, ctx voidptr) f32 {
+	mut c := unsafe { &RayCollect(ctx) }
+	st := state_of(shape) or { return 1 }
+	c.hits << RayHit{
+		node:     st.owner
+		point:    c.world.from_b2(point)
+		normal:   from_b2(normal)
+		fraction: fraction
+	}
+	return 1 // keep going: we want every hit
+}
+
+// raycast_all returns every collider the segment crosses, nearest first.
+pub fn (mut w PhysicsWorld) raycast_all(from core.Vec2, to core.Vec2, o QueryOptions) []RayHit {
+	if !w.created {
+		return []
+	}
+	mut c := RayCollect{
+		world: w
+	}
+	C.b2World_CastRay(w.id, w.to_b2(from), w.to_b2(to - from), w.query_filter(o), voidptr(ray_cb),
+		voidptr(&c))
+	c.hits.sort(a.fraction < b.fraction)
+	return c.hits
+}
+
+struct OverlapCollect {
+mut:
+	nodes []&core.Node
+}
+
+fn overlap_cb(shape C.b2ShapeId, ctx voidptr) bool {
+	mut c := unsafe { &OverlapCollect(ctx) }
+	st := state_of(shape) or { return true }
+	for n in c.nodes {
+		if voidptr(n) == voidptr(st.owner) {
+			return true
+		}
+	}
+	c.nodes << st.owner
+	return true
+}
+
+fn (mut w PhysicsWorld) overlap(proxy &C.b2ShapeProxy, o QueryOptions) []&core.Node {
+	if !w.created {
+		return []
+	}
+	mut c := OverlapCollect{}
+	C.b2World_OverlapShape(w.id, proxy, w.query_filter(o), voidptr(overlap_cb), voidptr(&c))
+	return c.nodes
+}
+
+// overlap_circle returns the nodes with a collider touching the circle (world units), each once.
+pub fn (mut w PhysicsWorld) overlap_circle(center core.Vec2, radius f32, o QueryOptions) []&core.Node {
+	mut proxy := C.b2ShapeProxy{}
+	proxy.count = 1
+	proxy.points[0] = w.to_b2(center)
+	proxy.radius = radius / w.ppm()
+	return w.overlap(&proxy, o)
+}
+
+// overlap_box returns the nodes with a collider touching the box (center and size in world units, turned by
+// `rotation` degrees).
+pub fn (mut w PhysicsWorld) overlap_box(center core.Vec2, size core.Vec2, rotation f32, o QueryOptions) []&core.Node {
+	mut proxy := C.b2ShapeProxy{}
+	proxy.count = 4
+	h := size.mul(0.5)
+	rot := core.Affine2.trs(center, rotation, core.vec2(1, 1))
+	for i, c in [core.vec2(-h.x, -h.y), core.vec2(h.x, -h.y),
+		core.vec2(h.x, h.y), core.vec2(-h.x, h.y)] {
+		proxy.points[i] = w.to_b2(rot.apply(c))
+	}
+	return w.overlap(&proxy, o)
+}
+
+// overlap_point returns the nodes with a collider under the point.
+pub fn (mut w PhysicsWorld) overlap_point(p core.Vec2, o QueryOptions) []&core.Node {
+	return w.overlap_circle(p, 0, o)
+}
+
+// presolve_cb runs for every contact between a one-way platform and something else, before it is solved: the
+// contact is dropped unless it pushes the other body along the platform's up side (the node's -y direction).
+fn presolve_cb(a C.b2ShapeId, b C.b2ShapeId, manifold &C.b2Manifold, ctx voidptr) bool {
+	sa := state_of(a) or { return true }
+	sb := state_of(b) or { return true }
+	n := from_b2(manifold.normal) // from shape A toward shape B
+	if sa.one_way && !platform_blocks(sa, n) {
+		return false
+	}
+	if sb.one_way && !platform_blocks(sb, n.mul(-1)) {
+		return false
+	}
+	return true
+}
+
+// platform_blocks: `toward_other` points from the platform to what touches it; it blocks only from above.
+fn platform_blocks(platform &ColliderState, toward_other core.Vec2) bool {
+	if platform.owner == unsafe { nil } {
+		return true
+	}
+	rot := platform.owner.world_matrix().rotation_deg()
+	up := core.Affine2.trs(core.Vec2{}, rot, core.vec2(1, 1)).apply(core.vec2(0, -1))
+	return toward_other.x * up.x + toward_other.y * up.y > 0.5
 }
 
 fn (mut w PhysicsWorld) collect_events() {

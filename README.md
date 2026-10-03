@@ -799,7 +799,7 @@ node Main {
 
 | Component | What it does |
 |---|---|
-| `PhysicsWorld` | one Box2D world: `gravity` (pixels/s², y down), `pixels_per_meter` (default 50), `fixed_step`, `sub_steps`, `max_steps`. Steps in its own `update`, before its children update. `world.raycast(from, to)` returns the closest hit |
+| `PhysicsWorld` | one Box2D world: `gravity` (pixels/s², y down), `pixels_per_meter` (default 50), `fixed_step`, `sub_steps`, `max_steps`. Steps in its own `update`, before its children update. `world.raycast(from, to)` returns the closest hit (see Queries below) |
 | `RigidBody` | `body_type` dynamic/kinematic/static, `gravity_scale`, `linear_damping`, `angular_damping`, `fixed_rotation`, `bullet`. `velocity()`/`set_velocity`, `angular_velocity()`/`set_angular_velocity`, `apply_force`, `apply_impulse`, `apply_torque`, `mass()`, `set_body_type` |
 | `BoxCollider` / `CircleCollider` / `CapsuleCollider` | a shape (`size` or `radius`, `offset`) with `density`, `friction`, `restitution`, `sensor`. Becomes a shape of the RigidBody on the same node; without one it gets its own static body that follows the node |
 
@@ -822,8 +822,55 @@ In debug mode (F1) and in the editor, colliders are outlined (green, sensors yel
 with `debug_outline()`/`debug_color()` (`render.DebugShape`). In the demo the crates are pushable bodies, the trees
 have static trunk colliders and the player moves with `set_velocity`.
 
-Limits: no joints, polygon/chain shapes, collision filtering or interpolation yet; shapes are built once (edit a collider's
-fields at runtime and they will not be rebuilt); colliders on child nodes do not join the parent's RigidBody.
+### Layers, one-way platforms, queries and joints
+
+**Layers.** Every collider has `layer` (0..31) and `collides_with` (a list of layers; empty = all). Two colliders touch
+only when each one's list includes the other's layer:
+
+```
+BoxCollider { size = [300, 10]  layer = 3  collides_with = [3] }      # a platform only layer 3 stands on
+CircleCollider { radius = 10  layer = 1  collides_with = [0] }        # falls through it, lands on layer 0
+```
+
+**One-way platforms.** `one_way = true` on a collider makes it block only what touches it from above (its node's -y
+side): things jump up through it and land on top. It follows the node's rotation. (To drop through, switch the
+player to another layer for a moment.)
+
+**Queries** on the `PhysicsWorld` (world units; `layers: [..]` restricts them to those layers, sensors are never hit):
+
+```v
+w.raycast(from, to)                       // the closest hit (node, point, normal, fraction), or none
+w.raycast_all(from, to)                   // every hit, nearest first
+w.overlap_circle(center, radius)          // the nodes touching a circle, each once
+w.overlap_box(center, size, rotation)     // ... a (rotated) box
+w.overlap_point(p)                        // ... a point, e.g. what the mouse is over
+```
+
+**Joints** connect two bodies. Put one on the node of a `RigidBody` and name the other node in `other` (a path from the
+scene root); with `other` empty the joint pins to the world. Both nodes need a RigidBody (the world side does not), and
+the joint is made on the first frame both bodies exist and goes away with either node. Anchors and lengths are world
+units, angles degrees.
+
+| Joint | What it does | Fields |
+|---|---|---|
+| `HingeJoint` | the bodies turn around the anchor (a door, a pendulum) | `anchor`, `enable_limit` + `lower_angle`/`upper_angle`, `motor_speed` + `max_motor_torque`, `hertz`/`damping` (torsion spring) |
+| `SpringJoint` | keeps the anchors `length` apart like a spring (`hertz` 0 = rigid) | `anchor`, `other_anchor`, `length` (0 = as they start), `hertz`, `damping`, `min_length`, `max_length` |
+| `RopeJoint` | at most `max_length` apart, slack when closer | `anchor`, `other_anchor`, `max_length` |
+| `WeldJoint` | glues the bodies together at the anchor | `anchor`, `hertz`, `damping` |
+
+```
+node Door { position = [300, 100]  RigidBody { }  BoxCollider { size = [10, 80] }
+            HingeJoint { anchor = [0, -40]  enable_limit = true  lower_angle = -90  upper_angle = 0 } }
+node Ball { RigidBody { }  CircleCollider { }  RopeJoint { other = "Level/Ceiling"  max_length = 150 } }
+```
+
+`other_anchor` is in the other node's space (a world position when `other` is empty); for hinge and weld the pivot is the
+single `anchor`, in this node's space. `collide_connected = true` lets the two bodies hit each other. `joint.is_valid()`
+says whether the joint exists yet.
+
+Limits: no polygon/chain shapes, prismatic/wheel/mouse joints, joint breaking or interpolation yet; shapes are built once
+(edit a collider's fields at runtime and they will not be rebuilt, which includes `layer` and `one_way`); colliders on
+child nodes do not join the parent's RigidBody; the WebGL runtime has none of this.
 
 ## Animation state machine
 

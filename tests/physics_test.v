@@ -2,6 +2,7 @@ import velo.core
 import velo.physics
 import velo.render
 import velo.serialize
+import math
 
 // Box2D runs headless, so these need no GPU (only the box2d library, see physics/box2d.v).
 
@@ -175,7 +176,8 @@ fn test_components_are_serializable() {
 	physics.register_builtins(mut reg)
 	t := reg.get('BoxCollider') or { panic('not registered') }
 	names := t.fields.map(it.name)
-	assert names == ['size', 'offset', 'density', 'friction', 'restitution', 'sensor']
+	assert names == ['size', 'offset', 'density', 'friction', 'restitution', 'sensor', 'layer',
+		'collides_with', 'one_way']
 	rb := reg.get('RigidBody') or { panic('not registered') }
 	assert 'body_type' in rb.fields.map(it.name)
 	assert 'id' !in rb.fields.map(it.name)
@@ -245,4 +247,205 @@ fn test_tilemap_collider_solid_tiles_filter_and_cleanup() {
 	n.destroy()
 	scene.update(0)
 	assert scene.root.children.len == 0
+}
+
+// ---------- Layers, queries, one-way platforms, joints ----------
+
+fn ball(name string, x f32, y f32, layer int, collides_with []int) &core.Node {
+	mut n := core.Node.new(name)
+	n.position = core.vec2(x, y)
+	n.add_component(&physics.CircleCollider{
+		radius:        10
+		layer:         layer
+		collides_with: collides_with
+	})
+	n.add_component(&physics.RigidBody{})
+	return n
+}
+
+fn ground(mut scene core.Scene, y f32) {
+	mut g := core.Node.new('Ground')
+	g.position = core.vec2(200, y)
+	g.add_component(&physics.BoxCollider{
+		size: core.vec2(2000, 20)
+	})
+	scene.add(mut g)
+}
+
+fn test_layers_filter_what_collides() {
+	mut scene, _ := new_world(core.vec2(0, 980))
+	ground(mut scene, 400) // layer 0, collides with everything: top at y = 390
+	mut wall := core.Node.new('Platform')
+	wall.position = core.vec2(200, 250)
+	wall.add_component(&physics.BoxCollider{
+		size:          core.vec2(300, 10)
+		layer:         3
+		collides_with: [3]
+	})
+	scene.add(mut wall)
+	mut a :=
+		ball('A', 150, 100, 1, [0]) // ignores layer 3: falls through the platform to the ground
+	mut b :=
+		ball('B', 250, 100, 3, [3]) // collides with layer 3 only: lands on the platform, ignores the ground
+	scene.add(mut a)
+	scene.add(mut b)
+	run(mut scene, 3)
+	assert a.position.y > 375 && a.position.y < 385
+	assert b.position.y > 230 && b.position.y < 240 // platform top 245, radius 10
+}
+
+fn test_overlap_queries_and_raycast_all_with_layers() {
+	mut scene, mut w := new_world(core.vec2(0, 0))
+	mut crate := core.Node.new('Crate')
+	crate.position = core.vec2(100, 100)
+	crate.add_component(&physics.BoxCollider{
+		size:  core.vec2(40, 40)
+		layer: 1
+	})
+	mut rock := core.Node.new('Rock')
+	rock.position = core.vec2(300, 100)
+	rock.add_component(&physics.CircleCollider{
+		radius: 20
+		layer:  2
+	})
+	scene.add(mut crate)
+	scene.add(mut rock)
+	scene.update(1.0 / 60.0)
+	assert w.overlap_circle(core.vec2(100, 100), 5).map(it.name) == ['Crate']
+	assert w.overlap_circle(core.vec2(200, 100), 5).len == 0
+	assert w.overlap_circle(core.vec2(200, 100), 200).len == 2 // reaches both
+	assert w.overlap_circle(core.vec2(200, 100), 200, layers: [2]).map(it.name) == [
+		'Rock',
+	]
+	assert w.overlap_point(core.vec2(110, 110)).map(it.name) == ['Crate']
+	assert w.overlap_point(core.vec2(160, 100)).len == 0
+	assert w.overlap_box(core.vec2(300, 100), core.vec2(10, 10), 45).map(it.name) == [
+		'Rock',
+	]
+	hits := w.raycast_all(core.vec2(0, 100), core.vec2(500, 100))
+	assert hits.map(it.node.name) == ['Crate', 'Rock'] // nearest first
+	assert hits[0].fraction < hits[1].fraction && hits[0].point.x > 70 && hits[0].point.x < 90
+	assert w.raycast_all(core.vec2(0, 100), core.vec2(500, 100), layers: [2]).map(it.node.name) == [
+		'Rock',
+	]
+	r := w.raycast(core.vec2(0, 100), core.vec2(500, 100), layers: [2])?
+	assert r.node.name == 'Rock'
+	assert w.raycast(core.vec2(0, 500), core.vec2(500, 500)) == none
+}
+
+fn test_one_way_platform_lets_things_up_but_holds_them_from_above() {
+	mut scene, _ := new_world(core.vec2(0, 980))
+	mut p := core.Node.new('Platform')
+	p.position = core.vec2(200, 300)
+	p.add_component(&physics.BoxCollider{
+		size:    core.vec2(300, 10)
+		one_way: true
+	})
+	scene.add(mut p)
+	mut rising := ball('Rising', 160, 420, 0, [])
+	mut rb := rising.get_component[physics.RigidBody]()?
+	scene.add(mut rising)
+	rb.set_velocity(core.vec2(0, -700)) // jumps up from below, through the platform
+	mut falling := ball('Falling', 240, 100, 0, [])
+	scene.add(mut falling)
+	run(mut scene, 0.5)
+	assert rising.position.y < 300 // went through it
+	run(mut scene, 4)
+	// both rest on top of the platform (its top is 295, the ball's radius 10)
+	assert rising.position.y > 280 && rising.position.y < 290
+	assert falling.position.y > 280 && falling.position.y < 290
+}
+
+fn pivot_world(g core.Vec2) (&core.Scene, &physics.PhysicsWorld) {
+	return new_world(g)
+}
+
+fn test_hinge_pinned_to_the_world_swings_on_a_circle() {
+	mut scene, _ := pivot_world(core.vec2(0, 980))
+	mut bob := ball('Bob', 300, 100, 0, [])
+	// the pivot is 100 units to the left of the bob, pinned in the air (no `other`)
+	bob.add_component(&physics.HingeJoint{
+		anchor: core.vec2(-100, 0)
+	})
+	scene.add(mut bob)
+	pivot := core.vec2(200, 100)
+	mut max_y := f32(0)
+	for _ in 0 .. 180 {
+		scene.update(1.0 / 60.0)
+		assert math.abs((bob.position - pivot).length() - 100) < 3 // stays on its circle
+		max_y = math.max(max_y, bob.position.y)
+	}
+	assert max_y > 150 // it did swing down
+	hinge := bob.get_component[physics.HingeJoint]()?
+	assert hinge.is_valid()
+	bob.destroy()
+	scene.update(1.0 / 60.0)
+	scene.update(1.0 / 60.0)
+}
+
+fn test_hinge_limit_stops_the_swing() {
+	mut scene, _ := pivot_world(core.vec2(0, 980))
+	mut door := core.Node.new('Door')
+	door.position = core.vec2(300, 100)
+	door.add_component(&physics.CircleCollider{
+		radius: 10
+	})
+	door.add_component(&physics.RigidBody{})
+	door.add_component(&physics.HingeJoint{
+		anchor:       core.vec2(-100, 0)
+		enable_limit: true
+		lower_angle:  -10
+		upper_angle:  10
+	})
+	scene.add(mut door)
+	run(mut scene, 3)
+	// without the limit it would hang straight down (y = 200); the +-10 degree limit keeps it near the start
+	assert door.position.y < 100 + 100 * math.sin(math.radians(10.0)) + 8
+}
+
+fn test_spring_stretches_and_rope_limits_distance() {
+	mut scene, _ := pivot_world(core.vec2(0, 980))
+	mut weight := ball('Weight', 100, 150, 0, [])
+	weight.add_component(&physics.SpringJoint{
+		other_anchor: core.vec2(100, 50) // world point (no `other`)
+		hertz:        2
+		damping:      0.3
+	})
+	scene.add(mut weight)
+	run(mut scene, 4)
+	d := (weight.position - core.vec2(100, 50)).length()
+	assert d > 101 && d < 200 // hangs below its rest length of 100, held by the spring
+	mut hanger := ball('Hanger', 400, 80, 0, [])
+	hanger.add_component(&physics.RopeJoint{
+		other_anchor: core.vec2(400, 50)
+		max_length:   100
+	})
+	scene.add(mut hanger)
+	run(mut scene, 0.1)
+	assert hanger.position.y > 80 // slack: it fell freely at first
+	run(mut scene, 2)
+	assert (hanger.position - core.vec2(400, 50)).length() < 106 // taut: never farther than the rope
+	assert hanger.position.y > 140 // and it did hang down to the end of it
+}
+
+fn test_weld_keeps_two_bodies_rigid() {
+	mut scene, _ := pivot_world(core.vec2(0, 0))
+	mut a := ball('A', 100, 100, 0, [])
+	mut b := ball('B', 150, 100, 0, [])
+	a.add_component(&physics.WeldJoint{
+		other:  'B'
+		anchor: core.vec2(25, 0)
+	})
+	mut ra := a.get_component[physics.RigidBody]()?
+	scene.add(mut a)
+	scene.add(mut b)
+	ra.set_angular_velocity(6) // spin A: welded B must swing along instead of staying put
+	run(mut scene, 1)
+	assert math.abs((b.position - a.position).length() - 50) < 2
+	assert b.position.y != 100 // B moved around A
+	// destroying the other body removes the joint without a crash
+	b.destroy()
+	scene.update(1.0 / 60.0)
+	scene.update(1.0 / 60.0)
+	assert !a.get_component[physics.WeldJoint]()?.is_valid()
 }

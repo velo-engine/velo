@@ -20,9 +20,12 @@ mut:
 //   }
 pub struct ColliderState {
 pub mut:
-	touching  []Contact // everything this collider currently touches
-	began     []Contact // contacts that started this frame (one frame, like Button.clicked)
-	ended     []Contact // contacts that ended this frame
+	touching []Contact // everything this collider currently touches
+	began    []Contact // contacts that started this frame (one frame, like Button.clicked)
+	ended    []Contact // contacts that ended this frame
+	// Set from the collider's `layer` / `one_way` when the shape is made (queries and the one-way check read them).
+	layer     int
+	one_way   bool
 	owner     &core.Node    = unsafe { nil }
 	world     &PhysicsWorld = unsafe { nil }
 	shape_id  C.b2ShapeId
@@ -122,8 +125,37 @@ fn (mut s ColliderState) push_transform() {
 	}
 }
 
-fn shape_def(st &ColliderState, density f32, friction f32, restitution f32, sensor bool) C.b2ShapeDef {
+// layer_bit: the Box2D category bit of a layer (0..31).
+fn layer_bit(layer int) u64 {
+	return u64(1) << u64(if layer < 0 {
+		0
+	} else if layer > 31 {
+		31
+	} else {
+		layer
+	})
+}
+
+// layers_mask: the bits of every listed layer; no list = collide with everything.
+fn layers_mask(layers []int) u64 {
+	if layers.len == 0 {
+		return u64(0xFFFFFFFFFFFFFFFF)
+	}
+	mut m := u64(0)
+	for l in layers {
+		m |= layer_bit(l)
+	}
+	return m
+}
+
+fn shape_def(st &ColliderState, density f32, friction f32, restitution f32, sensor bool, layer int, collides_with []int, one_way bool) C.b2ShapeDef {
+	mut state := unsafe { &ColliderState(st) }
+	state.layer = layer
+	state.one_way = one_way
 	mut def := C.b2DefaultShapeDef()
+	def.filter.categoryBits = layer_bit(layer)
+	def.filter.maskBits = layers_mask(collides_with)
+	def.enablePreSolveEvents = one_way
 	def.userData = voidptr(st)
 	def.density = density
 	def.material.friction = friction
@@ -150,6 +182,12 @@ pub mut:
 	friction    f32 = 0.6
 	restitution f32
 	sensor      bool // detects overlaps (began/ended/touching) without colliding
+	// Collision filtering: this collider is on `layer` (0..31) and only collides with colliders on the layers listed
+	// in `collides_with` (empty = every layer). Both sides must agree (A's list has B's layer and B's has A's).
+	layer         int
+	collides_with []int
+	// A platform you can jump up through and land on: it only blocks what comes from above (the node's -y side).
+	one_way bool
 }
 
 pub fn (mut b BoxCollider) on_load() {
@@ -161,7 +199,8 @@ pub fn (mut b BoxCollider) on_destroy() {
 }
 
 fn (b &BoxCollider) make_shape(body C.b2BodyId, st &ColliderState, ppm f32, scale core.Vec2) C.b2ShapeId {
-	def := shape_def(st, b.density, b.friction, b.restitution, b.sensor)
+	def := shape_def(st, b.density, b.friction, b.restitution, b.sensor, b.layer, b.collides_with,
+		b.one_way)
 	poly := C.b2MakeOffsetBox(b.size.x * scale.x / 2 / ppm, b.size.y * scale.y / 2 / ppm,
 		b2vec((b.offset * scale).mul(1 / ppm)), b2rot(0))
 	return C.b2CreatePolygonShape(body, &def, &poly)
@@ -185,12 +224,15 @@ pub struct CircleCollider {
 	core.Component
 	ColliderState
 pub mut:
-	radius      f32 = 16
-	offset      core.Vec2
-	density     f32 = 1
-	friction    f32 = 0.6
-	restitution f32
-	sensor      bool
+	radius        f32 = 16
+	offset        core.Vec2
+	density       f32 = 1
+	friction      f32 = 0.6
+	restitution   f32
+	sensor        bool
+	layer         int
+	collides_with []int
+	one_way       bool
 }
 
 pub fn (mut c CircleCollider) on_load() {
@@ -202,7 +244,8 @@ pub fn (mut c CircleCollider) on_destroy() {
 }
 
 fn (c &CircleCollider) make_shape(body C.b2BodyId, st &ColliderState, ppm f32, scale core.Vec2) C.b2ShapeId {
-	def := shape_def(st, c.density, c.friction, c.restitution, c.sensor)
+	def := shape_def(st, c.density, c.friction, c.restitution, c.sensor, c.layer, c.collides_with,
+		c.one_way)
 	s := if scale.x > scale.y { scale.x } else { scale.y }
 	circle := C.b2Circle{
 		center: b2vec((c.offset * scale).mul(1 / ppm))
@@ -225,12 +268,15 @@ pub struct CapsuleCollider {
 	core.Component
 	ColliderState
 pub mut:
-	size        core.Vec2 = core.Vec2{32, 64}
-	offset      core.Vec2
-	density     f32 = 1
-	friction    f32 = 0.6
-	restitution f32
-	sensor      bool
+	size          core.Vec2 = core.Vec2{32, 64}
+	offset        core.Vec2
+	density       f32 = 1
+	friction      f32 = 0.6
+	restitution   f32
+	sensor        bool
+	layer         int
+	collides_with []int
+	one_way       bool
 }
 
 pub fn (mut c CapsuleCollider) on_load() {
@@ -242,7 +288,8 @@ pub fn (mut c CapsuleCollider) on_destroy() {
 }
 
 fn (c &CapsuleCollider) make_shape(body C.b2BodyId, st &ColliderState, ppm f32, scale core.Vec2) C.b2ShapeId {
-	def := shape_def(st, c.density, c.friction, c.restitution, c.sensor)
+	def := shape_def(st, c.density, c.friction, c.restitution, c.sensor, c.layer, c.collides_with,
+		c.one_way)
 	a, b, r := capsule_points(c.offset * scale, c.size * scale)
 	capsule := C.b2Capsule{
 		center1: b2vec(a.mul(1 / ppm))

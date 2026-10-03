@@ -90,14 +90,24 @@ mut:
 }
 
 @[typedef]
+struct C.b2Filter {
+mut:
+	categoryBits u64
+	maskBits     u64
+	groupIndex   int
+}
+
+@[typedef]
 struct C.b2ShapeDef {
 mut:
-	userData            voidptr
-	material            C.b2SurfaceMaterial
-	density             f32
-	isSensor            bool
-	enableSensorEvents  bool
-	enableContactEvents bool
+	userData             voidptr
+	material             C.b2SurfaceMaterial
+	density              f32
+	filter               C.b2Filter
+	isSensor             bool
+	enableSensorEvents   bool
+	enableContactEvents  bool
+	enablePreSolveEvents bool
 }
 
 @[typedef]
@@ -172,7 +182,79 @@ struct C.b2SensorEvents {
 }
 
 @[typedef]
-struct C.b2QueryFilter {}
+struct C.b2QueryFilter {
+mut:
+	categoryBits u64
+	maskBits     u64
+}
+
+@[typedef]
+struct C.b2ShapeProxy {
+mut:
+	points [8]C.b2Vec2
+	count  int
+	radius f32
+}
+
+@[typedef]
+struct C.b2TreeStats {}
+
+@[typedef]
+pub struct C.b2JointId {
+	index1     int
+	world0     u16
+	generation u16
+}
+
+@[typedef]
+struct C.b2RevoluteJointDef {
+mut:
+	bodyIdA          C.b2BodyId
+	bodyIdB          C.b2BodyId
+	localAnchorA     C.b2Vec2
+	localAnchorB     C.b2Vec2
+	enableSpring     bool
+	hertz            f32
+	dampingRatio     f32
+	enableLimit      bool
+	lowerAngle       f32
+	upperAngle       f32
+	enableMotor      bool
+	maxMotorTorque   f32
+	motorSpeed       f32
+	collideConnected bool
+}
+
+@[typedef]
+struct C.b2DistanceJointDef {
+mut:
+	bodyIdA          C.b2BodyId
+	bodyIdB          C.b2BodyId
+	localAnchorA     C.b2Vec2
+	localAnchorB     C.b2Vec2
+	length           f32
+	enableSpring     bool
+	hertz            f32
+	dampingRatio     f32
+	enableLimit      bool
+	minLength        f32
+	maxLength        f32
+	collideConnected bool
+}
+
+@[typedef]
+struct C.b2WeldJointDef {
+mut:
+	bodyIdA             C.b2BodyId
+	bodyIdB             C.b2BodyId
+	localAnchorA        C.b2Vec2
+	localAnchorB        C.b2Vec2
+	linearHertz         f32
+	angularHertz        f32
+	linearDampingRatio  f32
+	angularDampingRatio f32
+	collideConnected    bool
+}
 
 @[typedef]
 struct C.b2RayResult {
@@ -193,6 +275,18 @@ fn C.b2World_GetContactEvents(id C.b2WorldId) C.b2ContactEvents
 fn C.b2World_GetSensorEvents(id C.b2WorldId) C.b2SensorEvents
 fn C.b2World_CastRayClosest(id C.b2WorldId, origin C.b2Vec2, translation C.b2Vec2, filter C.b2QueryFilter) C.b2RayResult
 fn C.b2DefaultQueryFilter() C.b2QueryFilter
+fn C.b2World_OverlapShape(id C.b2WorldId, proxy &C.b2ShapeProxy, filter C.b2QueryFilter, fcn voidptr, ctx voidptr) C.b2TreeStats
+fn C.b2World_CastRay(id C.b2WorldId, origin C.b2Vec2, translation C.b2Vec2, filter C.b2QueryFilter, fcn voidptr, ctx voidptr) C.b2TreeStats
+fn C.b2World_SetPreSolveCallback(id C.b2WorldId, fcn voidptr, ctx voidptr)
+
+fn C.b2DefaultRevoluteJointDef() C.b2RevoluteJointDef
+fn C.b2DefaultDistanceJointDef() C.b2DistanceJointDef
+fn C.b2DefaultWeldJointDef() C.b2WeldJointDef
+fn C.b2CreateRevoluteJoint(world C.b2WorldId, def &C.b2RevoluteJointDef) C.b2JointId
+fn C.b2CreateDistanceJoint(world C.b2WorldId, def &C.b2DistanceJointDef) C.b2JointId
+fn C.b2CreateWeldJoint(world C.b2WorldId, def &C.b2WeldJointDef) C.b2JointId
+fn C.b2DestroyJoint(id C.b2JointId)
+fn C.b2Joint_IsValid(id C.b2JointId) bool
 
 fn C.b2DefaultBodyDef() C.b2BodyDef
 fn C.b2CreateBody(world C.b2WorldId, def &C.b2BodyDef) C.b2BodyId
