@@ -25,10 +25,13 @@ pub mut:
 	atlas     assets.AssetRef[assets.TextAsset] // <name>.atlas.json; its image is found next to it
 	animation string // '' = the first animation of the export
 	skin      string // skin id or name; '' = the skin that was active when exporting
-	speed     f32        = 1
-	playing   bool       = true
-	looping   bool       = true
-	color     core.Color = core.white
+	// A state machine (`.anim`, see core.AnimGraph) that picks the animation: its states name animations with
+	// `clip=`, and `animation` / `looping` / `play()` are then ignored. Drive it with params().
+	controller assets.AssetRef[assets.TextAsset]
+	speed      f32        = 1
+	playing    bool       = true
+	looping    bool       = true
+	color      core.Color = core.white
 	// Canvas size the rig was built on (bone positions scale with it). 0 = the export's canvasSize,
 	// or 800x600 for exports that have none.
 	canvas_size core.Vec2
@@ -41,6 +44,11 @@ pub mut:
 	hashes      []u64             @[hide] // skel/atlas content hashes, to reload after they change on disk
 	current     string            @[hide] // the animation `time` belongs to
 	source      string            @[hide] // data/atlas IDs loaded
+	machine     &core.AnimGraph = unsafe { nil }   @[hide]
+	ctrl_hash   u64               @[hide]
+	ctrl_failed bool              @[hide]
+	// Called for each `event=` the controller's clips pass (instead of polling params().take_events()).
+	on_event fn (name string) = unsafe { nil } @[hide]
 }
 
 pub fn (mut k Kine2D) on_load() {
@@ -54,6 +62,9 @@ pub fn (mut k Kine2D) on_destroy() {
 pub fn (mut k Kine2D) update(dt f32) {
 	if k.source != k.data.id + k.atlas.id || k.changed_on_disk() {
 		k.reload()
+	}
+	if k.controller.is_set() && k.drive_controller(dt) {
+		return
 	}
 	if k.animation != k.current {
 		k.restart()
@@ -76,6 +87,68 @@ pub fn (mut k Kine2D) update(dt f32) {
 		k.finished = true
 		k.playing = false
 	}
+}
+
+// params: the controller's state machine, for set_float / set_bool / trigger / take_events / force / state_name.
+// Without a (valid) controller it is an inert one, so game code can call it blindly.
+pub fn (mut k Kine2D) params() &core.AnimGraph {
+	if k.machine == unsafe { nil } {
+		k.load_controller()
+	}
+	if k.machine == unsafe { nil } {
+		k.machine = render.placeholder_graph()
+	}
+	return k.machine
+}
+
+fn (mut k Kine2D) load_controller() {
+	g, h := render.load_anim_graph(k.node, k.controller) or {
+		if !k.ctrl_failed {
+			eprintln('[Kine2D] ${k.node.path()}: ${err}')
+		}
+		k.ctrl_failed = true // keep the old machine (a typo while hot reloading), say it once
+		k.ctrl_hash = 0
+		return
+	}
+	k.ctrl_failed = false
+	k.ctrl_hash = h
+	if k.machine != unsafe { nil } {
+		g.adopt_state(k.machine)
+	}
+	k.machine = g
+	k.apply_state()
+}
+
+// apply_state shows the animation of the machine's current state.
+fn (mut k Kine2D) apply_state() {
+	st := k.machine.current_state()
+	if st.clip != '' {
+		k.animation = st.clip
+	}
+	k.current = k.animation // the machine keeps the time, so no restart
+	k.looping = st.loop
+}
+
+// drive_controller advances the state machine and poses the rig at its time. false: no controller to run.
+fn (mut k Kine2D) drive_controller(dt f32) bool {
+	if k.ctrl_hash != 0 && render.anim_graph_changed(k.node, k.controller, k.ctrl_hash) {
+		k.load_controller()
+	}
+	mut g := k.params()
+	if g.state_name() == 'none' && k.ctrl_failed {
+		return false
+	}
+	g.update(dt * k.speed, k.duration())
+	k.apply_state()
+	k.time = g.state_time()
+	k.finished = g.is_finished()
+	k.playing = !k.finished
+	if k.on_event != unsafe { nil } {
+		for name in g.take_events() {
+			k.on_event(name)
+		}
+	}
+	return true
 }
 
 // play starts `name` from its first frame.

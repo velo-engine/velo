@@ -662,6 +662,50 @@ have static trunk colliders and the player moves with `set_velocity`.
 Limits: no joints, polygon/chain shapes, collision filtering or interpolation yet; shapes are built once (edit a collider's
 fields at runtime and they will not be rebuilt); colliders on child nodes do not join the parent's RigidBody.
 
+## Animation state machine
+
+For a character with several animations, describe the states and when to switch in a text asset (`hero.anim`) instead
+of writing `if` chains. It drives the sprite sheet frames (`Animator`) or a Kine2D rig (`controller` field):
+
+```
+# hero.anim
+default = idle
+state idle  frames=0-3   fps=8  loop
+state run   frames=4-9   fps=12 loop
+state jump  frames=10-12 fps=10 once  event=11:land_dust
+any  -> jump  when trigger jump              # from every state; listed first, so it wins
+idle -> run   when speed > 0.1
+run  -> idle  when speed <= 0.1
+jump -> idle  when finished and grounded
+```
+
+```
+Sprite   { texture = @asset("hero.png") }          # frame size from hero.png.meta
+Animator { graph = @asset("hero.anim") }           # Kine2D { controller = @asset("goblin.anim") ... } uses clip=<animation name>
+```
+
+```v
+mut anim := c.node.get_component[render.Animator]()!
+anim.params().set_float('speed', velocity.length())    // also set_bool, set_int
+anim.params().set_bool('grounded', on_ground)
+anim.params().trigger('jump')                          // a one-shot, consumed by the transition that uses it
+anim.on_event = fn (name string) { ... }               // or poll anim.params().take_events()
+```
+
+- **States:** `frames=a-b` (default: the whole sheet), `clip=Name` (Kine2D), `fps=`, `speed=` (time scale), `loop` or
+  `once`, `event=<frame>:<name>` (any number; fires once per pass, a frame-0 event on entering).
+- **Conditions** (joined with `and`): `param > 0.5` (`>= < <= == !=`), `grounded` / `not grounded`, `trigger jump`,
+  `finished` (a `once` clip reached its end; the last frame is shown for one update first), `time >= 0.4` (seconds in
+  the state).
+- **Order matters:** transitions are tried in file order, one per update. `any` skips the state already playing.
+- `force('state')` jumps to a state at once; `state_name()` says which one plays.
+- Editing the `.anim` file while the game runs reloads it and keeps the parameters and the playing state; a mistake in
+  the file is reported once and the old machine keeps running.
+- Errors in the file name the line (`line 4: unknown state option "fsp=8"`).
+
+Not done yet: cross-fading between states (a switch is a cut), blend trees and layers, a graph editor in the Velo editor,
+and the WebGL runtime (`velo build webgl`) does not know `Animator` or `controller` yet.
+
 ## Kine2D animation
 
 The optional `kine2d` module plays skeletal animations made in the Kine2D editor. Its **BUILD** button writes

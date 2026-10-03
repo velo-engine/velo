@@ -10,6 +10,7 @@ pub fn register_builtins(mut r serialize.Registry) {
 	r.register[core.Canvas]()
 	r.register[Sprite]()
 	r.register[SpriteAnimator]()
+	r.register[Animator]()
 	r.register[Label]()
 	r.register[UITransform]()
 	r.register[Panel]()

@@ -194,3 +194,41 @@ fn test_component_plays_sample() {
 	scene.update(0)
 	assert db.loaded_count() == 0 // the atlas image was released
 }
+
+// A controller (.anim) picks the animation: idle, an attack on a trigger, back to idle when it finishes.
+fn test_controller_drives_animation() {
+	dir := os.join_path(os.dir(@FILE), '..', 'examples', 'kine2d', 'assets')
+	mut db := assets.open(dir)!
+	mut scene := core.Scene.new('test')
+	scene.assets = db
+	mut node := core.Node.new('Goblin')
+	mut k := node.add_component(&kine2d.Kine2D{
+		data:       assets.ref[assets.TextAsset]('characters/goblin.skel.json')
+		atlas:      assets.ref[assets.TextAsset]('characters/goblin.atlas.json')
+		controller: assets.ref[assets.TextAsset]('characters/goblin.anim')
+	})
+	scene.add(mut node)
+	mut events := 0
+	_ = events
+	scene.update(1.0 / 60.0)
+	assert k.animation == 'idle' && k.looping && k.playing // not the export's first animation ("attack")
+	k.params().trigger('attack')
+	scene.update(1.0 / 60.0)
+	scene.update(1.0 / 60.0)
+	assert k.animation == 'attack' && !k.looping
+	mut seen_end := false
+	for _ in 0 .. 600 {
+		scene.update(1.0 / 60.0)
+		if k.finished {
+			seen_end = true
+			assert close(k.time, k.duration()) // posed on its last frame, then...
+			break
+		}
+	}
+	assert seen_end
+	scene.update(1.0 / 60.0)
+	assert k.animation == 'idle' && k.playing // ...the finished attack returns to idle
+	node.destroy()
+	scene.update(0)
+	assert db.loaded_count() == 0
+}
