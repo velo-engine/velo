@@ -1,0 +1,3 @@
+menu.title = Coin Collector
+menu.play = Play
+menu.reset = Reset best score

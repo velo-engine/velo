@@ -11,7 +11,7 @@ node Menu {
     node Title {
       UITransform { size = [700, 90] }
       Widget { align_center_x = true  align_top = true  top = 110 }
-      Label { text = "Coin Collector"  size = 64  align = "center"  valign = "middle"  color = [255, 236, 150, 255]
+      Label { text = "Coin Collector"  text_key = "menu.title"  size = 64  align = "center"  valign = "middle"  color = [255, 236, 150, 255]
               outline_color = [110, 60, 10, 255]  outline_width = 2.5  shadow_color = [0, 0, 0, 120]  shadow_offset = [3, 5] }
     }
     node Best {
@@ -30,14 +30,14 @@ node Menu {
       Widget { align_center_x = true  align_center_y = true  center_y = 60 }
       Panel { color = [70, 130, 220, 255]  radius = 10  border_width = 1 }
       Button { }
-      node Text { Label { text = "Play"  size = 28  align = "center"  valign = "middle" } }
+      node Text { Label { text = "Play"  text_key = "menu.play"  size = 28  align = "center"  valign = "middle" } }
     }
     node Reset {
       UITransform { size = [180, 36] }
       Widget { align_center_x = true  align_center_y = true  center_y = 140 }
       Panel { color = [0, 0, 0, 110]  radius = 8 }
       Button { }
-      node Text { Label { text = "Reset best score"  size = 18  align = "center"  valign = "middle" } }
+      node Text { Label { text = "Reset best score"  text_key = "menu.reset"  size = 18  align = "center"  valign = "middle" } }
     }
   }
 }

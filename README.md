@@ -171,6 +171,37 @@ Gamepad state is `input.gamepad_is_down(pad, .a)`, `gamepad_axis(pad, .left_x)`,
 filled through `gamepad_connect / gamepad_button / gamepad_axis_set`; **no platform backend calls them yet**
 (sokol has no gamepad API), so for now gamepads only work if the game feeds them itself.
 
+## Localization
+
+One text file per language in the assets, `locales/<code>.txt` (lower-case code: `en`, `vi`, `pt-br`):
+
+```
+# comment
+menu.play = Play
+greeting = Hello, {name}!\nWelcome back
+coins.one = {n} coin
+coins.other = {n} coins
+```
+
+At startup the app picks the saved language (`language` in `scene.store`), else the system language
+(`LC_ALL`/`LANG`; phones and the web use `language` in `app.new`, default `en`), else any table. A key missing from
+the current language falls back to `en` (`pt-br` tries `pt` first); a key missing everywhere shows the key and is
+reported once on stderr.
+
+```v
+mut loc := c.scene().locale
+loc.tr('menu.play')                          // "Play"
+loc.tr_args('greeting', {'name': 'An'})      // {name} placeholders
+loc.tr_n('coins', 3)                         // plural form for the language (.one .few .many .other), {n} = the number
+loc.set_language('vi')                       // switches at once and saves the choice; false if there is no such table
+loc.languages()                              // ['en', 'vi'] for a language menu
+```
+
+A `Label` with `text_key = "menu.play"` shows the translation and follows language changes by itself (its `text`
+stays as the placeholder if the key is unknown, and in the editor). Editing a `locales/*.txt` file reloads it while
+the game runs. Limits: there is no per-language font yet (the default font must contain the glyphs, e.g. CJK needs a
+`font_path` that has them), and plural rules cover the common languages only (`core.plural_category`).
+
 ## Time, timers and tweens
 
 `scene.time_scale` changes the game speed (0.5 = slow motion) and `scene.paused = true` stops components, timers,

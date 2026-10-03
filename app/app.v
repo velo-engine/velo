@@ -25,6 +25,8 @@ pub:
 	background    core.Color = core.rgba(30, 30, 40, 255)
 	hot_reload    bool       = true // always off on Android/iOS
 	font_path     string // .ttf used for text; empty = the platform default
+	// Language used when neither the saved choice nor the system language has a table in `locales/` (see core.Locale).
+	language string = 'en'
 	// Names the save data folder (see open_store); '' = made from the title. Keep it once the game ships.
 	app_id string
 	// Where to save the player's data instead of the platform's usual place (desktop and phones).
@@ -52,6 +54,8 @@ pub mut:
 	safe_insets core.Insets
 	// The player's saved data, given to every scene (scene.store); saved on quit and when sent to the background.
 	store &core.Store
+	// The game's texts; filled from the `locales/*.txt` assets (see core.Locale).
+	locale &core.Locale = &core.Locale{}
 mut:
 	keyboard_shown bool
 	fade           SceneFade
@@ -89,8 +93,45 @@ pub fn new(config Config) !&App {
 		store:    open_store(cfg)
 	}
 	a.update_fit()
+	a.setup_locale()
 	println('[velo] ${db.len()} assets in ${db.root}')
 	return a
+}
+
+// setup_locale loads every `locales/<lang>.txt` and picks the startup language.
+fn (mut a App) setup_locale() {
+	a.locale.store = a.store
+	for e in a.db.all() {
+		if e.kind == .text {
+			a.load_locale_asset(e.id)
+		}
+	}
+	a.locale.choose_startup_language(a.store.get_string('language', ''), a.cfg.language)
+	if a.locale.language() != '' {
+		println('[velo] language ${a.locale.language()} (${a.locale.languages().len} available)')
+	}
+}
+
+// locale_code: 'locales/vi.txt' -> 'vi'; '' for any other asset.
+fn locale_code(path string) string {
+	if !path.starts_with('locales/') || !path.ends_with('.txt') {
+		return ''
+	}
+	return path.all_after('locales/').all_before_last('.txt')
+}
+
+fn (mut a App) load_locale_asset(id string) {
+	path := a.db.path_of(id) or { return }
+	code := locale_code(path)
+	if code == '' {
+		return
+	}
+	t := a.db.load[assets.TextAsset](id) or {
+		eprintln('[velo] ${path}: ${err}')
+		return
+	}
+	a.locale.add_table(code, t.text)
+	a.db.release(id)
 }
 
 // register registers a game component so it can be used in .scene files.
@@ -103,6 +144,7 @@ pub fn (mut a App) load_scene(key string) ! {
 	mut next := a.loader.load_scene(key)!
 	next.input = a.input
 	next.store = a.store
+	next.locale = a.locale
 	next.key = a.db.resolve(key) or { key }
 	a.apply_fit(mut next)
 	if a.scene != unsafe { nil } {
@@ -317,6 +359,9 @@ fn (mut a App) draw_fade() {
 // on_asset_event: the renderer frees GPU images, the mixer forgets decoded sounds.
 fn (mut a App) on_asset_event(ev assets.AssetEvent) {
 	a.renderer.on_asset_event(ev)
+	if ev.kind in [.modified, .added] {
+		a.load_locale_asset(ev.id)
+	}
 	if ev.kind in [.unloaded, .removed] {
 		mut m := audio.mixer()
 		m.forget(ev.id)

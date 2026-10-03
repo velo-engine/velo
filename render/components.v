@@ -176,10 +176,13 @@ pub fn (mut a SpriteAnimator) update(dt f32) {
 pub struct Label {
 	core.Component
 pub mut:
-	text   string
-	size   int        = 20
-	color  core.Color = core.white
-	align  string     = 'left' @[choices: 'left|center|right']
+	text string
+	// A key of the game's texts (`locales/<language>.txt`): the label shows its translation instead of `text`
+	// and follows language changes. `text` stays as the placeholder when the key is unknown (and in the editor).
+	text_key string
+	size     int        = 20
+	color    core.Color = core.white
+	align    string     = 'left' @[choices: 'left|center|right']
 	valign string     = 'top' @[choices: 'top|middle|bottom']
 	font   assets.AssetRef[assets.Font] // .ttf/.otf; unset = the app's font
 	// With a UITransform: `wrap` breaks lines at its width; `shrink` lowers the size until the text fits it.
@@ -195,10 +198,33 @@ pub mut:
 	font_data     &assets.Font = unsafe { nil } @[hide]
 	layout_key    string       @[hide] // what `layout` was computed for
 	layout        TextBlock    @[hide]
+	shown_version int          = -1 @[hide] // Locale.version `text` was translated at
+	shown_key     string       @[hide]
 }
 
 pub fn (mut l Label) on_load() {
 	l.font_data = load_font(l.node, l.font)
+	l.apply_translation()
+}
+
+pub fn (mut l Label) update(dt f32) {
+	l.apply_translation()
+}
+
+// apply_translation sets `text` from `text_key` when the key or the language changed.
+fn (mut l Label) apply_translation() {
+	if l.text_key == '' || l.node == unsafe { nil } || l.node.scene == unsafe { nil } {
+		return
+	}
+	mut loc := l.node.scene.locale
+	if l.shown_version == loc.version && l.shown_key == l.text_key {
+		return
+	}
+	l.shown_version = loc.version
+	l.shown_key = l.text_key
+	if s := loc.find(l.text_key) {
+		l.text = s
+	}
 }
 
 pub fn (mut l Label) on_destroy() {

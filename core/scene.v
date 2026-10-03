@@ -42,6 +42,8 @@ pub mut:
 	key string
 	// The player's saved data, shared by every scene (App opens it and saves it; see Store).
 	store &Store = &Store{}
+	// The game's texts in the available languages, shared by every scene (App fills it from `locales/*.txt`).
+	locale &Locale = &Locale{}
 	// Set by change_scene: App switches after this frame.
 	next_scene  string
 	next_change SceneChange
