@@ -13,6 +13,7 @@ struct Project {
 	build       int    // build number: Android versionCode / iOS CFBundleVersion, must increase for store uploads
 	orientation string // landscape | portrait | any (iOS; Android follows the device)
 	icon        string // absolute path to a square PNG (1024x1024 recommended), or ''
+	exclude     []string // [build] exclude: extra asset patterns (glob, on the path or the file name) not to ship
 	// [android]
 	keystore       string
 	keystore_alias string
@@ -60,6 +61,7 @@ fn load_project(dir string) Project {
 		build:          doc.value('app.build').default_to(1).int()
 		orientation:    str('app.orientation', 'landscape')
 		icon:           path('app.icon')
+		exclude:        doc.value('build.exclude').default_to(toml.Any([]toml.Any{})).array().map(it.string())
 		keystore:       path('android.keystore')
 		keystore_alias: str('android.keystore_alias', '')
 		min_sdk:        doc.value('android.min_sdk').default_to(0).int()

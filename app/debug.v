@@ -138,7 +138,7 @@ fn (mut a App) draw_debug_overlay() {
 		a.overlay_text(int(w.x) - 10, 10, a.stats_text(), gg.Color{255, 255, 0, 255}, .right)
 	}
 	if a.profiler.enabled {
-		a.draw_profiler(w)
+		a.draw_profiler()
 	}
 	if a.console.open {
 		a.draw_console(w)
@@ -150,7 +150,7 @@ fn (mut a App) overlay_text(x int, y int, text string, color gg.Color, align gg.
 }
 
 // draw_profiler: the frame time graph (the line is 16.7 ms = 60 FPS) and the slowest scopes.
-fn (mut a App) draw_profiler(w core.Vec2) {
+fn (mut a App) draw_profiler() {
 	hist := a.profiler.frame_history()
 	gw := 240
 	gh := 60

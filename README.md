@@ -764,6 +764,32 @@ if '--editor' in os.args {
   keeping unsaved overrides.
 - All editing logic lives in `scenedoc.Document` (no graphics dependency) and is unit tested; `editor/` is just the UI.
 
+## Shipping a desktop game
+
+```bash
+velo build                      # build/desktop/<Name>.app on macOS, build/desktop/<name>/ on Linux and Windows
+velo build --zip                # also <name>-<version>-<os>.zip, ready to upload (itch.io, Steam depot, ...)
+velo build --debug -o out/      # skip -prod; -o picks the output directory
+```
+
+`velo build` checks the assets (and creates missing `.meta` files, commit them), compiles with `-prod`, and lays the
+game out for shipping: on macOS an `.app` with `Info.plist` (name, ID, version and build number from `velo.toml`),
+an `AppIcon.icns` made from `app.icon`, and the assets in `Contents/Resources/assets`; elsewhere a folder with the
+executable and `assets/` next to it. A game that uses `velo.physics` is built with Box2D compiled in (`-d box2d_source`),
+so players need no Box2D installed. At run time a game first looks for assets next to the executable (or in the bundle's
+`Resources`), then at the configured path, so a shipped game never reads the developer's source folder.
+
+Source art is not shipped: `*.psd *.ase *.aseprite *.blend *.xcf *.kra *.pxo`, `.DS_Store` and hidden files. Add more
+in `velo.toml` (glob patterns, matched against the path inside `assets/` and the file name):
+
+```toml
+[build]
+exclude = ["sounds/drafts/*", "*.wip.png"]
+```
+
+Not done yet: a single compressed pack file (assets ship as plain files), code signing and notarization on macOS,
+a Windows `.exe` icon and installers, and dropping assets no scene uses.
+
 ## Android and iOS
 
 `velo build <target>` packages the game, `velo run <target>` also installs and starts it (and shows its log):

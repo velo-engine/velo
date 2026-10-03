@@ -15,7 +15,7 @@ Usage:
   velo home                              print the engine directory
 
 Targets:
-  desktop    (default) this computer
+  desktop    (default) this computer; `build` makes <Name>.app (macOS) or a folder with the executable + assets
   android    APK/AAB, via vab (Android SDK + NDK + Java)
   ios        iPhone/iPad device, via Xcode (needs a signing identity + provisioning profile)
   ios-sim    iOS Simulator, via Xcode
@@ -24,8 +24,10 @@ Targets:
              on the TypeScript runtime of the engine; needs Node.js. `velo run webgl` serves it on localhost:8080
 
 Options:
-  --release          optimized build (desktop builds are always optimized)
-  -o <path>          output file (build only; web: output directory)
+  --release          optimized build (desktop builds are always optimized unless --debug)
+  -o <path>          output directory (build only; default build/<target>/)
+  --debug            desktop: skip -prod (faster to compile, slower to run)
+  --zip              desktop: also write <name>-<version>-<os>.zip, ready to upload
   --device <id>      android/ios: device to deploy to (run only; default: first found)
   --aab              android: build an Android App Bundle for Google Play instead of an APK
   -v, --verbose      print the commands being run
@@ -178,16 +180,6 @@ fn parse_mobile_options(cmd string, args []string) MobileOptions {
 		i++
 	}
 	return o
-}
-
-fn build_desktop(home string, dir string, rest []string) int {
-	mut flags := ['-prod']
-	if '-o' !in rest {
-		flags << ['-o', os.join_path(dir, os.file_name(os.real_path(dir)))]
-	}
-	flags << rest
-	flags << dir
-	return v_cmd(home, flags, [])
 }
 
 // v_path is the module search path that makes `import velo.*` resolve to <home>/core, <home>/app, ... without

@@ -7,7 +7,7 @@ import sokol.sapp
 import sokol as _
 
 // Where the game's assets live at runtime:
-//   desktop  the configured assets directory (the project's assets/ folder)
+//   desktop  the configured assets directory (the project's assets/ folder), or the one shipped next to the executable
 //   iOS      <App>.app/assets, copied into the bundle by `velo build ios`
 //   Android  the APK's assets, copied into the app's internal storage by extract_apk_assets
 //            (the AssetDatabase needs real files: it scans directories and reads .meta files)
@@ -44,8 +44,24 @@ fn runtime_assets_dir(configured string) !string {
 	} $else $if ios {
 		return os.join_path(ios_bundle_dir(), 'assets')
 	} $else {
-		return configured
+		return desktop_assets_dir(configured)
 	}
+}
+
+// desktop_assets_dir: a shipped game keeps its assets next to the executable (Windows/Linux folder) or in the
+// bundle's Resources (macOS .app), whatever the current directory is — and wins over the configured path, which
+// project templates compute from the source file's location at compile time (it only exists on the developer's
+// machine). Run from the project (v run, velo run) nothing is shipped next to the executable, so the configured
+// path is used.
+fn desktop_assets_dir(configured string) string {
+	name := os.file_name(configured)
+	exe_dir := os.dir(os.executable())
+	for c in [os.join_path(exe_dir, name), os.join_path(exe_dir, '..', 'Resources', name)] {
+		if os.is_dir(c) {
+			return c
+		}
+	}
+	return configured
 }
 
 // extract_apk_assets copies the APK assets listed in velo_assets.txt to <internal storage>/assets.
