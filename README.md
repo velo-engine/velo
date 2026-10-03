@@ -146,6 +146,31 @@ Limits: building the scene itself is synchronous (a big scene still holds one fr
 save file is not encrypted or signed; a killed process (not a normal quit) loses changes since the last save on
 desktop — call `store.save()` at checkpoints.
 
+## Input actions and gamepad
+
+Ask for what the player means, not for a key. Bindings are text (`key:space`, `pad:a`, `pad:a@1` for the second
+gamepad, `axis:left_x-` / `axis:left_x+` for a stick direction) and can be changed while the game runs:
+
+```v
+mut in_ := c.input()
+in_.bind('jump', 'key:space', 'pad:a')
+in_.bind('left', 'key:a', 'key:left', 'axis:left_x-', 'pad:dpad_left')
+in_.bind('right', 'key:d', 'key:right', 'axis:left_x+', 'pad:dpad_right')
+
+if in_.action_pressed('jump') { ... }              // also action_down, action_released
+dx := in_.action_axis('left', 'right')             // -1..1, analog on a stick (dead zone 0.2)
+move := in_.action_vec2('left', 'right', 'up', 'down')   // length at most 1
+```
+
+Rebinding screen: wait for `in_.any_binding_input()` (the key, button or stick the player just used), then
+`in_.clear_binding('jump')` and `in_.add_binding('jump', b)`. `in_.actions_to_text()` / `in_.load_actions(text)` write and
+read the bindings as `jump = key:space, pad:a` lines (for example in a file or `scene.store`); a bad line is
+skipped and reported, the rest still applies.
+
+Gamepad state is `input.gamepad_is_down(pad, .a)`, `gamepad_axis(pad, .left_x)`, up to 4 pads. The state is
+filled through `gamepad_connect / gamepad_button / gamepad_axis_set`; **no platform backend calls them yet**
+(sokol has no gamepad API), so for now gamepads only work if the game feeds them itself.
+
 ## Time, timers and tweens
 
 `scene.time_scale` changes the game speed (0.5 = slow motion) and `scene.paused = true` stops components, timers,

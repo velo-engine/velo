@@ -131,7 +131,10 @@ mut:
 	// seen for one frame (synthetic clicks and very quick taps would otherwise be lost).
 	release_pending bool
 	ends_pending    []PendingTouchEnd
+	pads            [4]GamepadState // see action.v
 pub mut:
+	// action name -> keys / buttons / sticks (see bind, action_pressed)
+	actions ActionMap
 	mouse      Vec2
 	mouse_down bool
 	// Per-frame mouse state (reset by end_frame), set through mouse_press / mouse_release / mouse_scroll.
@@ -280,6 +283,7 @@ pub fn (i &Input) pointer(id u64) ?Touch {
 }
 
 pub fn (mut i Input) end_frame() {
+	i.end_actions_frame() // before the key flags are cleared: it records the action state of this frame
 	i.pressed.clear()
 	i.released.clear()
 	i.repeated.clear()
