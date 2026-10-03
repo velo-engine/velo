@@ -144,3 +144,20 @@ fn test_choices_checked_on_load_and_listed() {
 		}
 	}
 }
+
+fn test_draw_order_sorted_and_unsorted_paths() {
+	// z_index out of tree order forces the sort; equal z keeps tree order (the already-ordered path skips it)
+	mut root := core.Node.new('R')
+	mut a := core.Node.new('A')
+	mut b := core.Node.new('B')
+	mut c := core.Node.new('C')
+	root.add_child(mut a)
+	root.add_child(mut b)
+	root.add_child(mut c)
+	assert render.draw_order(root).map(it.name) == ['R', 'A', 'B', 'C']
+	a.z_index = 5
+	assert render.draw_order(root).map(it.name) == ['R', 'B', 'C', 'A']
+	a.z_index = 0
+	c.z_index = -1
+	assert render.draw_order(root).map(it.name) == ['C', 'R', 'A', 'B']
+}

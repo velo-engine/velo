@@ -222,7 +222,7 @@ game.console.register('give', 'give <n>: add coins', fn [mut game] (args []strin
 })
 ```
 
-The profiler times `update`, `draw`, `audio` and `update:<Component type>` (all instances of a type added up).
+The profiler times `update`, `draw` (the whole frame drawing; `render` is the part that walks the scene tree), `audio` and `update:<Component type>` (all instances of a type added up).
 Time your own code with `c.scene().profiler.begin('ai')` / `.end('ai')`. The log has levels:
 `core.log_info('...')`, `log_warn`, `log_error`, `log_debug`; the console shows the last 200 lines. The engine's own
 `[velo]` messages still go straight to the terminal and are not in the console yet.

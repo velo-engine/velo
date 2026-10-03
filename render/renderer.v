@@ -109,7 +109,17 @@ fn collect_draw_items(root &core.Node, view core.Affine2, camera core.Affine2, c
 		view_cam: view.mul(camera)
 	}
 	collect_node(mut st, root, core.Affine2.identity(), false, 0, clip)
-	st.items.sort_with_compare(compare_draw_items)
+	// most scenes are already in draw order (no z_index, no Canvas in the middle): skip the sort then
+	mut ordered := true
+	for i in 1 .. st.items.len {
+		if compare_draw_items(&st.items[i - 1], &st.items[i]) > 0 {
+			ordered = false
+			break
+		}
+	}
+	if !ordered {
+		st.items.sort_with_compare(compare_draw_items)
+	}
 	return st.items
 }
 

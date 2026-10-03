@@ -246,7 +246,9 @@ fn on_frame(mut a App) {
 	a.ctx.begin()
 	a.renderer.base_clip =
 		render.Rect{a.fit.area_pos.x, a.fit.area_pos.y, a.fit.area_size.x, a.fit.area_size.y}
+	a.profiler.begin('render')
 	a.renderer.draw_scene(a.scene, a.fit.to_window())
+	a.profiler.end('render')
 	a.draw_fade()
 	a.draw_bars()
 	a.draw_debug_overlay()
