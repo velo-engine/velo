@@ -11,6 +11,7 @@ pub fn register_builtins(mut r serialize.Registry) {
 	r.register[BoxCollider]()
 	r.register[CircleCollider]()
 	r.register[CapsuleCollider]()
+	r.register[TileMapCollider]()
 }
 
 // Contact — one collider touching another.

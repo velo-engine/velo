@@ -583,8 +583,52 @@ Clicking outside the map still selects other nodes. Esc or W/E/R/Y leave the til
 the Inspector resizes the map and keeps every tile in its cell. On a prefab instance, painted tiles are an override of
 the whole `tiles` list. The Inspector shows a `[]int` field such as `tiles` as a value count, not a text field.
 
-Limits: one layer per TileMap (stack nodes for layers), no per-tile flip/rotation, autotiling, animated tiles or
-tile collisions yet (use colliders on child nodes); `tiles` is saved on one line.
+### Auto-tiling, animated tiles and collisions
+
+A `.tilerules` text asset next to the tileset describes terrains (tiles that pick their frame from their neighbors)
+and animated tiles:
+
+```
+# forest.tilerules
+animate 5 frames=5,6,7,6 fps=6                           # tile 5 plays this frame sequence
+terrain 1 edges 12 13 14 15 8 9 10 11 4 5 6 7 0 1 2 3     # 16 frames, indexed by the neighbor mask
+terrain 2 blob  0 1 2 ... 46  join=1  border=empty       # 47 frames; join: other terrains that connect
+```
+
+```
+TileMap { tileset = @asset("tiles")  rules = @asset("forest.tilerules")  columns = 20  rows = 12
+          terrain = [0, 0, 1, 1, 1, ...] }               # per cell: 0 = none, 1.. = a terrain of the rules
+```
+
+- `edges` looks at the 4 neighbors: the frame is `frames[mask]` with mask = N 1 + E 2 + S 4 + W 8 of the neighbors that
+  belong to the terrain (or one it `join`s). `blob` also looks at the corners (a corner counts only when both of its
+  edges do), which leaves 47 distinct shapes, listed by ascending canonical mask (`render.blob_masks()`).
+- `border=same` (default) treats cells outside the map as terrain so ground runs off the edge; `border=empty` makes
+  the map edge an edge.
+- `tm.set_terrain(col, row, id)` paints a terrain (0 erases it): the cell and its 8 neighbors pick their frames again.
+  `tiles` stays what is drawn: cells with a terrain get their frame from the rules (when the map loads, when the rules
+  file changes, and on `set_terrain`); cells without one keep their hand-painted tile.
+- `animate`: every cell showing that tile cycles through the frames (game time, so pause stops it).
+- Editing the `.tilerules` file while the game runs reloads it; a mistake in it is reported once (with the line) and the
+  old rules stay.
+
+Collisions: add `TileMapCollider` next to the TileMap (needs `velo.physics` and a `PhysicsWorld`):
+
+```
+node Walls {
+  TileMap { tileset = @asset("tiles")  columns = 20  rows = 12  tiles = [...] }
+  TileMapCollider { solid_tiles = [1, 2, 3] }            # tile frames that block; empty = every non-empty tile
+}
+```
+
+It makes static box colliders for the solid tiles, merged into as few rectangles as it can (child nodes `_solid0`,
+`_solid1`, ...), and builds them again whenever the cells change (`set`, `set_terrain`, flood fill, painting).
+`tm.solid_boxes(solid)` gives the merged cell rectangles for your own use (path finding, triggers).
+
+Limits: one layer per TileMap (stack nodes for layers), no per-tile flip/rotation; terrains and collisions are for the
+`orthogonal` layout only; the editor does not paint terrains yet (set `terrain` in the `.scene` or from code; painting
+tiles by hand over a terrain cell is overwritten the next time the rules apply); the WebGL runtime knows none of this
+yet; `tiles` and `terrain` are saved on one line each.
 
 ## Audio
 

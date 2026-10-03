@@ -17,7 +17,7 @@ pub fn kind_from_ext(path string) AssetKind {
 		'png', 'jpg', 'jpeg', 'bmp', 'tga' { .texture }
 		'wav', 'ogg', 'mp3' { .audio }
 		'scene', 'prefab' { .scene }
-		'txt', 'json', 'md', 'csv', 'anim' { .text }
+		'txt', 'json', 'md', 'csv', 'anim', 'tilerules' { .text }
 		'ttf', 'otf' { .font }
 		'glsl', 'frag' { .shader }
 		else { .unknown }

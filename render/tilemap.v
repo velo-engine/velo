@@ -35,8 +35,17 @@ pub mut:
 	stagger_odd bool       = true // staggered and hex layouts: shift the odd rows / columns (false: the even ones)
 	hex_side    f32   // hex layouts: edge length along the stagger axis, 0 = half the tile
 	tiles       []int // columns * rows frame indices, row by row; -1 = empty (missing entries are empty too)
-	tex         &assets.Texture = unsafe { nil } @[hide]
-	loaded      string          @[hide]
+	// Auto-tiling and animated tiles (see tilemap_terrain.v): a `.tilerules` asset, and per cell a terrain id of it
+	// (0 = none) whose frame the rules pick from the neighbors.
+	rules        assets.AssetRef[assets.TextAsset]
+	terrain      []int
+	tex          &assets.Texture = unsafe { nil } @[hide]
+	loaded       string          @[hide]
+	rule_set     &TileRules = unsafe { nil }      @[hide]
+	rules_hash   u64             @[hide]
+	rules_failed bool            @[hide]
+	// Counts changes of the cells; a TileMapCollider rebuilds its boxes when it differs from what it built.
+	revision int @[hide]
 }
 
 pub const no_tile = -1
@@ -63,6 +72,7 @@ pub fn (tm &TileMap) tile_layout() TileLayout {
 
 pub fn (mut tm TileMap) on_load() {
 	tm.acquire()
+	tm.load_rules()
 }
 
 pub fn (mut tm TileMap) on_destroy() {
@@ -100,6 +110,7 @@ pub fn (mut tm TileMap) set(col int, row int, tile int) bool {
 	}
 	tm.normalize()
 	tm.tiles[row * tm.columns + col] = t
+	tm.revision++
 	return true
 }
 
@@ -176,6 +187,8 @@ pub fn (tm &TileMap) neighbors(col int, row int) [][]int {
 // clear empties every cell.
 pub fn (mut tm TileMap) clear() {
 	tm.tiles = []int{len: tm.columns * tm.rows, init: no_tile}
+	tm.terrain = []int{len: tm.columns * tm.rows}
+	tm.revision++
 }
 
 // resize changes the map size, keeping each tile at its (col, row); cells outside the new size are dropped.
@@ -183,14 +196,19 @@ pub fn (mut tm TileMap) resize(columns int, rows int) {
 	cols := math.max(columns, 1)
 	rs := math.max(rows, 1)
 	mut out := []int{len: cols * rs, init: no_tile}
+	mut terr := []int{len: cols * rs}
 	for r in 0 .. math.min(rs, tm.rows) {
 		for c in 0 .. math.min(cols, tm.columns) {
 			out[r * cols + c] = tm.get(c, r)
+			terr[r * cols + c] = tm.terrain_at(c, r)
 		}
 	}
 	tm.columns = cols
 	tm.rows = rs
 	tm.tiles = out
+	tm.terrain = terr
+	tm.revision++
+	tm.refresh_terrain()
 }
 
 // count: the number of non-empty cells.
@@ -538,8 +556,12 @@ fn (mut r Renderer) draw_tilemap(tm &TileMap, m core.Affine2) {
 	sgl.begin_quads()
 	for i in cells {
 		c, row := i % tm.columns, i / tm.columns
-		t := tm.get(c, row)
-		if t < 0 || t >= frames {
+		t0 := tm.get(c, row)
+		if t0 < 0 {
+			continue
+		}
+		t := tm.display_tile(t0)
+		if t >= frames {
 			continue
 		}
 		fx, fy, fw, fh := tex.frame_rect(t)
