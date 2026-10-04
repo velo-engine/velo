@@ -1191,7 +1191,8 @@ on the engine's TypeScript runtime, drawing with WebGL. Downloads are small (the
 velo build webgl                 # build/webgl/index.html + game.js + assets/ (upload the folder as is)
 velo build webgl --release       # minified, no source map
 velo run webgl                   # build, serve on http://localhost:8080, open the browser;
-                                 # edit a .v file or an asset and it rebuilds, the page reloads itself
+                                 # dev mode: edit a .v file (full rebuild) or an asset (only re-synced, fast) and the
+                                 # page reloads itself; a build error is shown on the page until you fix it
 ```
 
 Needs [Node.js](https://nodejs.org) (`brew install node`): the first build installs

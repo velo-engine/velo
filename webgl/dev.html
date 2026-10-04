@@ -1,0 +1,17 @@
+<script>
+// `velo run webgl`: reload when the game is rebuilt, show the build error on top of the last good build
+(() => {
+	let box = null
+	const show = (text) => {
+		if (!box) {
+			box = document.createElement('pre')
+			box.style.cssText = 'position:fixed;inset:0;margin:0;padding:16px;overflow:auto;z-index:9999;background:rgba(20,0,0,.92);color:#ffb4b4;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap'
+			document.body.appendChild(box)
+		}
+		box.textContent = 'velo: build failed — fix the code and save again\n\n' + text
+	}
+	const es = new EventSource('/__velo_events')
+	es.onmessage = (e) => { if (e.data === 'reload') location.reload() }
+	es.addEventListener('build-error', (e) => show(JSON.parse(e.data)))
+})()
+</script>

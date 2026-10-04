@@ -3,6 +3,7 @@
 import { createServer } from 'node:http'
 import { watchFile } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { extname, join, normalize, resolve } from 'node:path'
 
 const root = resolve(process.argv[2] ?? '.')
@@ -28,10 +29,23 @@ const types = {
 	'.prefab': 'text/plain; charset=utf-8',
 }
 
-// pages built by `velo run webgl` listen here and reload when velo writes a new .velo-version
+// pages built by `velo run webgl` listen here: they reload when velo writes a new .velo-version, and show the
+// text velo puts in .velo-error when a rebuild fails (the file is empty while the build is fine)
 const clients = new Set()
+const errorEvent = () => {
+	try {
+		const text = readFileSync(join(root, '.velo-error'), 'utf8').trim()
+		return text ? `event: build-error\ndata: ${JSON.stringify(text)}\n\n` : ''
+	} catch {
+		return ''
+	}
+}
 watchFile(join(root, '.velo-version'), { interval: 300 }, () => {
 	for (const res of clients) res.write('data: reload\n\n')
+})
+watchFile(join(root, '.velo-error'), { interval: 300 }, () => {
+	const ev = errorEvent()
+	if (ev) for (const res of clients) res.write(ev)
 })
 
 createServer(async (req, res) => {
@@ -39,7 +53,7 @@ createServer(async (req, res) => {
 		const url = new URL(req.url ?? '/', 'http://localhost')
 		if (url.pathname === '/__velo_events') {
 			res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
-			res.write(': connected\n\n')
+			res.write(': connected\n\n' + errorEvent())
 			clients.add(res)
 			req.on('close', () => clients.delete(res))
 			return

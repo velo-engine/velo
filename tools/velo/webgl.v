@@ -7,13 +7,16 @@ import hash.fnv1a
 // WebGL builds: the game's V code is translated to JavaScript and runs on the engine's TypeScript runtime
 // (webgl/runtime), drawing with WebGL — no Emscripten, small downloads, instant start.
 //   velo build webgl [dir] [--release] [-o <dir>]   writes <out>/index.html + game.js + assets/
-//   velo run webgl [dir]                            builds, then serves it on http://localhost:8080
+//   velo run webgl [dir]                            builds, serves it on http://localhost:8080 and watches the sources:
+//                                                   a changed .v file rebuilds everything, a changed asset only re-syncs
+//                                                   the assets; the open page reloads itself, or shows the build error
 //
 // Steps: tools/v2js (built once, cached in <engine>/build/tools) type-checks the game with the V compiler
 // and writes one .js file per V module; esbuild bundles them with the runtime into game.js; the assets are
 // copied next to it with assets.json, the list the runtime downloads before the game starts.
 
 const webgl_shell = $embed_file('../../webgl/shell.html').to_string()
+const webgl_dev_script = $embed_file('../../webgl/dev.html').to_string() // live reload + build error overlay
 
 fn find_node_tool(name string) string {
 	return os.find_abs_path_of_executable(name) or {
@@ -67,7 +70,7 @@ fn build_webgl(home string, p Project, o MobileOptions) {
 		v2js:    ensure_v2js(home)
 		out_dir: if o.output != '' { o.output } else { p.build_dir('webgl') }
 	}
-	if !b.build() {
+	if b.build() != '' {
 		fail('WebGL build failed')
 	}
 	if o.run {
@@ -84,13 +87,50 @@ struct WebglBuild {
 	out_dir string
 }
 
-// build translates, bundles and packages the game; false (with the errors printed) when a step fails.
-fn (b WebglBuild) build() bool {
+// run_step runs one build step, shows its output, and returns '' when it succeeded or the output of the failure.
+fn run_step(exe string, args []string) string {
+	if verbose() {
+		println('> ${shell_join(exe, args)}')
+	}
+	res := os.execute(shell_join(exe, args))
+	if res.output != '' {
+		print(res.output)
+	}
+	if res.exit_code == 0 {
+		return ''
+	}
+	return if res.output.trim_space() != '' {
+		errors_only(res.output)
+	} else {
+		'${os.file_name(exe)} failed (exit code ${res.exit_code})'
+	}
+}
+
+// errors_only drops the notice and warning blocks of a V compiler report (the page only needs the errors).
+fn errors_only(report string) string {
+	mut keep := false
+	mut found := false
+	mut out := []string{}
+	for line in report.split_into_lines() {
+		if line.contains(': error:') {
+			keep, found = true, true
+		} else if line.contains(': warning:') || line.contains(': notice:') {
+			keep = false
+		}
+		if keep {
+			out << line
+		}
+	}
+	return if found { out.join('\n') } else { report }
+}
+
+// build checks the assets, translates, bundles and packages the game; '' when it worked, else what went wrong
+// (already printed).
+fn (b WebglBuild) build() string {
 	p := b.p
-	step('checking assets')
-	if assetdb(b.home, p.assets_dir(), ['check']) != 0 {
-		eprintln('velo: fix the asset errors above (see `velo assets check`)')
-		return false
+	problem := b.check_assets()
+	if problem != '' {
+		return problem
 	}
 	gen_dir := os.join_path(p.dir, 'build', '.webgl-gen') // the translated modules, before bundling
 	os.rmdir_all(gen_dir) or {}
@@ -98,8 +138,9 @@ fn (b WebglBuild) build() bool {
 
 	step('translating ${p.name} to JavaScript')
 	os.setenv('VELO_HOME', b.home, true)
-	if run(b.v2js, [p.dir, '-o', gen_dir]) != 0 {
-		return false
+	mut out := run_step(b.v2js, [p.dir, '-o', gen_dir])
+	if out != '' {
+		return out
 	}
 
 	step('bundling${if b.o.release { ' (release)' } else { '' }}')
@@ -113,35 +154,69 @@ fn (b WebglBuild) build() bool {
 	} else {
 		args << ['--sourcemap']
 	}
-	if run(b.esbuild, args) != 0 {
-		return false
+	out = run_step(b.esbuild, args)
+	if out != '' {
+		return out
 	}
 
-	// assets + the list the runtime downloads
+	n := b.sync_assets()
+	// `velo run webgl` pages reload themselves when the game is rebuilt (see serve.mjs)
+	dev := if b.o.run { webgl_dev_script } else { '' }
+	os.write_file(os.join_path(b.out_dir, 'index.html'), webgl_shell.replace('{{TITLE}}',
+		html_escape(p.name)).replace('{{DEV}}', dev)) or { fail(err.msg()) }
+	step('built ${os.join_path(b.out_dir, 'index.html')} (${n} assets)')
+	return ''
+}
+
+fn (b WebglBuild) check_assets() string {
+	step('checking assets')
+	if assetdb(b.home, b.p.assets_dir(), ['check']) != 0 {
+		eprintln('velo: fix the asset errors above (see `velo assets check`)')
+		return 'the assets have errors (see `velo assets check`)'
+	}
+	return ''
+}
+
+// build_assets is the fast path of the watch loop when only assets changed: the code is not translated again.
+fn (b WebglBuild) build_assets() string {
+	problem := b.check_assets()
+	if problem != '' {
+		return problem
+	}
+	n := b.sync_assets()
+	step('synced ${n} assets')
+	return ''
+}
+
+// sync_assets copies the packaged assets next to the game, writes assets.json (the list the runtime downloads)
+// and drops the files that are no longer assets. It returns the number of assets.
+fn (b WebglBuild) sync_assets() int {
 	assets_out := os.join_path(b.out_dir, 'assets')
-	os.rmdir_all(assets_out) or {}
 	mut entries := []string{}
-	for rel in packaged_assets(p) {
+	mut keep := {
+		'assets.json': true
+	}
+	for rel in packaged_assets(b.p) {
 		if rel.ends_with('.meta') {
 			continue
 		}
-		src := os.join_path(p.assets_dir(), rel)
+		src := os.join_path(b.p.assets_dir(), rel)
 		dst := os.join_path(assets_out, rel)
 		os.mkdir_all(os.dir(dst)) or { fail(err.msg()) }
 		os.cp(src, dst) or { fail(err.msg()) }
+		keep[rel] = true
 		entries << manifest_entry(src, rel)
+	}
+	os.mkdir_all(assets_out) or { fail(err.msg()) }
+	for f in os.walk_ext(assets_out, '') {
+		if f.all_after(assets_out + os.path_separator) !in keep {
+			os.rm(f) or {}
+		}
 	}
 	os.write_file(os.join_path(assets_out, 'assets.json'), '{"entries": [\n' + entries.join(',\n') +
 		'\n]}\n') or { fail(err.msg()) }
-	// `velo run webgl` pages reload themselves when the game is rebuilt (see serve.mjs)
-	dev := if b.o.run { webgl_live_reload } else { '' }
-	os.write_file(os.join_path(b.out_dir, 'index.html'), webgl_shell.replace('{{TITLE}}',
-		html_escape(p.name)).replace('{{DEV}}', dev)) or { fail(err.msg()) }
-	step('built ${os.join_path(b.out_dir, 'index.html')} (${entries.len} assets)')
-	return true
+	return entries.len
 }
-
-const webgl_live_reload = "<script>new EventSource('/__velo_events').onmessage = (e) => { if (e.data === 'reload') location.reload() }</script>"
 
 // serve_and_watch serves the build on localhost:8080 (module scripts and fetch() do not work from file://),
 // opens it, and rebuilds when a .v file or an asset changes; the page then reloads itself.
@@ -165,37 +240,54 @@ fn (b WebglBuild) serve_and_watch() {
 			os.execute('${opener} ${url}')
 		}()
 	}
-	mut last := b.sources_stamp()
+	status := os.join_path(b.out_dir, '.velo-error')
+	os.write_file(status, '') or {}
+	mut last_code, mut last_assets := b.sources_stamps()
 	for server.is_alive() {
 		time.sleep(400 * time.millisecond)
-		stamp := b.sources_stamp()
-		if stamp == last {
+		mut code, mut assets := b.sources_stamps()
+		if code == last_code && assets == last_assets {
 			continue
 		}
-		last = stamp
-		step('change detected, rebuilding')
-		if b.build() {
+		time.sleep(150 * time.millisecond) // editors often write several files for one save
+		code, assets = b.sources_stamps()
+		code_changed := code != last_code
+		last_code, last_assets = code, assets
+		step('${if code_changed { '.v file' } else { 'asset' }} change detected, ${if code_changed {
+			'rebuilding'
+		} else { 'syncing assets' }}')
+		problem := if code_changed { b.build() } else { b.build_assets() }
+		if problem == '' {
+			os.write_file(status, '') or {}
 			os.write_file(os.join_path(b.out_dir, '.velo-version'), time.now().unix_milli().str()) or {}
+		} else {
+			// the open page shows the error on top of the last good build
+			os.write_file(status, problem) or {}
 		}
 	}
 	server.wait()
 	exit(server.code)
 }
 
-// sources_stamp changes whenever a V source of the game or an asset is added, removed or modified.
-fn (b WebglBuild) sources_stamp() string {
-	mut parts := []string{}
+// sources_stamps change whenever a V source of the game (first) or an asset (second) is added, removed or modified.
+fn (b WebglBuild) sources_stamps() (string, string) {
+	mut code := []string{}
+	mut assets := []string{}
 	for f in os.walk_ext(b.p.dir, '') {
 		rel := f.all_after(b.p.dir)
 		if rel.contains('/build/') || rel.contains('/.') {
 			continue
 		}
-		if f.ends_with('.v') || rel.starts_with('/assets/') {
-			parts << '${rel}:${os.file_last_mod_unix(f)}:${os.file_size(f)}'
+		stamp := '${rel}:${os.file_last_mod_unix(f)}:${os.file_size(f)}'
+		if rel.starts_with('/assets/') {
+			assets << stamp
+		} else if f.ends_with('.v') {
+			code << stamp
 		}
 	}
-	parts.sort()
-	return parts.join('|')
+	code.sort()
+	assets.sort()
+	return code.join('|'), assets.join('|')
 }
 
 // manifest_entry describes one asset for the runtime: ID, kind and settings from its .meta, references.
