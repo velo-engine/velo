@@ -81,7 +81,7 @@ pub fn bt_cond(f BtCondFn) BtNode {
 	return &BtCond{f}
 }
 
-fn (mut n BtCond) tick(mut bb Blackboard, dt f32) BtStatus {
+fn (mut n BtCond) tick(mut bb Blackboard, _ f32) BtStatus {
 	return if n.f(mut bb) { BtStatus.success } else { BtStatus.failure }
 }
 
@@ -115,7 +115,7 @@ pub fn bt_wait(seconds f32) BtNode {
 	}
 }
 
-fn (mut n BtWait) tick(mut bb Blackboard, dt f32) BtStatus {
+fn (mut n BtWait) tick(mut _ Blackboard, dt f32) BtStatus {
 	n.elapsed += dt
 	if n.elapsed >= n.seconds {
 		n.elapsed = 0
