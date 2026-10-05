@@ -15,7 +15,7 @@ const positional_types = {
 
 // V modules that the WebGL runtime provides (velo.* engine modules and the vlib modules it shims).
 const runtime_vlib_modules = ['math', 'rand', 'os', 'time', 'strings', 'strconv', 'arrays', 'maps',
-	'math.bits', 'encoding.binary', 'hash.fnv1a', 'term']
+	'math.bits', 'encoding.binary', 'hash.fnv1a', 'term', 'x.json2']
 
 // unwrap_alias follows type aliases (`type Score = int`) down to the real type.
 fn (g &Gen) unwrap_alias(t ast.Type) ast.Type {

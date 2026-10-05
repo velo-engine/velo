@@ -674,3 +674,65 @@ export const encoding_binary = {
 	big_endian_u16: (b: number[]) => (b[0] << 8) | b[1],
 	big_endian_u32: (b: number[]) => ((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3]) >>> 0,
 }
+
+// ---------- x.json2 ----------
+// raw_decode() and the Any accessors that games use to read a JSON document.
+
+export class JsonAny {
+	static __vname = 'x.json2.Any'
+	v: any
+	constructor(v: any) {
+		this.v = v
+	}
+	int() {
+		return typeof this.v === 'number' ? Math.trunc(this.v) : typeof this.v === 'boolean' ? +this.v : 0
+	}
+	i64() {
+		return this.int()
+	}
+	u32() {
+		return this.int()
+	}
+	u64() {
+		return this.int()
+	}
+	f32() {
+		return typeof this.v === 'number' ? this.v : 0
+	}
+	f64() {
+		return this.f32()
+	}
+	bool() {
+		return typeof this.v === 'boolean' ? this.v : typeof this.v === 'number' ? this.v !== 0 : false
+	}
+	// null reads as '' here (V prints 'null'): a missing field is an empty string
+	str() {
+		return this.v === null || this.v === undefined ? '' : typeof this.v === 'string' ? this.v : JSON.stringify(this.v)
+	}
+	arr() {
+		return Array.isArray(this.v) ? this.v.map((x: any) => new JsonAny(x)) : []
+	}
+	as_array() {
+		return this.arr()
+	}
+	as_map() {
+		const m = new Map<string, JsonAny>()
+		if (this.v !== null && typeof this.v === 'object' && !Array.isArray(this.v)) {
+			for (const k of Object.keys(this.v)) {
+				m.set(k, new JsonAny(this.v[k]))
+			}
+		}
+		return m
+	}
+}
+
+const jsonDecode = (s: string) => {
+	try {
+		return new JsonAny(JSON.parse(s))
+	} catch (e) {
+		throw new V.VError(`invalid json: ${(e as Error).message}`)
+	}
+}
+
+// decode[json2.Any](s) is the only generic form; the type argument is dropped like every vlib generic.
+export const x_json2 = { decode: jsonDecode, raw_decode: jsonDecode }
