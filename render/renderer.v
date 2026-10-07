@@ -33,6 +33,7 @@ mut:
 	shaders      map[string]GpuShader // shader asset ID -> pipeline
 	draw_list    &DrawList = unsafe { nil } // draw_tree's, kept between frames so drawing does not allocate it
 	batch        SpriteBatch // the open run of plain sprites (see batch.v)
+	sgl_warned   bool
 pub mut:
 	debug bool // F1: draw node bounds + center
 	// Pack small textures into shared pages for plain sprites (see atlas.v). Off: every texture is its own GPU image.
@@ -101,6 +102,7 @@ pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2, camera cor
 	r.clip = base
 	r.set_scissor(base)
 	r.draw_list = list
+	r.check_sgl_overflow()
 }
 
 // draw_order: the visible nodes of the tree in the order they are drawn (last = on top), e.g. for picking.

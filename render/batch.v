@@ -12,6 +12,13 @@ import velo.core
 // While a run is open nothing else may draw through gg or sgl: everything else in the renderer calls
 // flush_sprites() first (draw_node for other components, set_scissor, apply_lighting, the end of draw_tree).
 
+// sokol_gl's buffers, for gg's context too. With the defaults (131072 vertices = 32768 quads, 32768 draws) a frame
+// that needed more drew nothing at all: sokol_gl skips the whole frame once a buffer is full. This is 131072 quads.
+// One vertex is ~24 bytes, kept twice (CPU + GPU).
+// sokol_gl.h only sets its defaults when these are not defined.
+#flag -D_SGL_DEFAULT_MAX_VERTICES=524288
+#flag -D_SGL_DEFAULT_MAX_COMMANDS=65536
+
 struct SpriteBatch {
 mut:
 	open   bool
@@ -59,6 +66,18 @@ fn (mut r Renderer) batch_sprite(s &Sprite, m core.Affine2, img_id int, fx f32, 
 	sgl.v2f_t2f((m.a * x1 + m.c * y0 + m.tx) * k, (m.b * x1 + m.d * y0 + m.ty) * k, u1, v0)
 	sgl.v2f_t2f((m.a * x1 + m.c * y1 + m.tx) * k, (m.b * x1 + m.d * y1 + m.ty) * k, u1, v1)
 	sgl.v2f_t2f((m.a * x0 + m.c * y1 + m.tx) * k, (m.b * x0 + m.d * y1 + m.ty) * k, u0, v1)
+}
+
+// check_sgl_overflow warns (once) when this frame ran out of sokol_gl space: sokol_gl then draws nothing that frame.
+fn (mut r Renderer) check_sgl_overflow() {
+	if r.sgl_warned {
+		return
+	}
+	err := sgl.error()
+	if err in [.vertices_full, .commands_full, .uniforms_full] {
+		eprintln('[render] sokol_gl ${err}: the frame was not drawn (too many quads; see batch.v)')
+		r.sgl_warned = true
+	}
 }
 
 // flush_sprites closes the open sprite run so something else can draw.
