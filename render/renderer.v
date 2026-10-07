@@ -32,6 +32,7 @@ mut:
 	light_window core.Affine2
 	shaders      map[string]GpuShader // shader asset ID -> pipeline
 	draw_list    &DrawList = unsafe { nil } // draw_tree's, kept between frames so drawing does not allocate it
+	batch        SpriteBatch // the open run of plain sprites (see batch.v)
 pub mut:
 	debug bool // F1: draw node bounds + center
 	// Pack small textures into shared pages for plain sprites (see atlas.v). Off: every texture is its own GPU image.
@@ -83,6 +84,7 @@ pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2, camera cor
 	for it in list.items {
 		if !lit && it.canvas {
 			lit = true // the world is done: light it before the HUD draws
+			r.flush_sprites()
 			r.apply_lighting(r.light_scene, r.light_window)
 		}
 		if it.clip != r.clip {
@@ -91,6 +93,7 @@ pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2, camera cor
 		}
 		r.draw_node(it.node, it.m)
 	}
+	r.flush_sprites()
 	if !lit {
 		r.apply_lighting(r.light_scene, r.light_window) // no Canvas: light everything
 	}
@@ -235,6 +238,7 @@ fn compare_draw_items(a &DrawItem, b &DrawItem) int {
 }
 
 fn (mut r Renderer) set_scissor(c Rect) {
+	r.flush_sprites()
 	r.ctx.scissor_rect(int(c.x), int(c.y), int(c.w), int(c.h))
 }
 
@@ -260,6 +264,9 @@ fn (mut r Renderer) draw_node(n &core.Node, m core.Affine2) {
 		if !c.enabled {
 			continue
 		}
+		if c !is Sprite {
+			r.flush_sprites() // everything but plain sprites draws through gg
+		}
 		if c is Sprite {
 			r.draw_sprite(c, m)
 		} else if c is Label {
@@ -278,10 +285,12 @@ fn (mut r Renderer) draw_node(n &core.Node, m core.Affine2) {
 			}
 		}
 		if (r.debug || r.show_shapes) && c is DebugShape {
+			r.flush_sprites()
 			r.draw_outline(m, c.debug_outline(), c.debug_color())
 		}
 	}
 	if r.debug {
+		r.flush_sprites()
 		p := m.position()
 		r.ctx.draw_circle_filled(p.x, p.y, 3, gg.Color{255, 0, 255, 255})
 		if t := n.get_component[UITransform]() {
@@ -389,11 +398,13 @@ fn (mut r Renderer) draw_sprite(s &Sprite, m core.Affine2) {
 	}
 	if s.shader_data != unsafe { nil } {
 		if pip := r.pipeline_for(s.shader_data) {
+			r.flush_sprites()
 			r.draw_sprite_shaded(s, m, pip)
 			return
 		}
 	}
 	if s.is_sliced_mode() {
+		r.flush_sprites()
 		r.draw_sprite_quads(s, m)
 		return
 	}
@@ -406,30 +417,12 @@ fn (mut r Renderer) draw_sprite(s &Sprite, m core.Affine2) {
 		img := r.image_for(s.tex) or { return }
 		img_id = img.id
 	}
-	sz := s.display_size()
-	sc := m.scale()
-	w := sz.x * sc.x
-	h := sz.y * sc.y
-	aw := if w < 0 { -w } else { w }
-	ah := if h < 0 { -h } else { h }
-	rot := m.rotation_deg()
-	// gg rotates around the rectangle's center, so compute the center from the node's anchor point.
-	offset := core.Affine2.trs(core.Vec2{}, rot, core.vec2(1, 1)).apply(core.vec2((0.5 - s.anchor.x) * aw,
-		(0.5 - s.anchor.y) * ah))
-	center := m.position() + offset
 	fx, fy, fw, fh := s.tex.frame_rect(s.frame)
-	r.ctx.draw_image_with_config(
-		img_id:    img_id
-		img_rect:  gg.Rect{center.x - aw / 2, center.y - ah / 2, aw, ah}
-		part_rect: gg.Rect{fx + ox, fy + oy, fw, fh}
-		rotation:  -rot
-		flip_x:    s.flip_x != (w < 0)
-		flip_y:    s.flip_y != (h < 0)
-		color:     gg.Color{s.color.r, s.color.g, s.color.b, s.color.a}
-	)
-	r.draw_calls++
+	r.batch_sprite(s, m, img_id, fx + ox, fy + oy, fw, fh)
 	if r.debug {
-		r.ctx.draw_rect_empty(center.x - aw / 2, center.y - ah / 2, aw, ah, gg.Color{0, 255, 0, 160})
+		r.flush_sprites()
+		x, y, w, h := s.local_rect()
+		r.draw_quad_empty(m, Rect{x, y, w, h}, gg.Color{0, 255, 0, 160})
 	}
 }
 

@@ -13,6 +13,7 @@ import velo.render
 //   v run examples/bench                                    10000 sprites on 16 textures
 //   v run examples/bench -d bench_textures=1                the same on one texture
 //   v run examples/bench -d bench_sprites=20000
+//   v run examples/bench -d bench_rotate=true               every sprite rotated
 //   velo run android examples/bench       `velo run/build` for phones takes no -d: edit the two constants below
 //                                         (bench_textures 16 then 1) and compare the two frame times
 //
@@ -21,6 +22,7 @@ import velo.render
 
 const sprite_count = $d('bench_sprites', 10000)
 const texture_count = $d('bench_textures', 16)
+const rotate = $d('bench_rotate', false)
 
 pub struct Bench {
 	core.Component
@@ -41,6 +43,9 @@ pub fn (mut b Bench) start() {
 		mut n := core.Node.new('S${i}')
 		n.position =
 			core.vec2(f32(20 + (i * 7919) % 920), f32(60 + (i * 104729) % 460)) // spread out, deterministic
+		if rotate {
+			n.rotation = f32(i % 360)
+		}
 		n.add_component(&render.Sprite{
 			texture: refs[i % texture_count] // neighbours in draw order use different textures
 			size:    core.vec2(16, 16)
