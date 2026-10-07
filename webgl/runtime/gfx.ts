@@ -510,6 +510,9 @@ export class Gfx {
 		const cached = this.textures.get(t.id)
 		if (cached && cached.version === t.version) return cached.tex
 		if (!t.image) return null
+		// draw the pending batch first: it may use the texture being replaced, and resetting cur_tex
+		// below without a flush would draw it with the white texture (a one-frame blink)
+		this.flush()
 		const gl = this.gl
 		if (cached) gl.deleteTexture(cached.tex)
 		const tex = gl.createTexture()!
