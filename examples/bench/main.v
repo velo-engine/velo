@@ -39,7 +39,8 @@ pub fn (mut b Bench) start() {
 	}
 	for i in 0 .. sprite_count {
 		mut n := core.Node.new('S${i}')
-		n.position = core.vec2(f32(20 + (i * 7919) % 920), f32(60 + (i * 104729) % 460)) // spread out, deterministic
+		n.position =
+			core.vec2(f32(20 + (i * 7919) % 920), f32(60 + (i * 104729) % 460)) // spread out, deterministic
 		n.add_component(&render.Sprite{
 			texture: refs[i % texture_count] // neighbours in draw order use different textures
 			size:    core.vec2(16, 16)
@@ -54,6 +55,8 @@ pub fn (mut b Bench) start() {
 		color: core.rgba(255, 255, 0, 255)
 	})
 	b.node.add_child(mut ln)
+	// CPU time of drawing, which stays measurable when the frame time is capped by vsync
+	b.scene().profiler.enabled = true
 	b.t0 = time.ticks()
 }
 
@@ -65,7 +68,8 @@ pub fn (mut b Bench) update(dt f32) {
 	now := time.ticks()
 	ms := f64(now - b.t0) / 200.0
 	b.t0 = now
-	line := '${sprite_count} sprites, ${texture_count} textures: ${ms:.2f} ms/frame (${1000.0 / ms:.0f} fps)'
+	prof := b.scene().profiler
+	line := '${sprite_count} sprites, ${texture_count} textures: ${ms:.2f} ms/frame (${1000.0 / ms:.0f} fps), CPU: render ${prof.scope_ms('render'):.2f} ms, draw ${prof.scope_ms('draw'):.2f} ms'
 	eprintln('[bench] ${line}')
 	b.label.text = line
 }

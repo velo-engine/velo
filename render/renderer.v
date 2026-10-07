@@ -31,6 +31,7 @@ mut:
 	light_scene  &core.Scene = unsafe { nil }
 	light_window core.Affine2
 	shaders      map[string]GpuShader // shader asset ID -> pipeline
+	draw_list    &DrawList = unsafe { nil } // draw_tree's, kept between frames so drawing does not allocate it
 pub mut:
 	debug bool // F1: draw node bounds + center
 	// Pack small textures into shared pages for plain sprites (see atlas.v). Off: every texture is its own GPU image.
@@ -75,7 +76,11 @@ pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2, camera cor
 	base := r.base_rect()
 	r.clip = base
 	mut lit := r.light_scene == unsafe { nil }
-	for it in collect_draw_items(root, view, camera, base) {
+	// take the list: a nested draw_tree (e.g. from a component) then makes its own instead of overwriting it
+	mut list := if r.draw_list != unsafe { nil } { r.draw_list } else { &DrawList{} }
+	r.draw_list = unsafe { nil }
+	collect_draw_items(mut list, root, view, camera, base)
+	for it in list.items {
 		if !lit && it.canvas {
 			lit = true // the world is done: light it before the HUD draws
 			r.apply_lighting(r.light_scene, r.light_window)
@@ -92,11 +97,14 @@ pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2, camera cor
 	r.light_scene = unsafe { nil }
 	r.clip = base
 	r.set_scissor(base)
+	r.draw_list = list
 }
 
 // draw_order: the visible nodes of the tree in the order they are drawn (last = on top), e.g. for picking.
 pub fn draw_order(root &core.Node) []&core.Node {
-	return collect_draw_items(root, core.Affine2.identity(), core.Affine2.identity(), Rect{}).map(it.node)
+	mut list := &DrawList{}
+	collect_draw_items(mut list, root, core.Affine2.identity(), core.Affine2.identity(), Rect{})
+	return list.items.map(it.node)
 }
 
 fn (r &Renderer) base_rect() Rect {
@@ -117,32 +125,42 @@ struct DrawItem {
 	seq    int  // tree order (y_sort already applied), keeps equal z in order
 }
 
-struct CollectState {
-	view     core.Affine2
-	view_cam core.Affine2
+// DrawList — the draw items, on the heap: V's -prod GC keepalive walks every element of a local array of
+// pointer-holding structs around each call that takes its address, which made drawing quadratic in the node count.
+@[heap]
+struct DrawList {
 mut:
 	items []DrawItem
 }
 
-// collect_draw_items lists the visible nodes sorted by draw order: world before Canvas, then z_index, then tree order.
-fn collect_draw_items(root &core.Node, view core.Affine2, camera core.Affine2, clip Rect) []DrawItem {
+struct CollectState {
+	view     core.Affine2
+	view_cam core.Affine2
+mut:
+	list &DrawList
+}
+
+// collect_draw_items fills `list` (cleared first, its memory reused) with the visible nodes sorted by draw order:
+// world before Canvas, then z_index, then tree order.
+fn collect_draw_items(mut list DrawList, root &core.Node, view core.Affine2, camera core.Affine2, clip Rect) {
+	list.items.clear()
 	mut st := CollectState{
 		view:     view
 		view_cam: view.mul(camera)
+		list:     list
 	}
 	collect_node(mut st, root, core.Affine2.identity(), false, 0, clip)
 	// most scenes are already in draw order (no z_index, no Canvas in the middle): skip the sort then
 	mut ordered := true
-	for i in 1 .. st.items.len {
-		if compare_draw_items(&st.items[i - 1], &st.items[i]) > 0 {
+	for i in 1 .. list.items.len {
+		if compare_draw_items(&list.items[i - 1], &list.items[i]) > 0 {
 			ordered = false
 			break
 		}
 	}
 	if !ordered {
-		st.items.sort_with_compare(compare_draw_items)
+		list.items.sort_with_compare(compare_draw_items)
 	}
-	return st.items
 }
 
 fn collect_node(mut st CollectState, n &core.Node, parent_world core.Affine2, canvas bool, z int, clip Rect) {
@@ -158,13 +176,13 @@ fn collect_node(mut st CollectState, n &core.Node, parent_world core.Affine2, ca
 	}
 	m := if in_canvas { st.view.mul(w) } else { st.view_cam.mul(w) }
 	zz := z + n.z_index
-	st.items << DrawItem{
+	st.list.items << DrawItem{
 		node:   n
 		m:      m
 		clip:   clip
 		canvas: in_canvas
 		z:      zz
-		seq:    st.items.len
+		seq:    st.list.items.len
 	}
 	// ScrollView: children only show inside the viewport (screen-aligned bounds of the rect)
 	mut child_clip := clip

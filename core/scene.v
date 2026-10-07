@@ -28,6 +28,8 @@ pub mut:
 	unscaled_dt     f32
 	pending_destroy []&Node
 	instantiate_fn  InstantiateFn = unsafe { nil }
+	// Scratch space for the update walk (see Node.tick), kept so frames do not allocate.
+	tick_stack []&Node @[hide]
 	// The visible game screen, in screen units (UI Widgets without a sized parent align to it): its top-left
 	// corner and size. With the default scale mode the design area (e.g. 0,0..960,540) is always inside it and
 	// a wider or taller screen shows more around it (so view_origin can be negative). Set by App/editor.
@@ -192,7 +194,7 @@ pub fn (mut s Scene) update(real_dt f32) {
 	s.time += dt
 	s.real_time += real_dt
 	s.frame++
-	s.root.tick(dt, real_dt, s.paused)
+	s.root.tick(dt, real_dt, s.paused, mut s.tick_stack)
 	if mut cam := s.active_camera() {
 		cam.late_update(if cam.node.unscaled_time { real_dt } else { dt })
 	}

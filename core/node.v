@@ -30,6 +30,13 @@ pub mut:
 	prefab_id string
 	tweens    []&Tween // see tween()
 	timers    []&Timer // see after() / every()
+mut:
+	// local_matrix() cache: the transform it was computed from (sin/cos only run again when that changes).
+	lm_pos   Vec2
+	lm_rot   f32
+	lm_scale Vec2
+	lm       Affine2
+	lm_ok    bool
 }
 
 pub fn Node.new(name string) &Node {
@@ -245,7 +252,16 @@ pub fn (n &Node) component_by_type_name(name string) ?IComponent {
 // ---------- Transform ----------
 
 pub fn (n &Node) local_matrix() Affine2 {
-	return Affine2.trs(n.position, n.rotation, n.scale)
+	if n.lm_ok && n.position == n.lm_pos && n.rotation == n.lm_rot && n.scale == n.lm_scale {
+		return n.lm
+	}
+	mut c := unsafe { n }
+	c.lm = Affine2.trs(n.position, n.rotation, n.scale)
+	c.lm_pos = n.position
+	c.lm_rot = n.rotation
+	c.lm_scale = n.scale
+	c.lm_ok = true
+	return c.lm
 }
 
 pub fn (n &Node) world_matrix() Affine2 {
@@ -307,7 +323,9 @@ fn (mut n Node) detach_from_scene() {
 
 // tick updates the node's components, timers and tweens, then its children. `dt` is scaled time (zero while
 // `paused`); `real` is the unscaled frame time, used from a node with `unscaled_time` down.
-fn (mut n Node) tick(dt f32, real f32, paused bool) {
+// `stack` is scratch space shared by the whole walk (see Scene.tick_stack): each node snapshots its children on
+// top of it instead of cloning its child list, so a frame allocates nothing once the stack has grown.
+fn (mut n Node) tick(dt f32, real f32, paused bool, mut stack []&Node) {
 	if !n.active || n.destroyed {
 		return
 	}
@@ -337,10 +355,15 @@ fn (mut n Node) tick(dt f32, real f32, paused bool) {
 		n.tick_timers(d)
 		n.tick_tweens(d)
 	}
-	mut kids := n.children.clone()
-	for mut ch in kids {
-		ch.tick(d, real, p)
+	// Snapshot the children: nodes added, removed or moved during this frame do not change who ticks now.
+	base := stack.len
+	end := base + n.children.len
+	stack << n.children
+	for i in base .. end {
+		mut ch := stack[i]
+		ch.tick(d, real, p, mut stack)
 	}
+	stack.trim(base)
 }
 
 // short_type_name: 'main.PlayerController' -> 'PlayerController', '&render.Sprite' -> 'Sprite'.
