@@ -2462,43 +2462,6 @@ export class Renderer {
 		const th = slot !== null ? SPRITE_ATLAS : tex.height
 		const ox = slot !== null ? slot.x : 0
 		const oy = slot !== null ? slot.y : 0
-		if (fx === null && !s.is_sliced_mode() && !this.debug) {
-			// the common case, without the quads() array: one quad over the whole display rect
-			const fw = tex.frame_w()
-			const fh = tex.frame_h()
-			const sized = s.size.x > 0 && s.size.y > 0
-			const w = sized ? s.size.x : fw
-			const h = sized ? s.size.y : fh
-			const x0 = -s.anchor.x * w
-			const y0 = -s.anchor.y * h
-			const x1 = x0 + w
-			const y1 = y0 + h
-			const fx0 = tex.frame_x(s.frame) + ox
-			const fy0 = tex.frame_y(s.frame) + oy
-			let u0 = fx0 / tw
-			let u1 = (fx0 + fw) / tw
-			let v0 = fy0 / th
-			let v1 = (fy0 + fh) / th
-			if (s.flip_x) {
-				const t = u0
-				u0 = u1
-				u1 = t
-			}
-			if (s.flip_y) {
-				const t = v0
-				v0 = v1
-				v1 = t
-			}
-			this.gfx.quad(
-				gtex,
-				m.apply_x(x0, y0), m.apply_y(x0, y0), u0, v0,
-				m.apply_x(x1, y0), m.apply_y(x1, y0), u1, v0,
-				m.apply_x(x1, y1), m.apply_y(x1, y1), u1, v1,
-				m.apply_x(x0, y1), m.apply_y(x0, y1), u0, v1,
-				col,
-			)
-			return
-		}
 		if (fx !== null) {
 			const [fx0, fy0, fw, fh] = tex.frame_rect(s.frame)
 			const p = s.shader_params
@@ -2510,15 +2473,20 @@ export class Renderer {
 				fx0 / tw, fy0 / th, (fx0 + fw) / tw, (fy0 + fh) / th,
 			]))
 		}
-		const quad = fx !== null ? this.gfx.effect_quad : this.gfx.quad
+		// quads_into reuses the renderer's objects, so a sprite (one quad, or a sliced/tiled one's pieces) allocates
+		// nothing; sprite_quad takes them as they are (see why there)
+		const g = this.gfx
 		const sc = this.quad_scratch
 		s.quads_into(sc)
 		for (let i = 0; i < sc.n; i++) {
 			const q = sc.quads[i]
+			if (fx === null) {
+				g.sprite_quad(gtex, m, q, ox, oy, tw, th, col)
+				continue
+			}
 			const x1 = q.x + q.w
 			const y1 = q.y + q.h
-			quad.call(
-				this.gfx,
+			g.effect_quad(
 				gtex,
 				m.apply_x(q.x, q.y), m.apply_y(q.x, q.y), (q.u0 + ox) / tw, (q.v0 + oy) / th,
 				m.apply_x(x1, q.y), m.apply_y(x1, q.y), (q.u1 + ox) / tw, (q.v0 + oy) / th,

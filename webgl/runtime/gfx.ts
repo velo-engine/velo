@@ -5,6 +5,27 @@
 
 import type { Texture } from './assets.ts'
 
+// QuadMatrix / QuadRect: what sprite_quad reads of core.Affine2 and render.SpriteQuad (gfx.ts imports neither).
+export interface QuadMatrix {
+	a: number
+	b: number
+	c: number
+	d: number
+	tx: number
+	ty: number
+}
+
+export interface QuadRect {
+	x: number
+	y: number
+	w: number
+	h: number
+	u0: number
+	v0: number
+	u1: number
+	v1: number
+}
+
 export interface GfxColor {
 	r: number
 	g: number
@@ -415,6 +436,60 @@ export class Gfx {
 		this.vf32[i + 3] = v
 		this.vu32[i + 4] = packed
 		this.nverts++
+	}
+
+	// sprite_quad draws the rectangle q (node space) through the matrix m, showing texture pixels q.u0..q.u1 x
+	// q.v0..q.v1 offset by (ox, oy) in a tw x th texture. The same as quad(), but it takes objects and integers:
+	// the 16 computed numbers quad() takes are each boxed (a heap allocation) when V8 does not inline the call,
+	// which made the garbage collector run about once a frame with many sprites.
+	sprite_quad(tex: WebGLTexture, m: QuadMatrix, q: QuadRect, ox: number, oy: number, tw: number, th: number, c: GfxColor) {
+		this.prepare(tex, false, 4, 6)
+		const b = this.nverts
+		const x0 = q.x
+		const y0 = q.y
+		const x1 = q.x + q.w
+		const y1 = q.y + q.h
+		const u0 = (q.u0 + ox) / tw
+		const u1 = (q.u1 + ox) / tw
+		const v0 = (q.v0 + oy) / th
+		const v1 = (q.v1 + oy) / th
+		const col = (c.r & 255) | ((c.g & 255) << 8) | ((c.b & 255) << 16) | ((c.a & 255) << 24)
+		const f = this.vf32
+		const w = this.vu32
+		let i = b * FLOATS_PER_VERT
+		f[i] = m.a * x0 + m.c * y0 + m.tx
+		f[i + 1] = m.b * x0 + m.d * y0 + m.ty
+		f[i + 2] = u0
+		f[i + 3] = v0
+		w[i + 4] = col
+		i += FLOATS_PER_VERT
+		f[i] = m.a * x1 + m.c * y0 + m.tx
+		f[i + 1] = m.b * x1 + m.d * y0 + m.ty
+		f[i + 2] = u1
+		f[i + 3] = v0
+		w[i + 4] = col
+		i += FLOATS_PER_VERT
+		f[i] = m.a * x1 + m.c * y1 + m.tx
+		f[i + 1] = m.b * x1 + m.d * y1 + m.ty
+		f[i + 2] = u1
+		f[i + 3] = v1
+		w[i + 4] = col
+		i += FLOATS_PER_VERT
+		f[i] = m.a * x0 + m.c * y1 + m.tx
+		f[i + 1] = m.b * x0 + m.d * y1 + m.ty
+		f[i + 2] = u0
+		f[i + 3] = v1
+		w[i + 4] = col
+		this.nverts = b + 4
+		const ix = this.idx
+		let n = this.nidx
+		ix[n++] = b
+		ix[n++] = b + 1
+		ix[n++] = b + 2
+		ix[n++] = b
+		ix[n++] = b + 2
+		ix[n++] = b + 3
+		this.nidx = n
 	}
 
 	// quad draws a textured quad: four corners (clockwise from top-left) with their texture coordinates.
