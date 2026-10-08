@@ -90,6 +90,20 @@ pub mut:
 	carry        f32             @[hide] // fractional particles owed by `rate`
 	tex          &assets.Texture = unsafe { nil } @[hide]
 	loaded       string          @[hide]
+	// meshes()' buffers, reused every frame so drawing particles allocates nothing once they have grown
+	buf ParticleBuffers @[hide]
+}
+
+struct ParticleBuffers {
+mut:
+	pos      []f32
+	uvs      []f32
+	colors   []core.Color
+	quad_idx []int // the quad index pattern (0 1 2 0 2 3, 4 5 6 ...), only ever grown
+	tpos     []f32 // trail ribbons
+	tcol     []core.Color
+	tidx     []int
+	pts      []core.Vec2 // add_ribbon's points
 }
 
 pub fn (mut ps ParticleSystem) on_load() {
@@ -244,7 +258,7 @@ pub fn (mut ps ParticleSystem) simulate(dt f32) {
 				p.trail << p.pos
 			}
 			if p.trail.len > ps.trail_length {
-				p.trail = p.trail[p.trail.len - ps.trail_length..].clone()
+				p.trail.delete_many(0, p.trail.len - ps.trail_length) // in place
 			}
 		} else if p.trail.len > 0 {
 			p.trail = []
@@ -296,6 +310,7 @@ fn (ps &ParticleSystem) color_at(k f32, ease core.Ease) core.Color {
 }
 
 // meshes is what the renderer draws (MeshDrawable): the trail ribbons (if any) behind one quad per particle.
+// The meshes share the system's buffers: they are valid until the next call.
 pub fn (ps &ParticleSystem) meshes() []TexturedMesh {
 	if ps.particles.len == 0 {
 		return []
@@ -316,14 +331,23 @@ pub fn (ps &ParticleSystem) meshes() []TexturedMesh {
 	color_ease := core.ease_from_str(ps.color_ease) or { core.Ease.linear }
 	sheet_frames := if textured && ps.animate_sheet { ps.tex.frame_count() } else { 0 }
 	n := ps.particles.len
-	mut positions := []f32{cap: n * 8}
-	mut uvs := []f32{cap: if textured { n * 8 } else { 0 }}
-	mut colors := []core.Color{cap: n * 4}
-	mut indices := []int{cap: n * 6}
-	mut tpos := []f32{}
-	mut tcol := []core.Color{}
-	mut tidx := []int{}
-	for i, p in ps.particles {
+	mut b := unsafe { &ps.buf }
+	b.pos.clear()
+	b.uvs.clear()
+	b.colors.clear()
+	b.tpos.clear()
+	b.tcol.clear()
+	b.tidx.clear()
+	for q := b.quad_idx.len / 6; q < n; q++ {
+		v := q * 4
+		b.quad_idx << v
+		b.quad_idx << v + 1
+		b.quad_idx << v + 2
+		b.quad_idx << v
+		b.quad_idx << v + 2
+		b.quad_idx << v + 3
+	}
+	for p in ps.particles {
 		k := p.age / p.life
 		h := (p.size_start + (p.size_end - p.size_start) * size_ease.apply(k)) / 2
 		col := ps.color_at(k, color_ease)
@@ -331,14 +355,20 @@ pub fn (ps &ParticleSystem) meshes() []TexturedMesh {
 		if ps.align_to_velocity && p.vel.length() > 0.001 {
 			rot += f32(math.atan2(p.vel.y, p.vel.x) * 180.0 / math.pi)
 		}
-		quad := core.Affine2.trs(p.pos, rot, core.vec2(h, h))
-		for c in [core.vec2(-1, -1), core.vec2(1, -1), core.vec2(1, 1),
-			core.vec2(-1, 1)] {
-			q := to_node.apply(quad.apply(c))
-			positions << q.x
-			positions << q.y
-			colors << col
-		}
+		m := to_node.mul(core.Affine2.trs(p.pos, rot, core.vec2(h, h)))
+		// corners (-1,-1) (1,-1) (1,1) (-1,1)
+		b.pos << -m.a - m.c + m.tx
+		b.pos << -m.b - m.d + m.ty
+		b.pos << m.a - m.c + m.tx
+		b.pos << m.b - m.d + m.ty
+		b.pos << m.a + m.c + m.tx
+		b.pos << m.b + m.d + m.ty
+		b.pos << -m.a + m.c + m.tx
+		b.pos << -m.b + m.d + m.ty
+		b.colors << col
+		b.colors << col
+		b.colors << col
+		b.colors << col
 		if textured {
 			frame := if sheet_frames > 1 {
 				int(k * ps.sheet_cycles * f32(sheet_frames)) % sheet_frames
@@ -348,30 +378,35 @@ pub fn (ps &ParticleSystem) meshes() []TexturedMesh {
 			fx, fy, fw, fh := ps.tex.frame_rect(frame)
 			u0, v0 := f32(fx) / ps.tex.width, f32(fy) / ps.tex.height
 			u1, v1 := f32(fx + fw) / ps.tex.width, f32(fy + fh) / ps.tex.height
-			uvs << [u0, v0, u1, v0, u1, v1, u0, v1]
+			b.uvs << u0
+			b.uvs << v0
+			b.uvs << u1
+			b.uvs << v0
+			b.uvs << u1
+			b.uvs << v1
+			b.uvs << u0
+			b.uvs << v1
 		}
-		b := i * 4
-		indices << [b, b + 1, b + 2, b, b + 2, b + 3]
 		if ps.trail && p.trail.len > 0 {
-			ps.add_ribbon(p, h, col, to_node, mut tpos, mut tcol, mut tidx)
+			ps.add_ribbon(p, h, col, to_node, mut b)
 		}
 	}
-	mut out := []TexturedMesh{}
-	if tidx.len > 0 {
+	mut out := []TexturedMesh{cap: 2}
+	if b.tidx.len > 0 {
 		out << TexturedMesh{
 			texture:   unsafe { nil }
-			positions: tpos
-			indices:   tidx
-			colors:    tcol
+			positions: b.tpos
+			indices:   b.tidx
+			colors:    b.tcol
 			additive:  ps.additive
 		}
 	}
 	out << TexturedMesh{
 		texture:   tex
-		positions: positions
-		uvs:       uvs
-		indices:   indices
-		colors:    colors
+		positions: b.pos
+		uvs:       b.uvs
+		indices:   b.quad_idx[..n * 6]
+		colors:    b.colors
 		additive:  ps.additive
 	}
 	return out
@@ -379,16 +414,18 @@ pub fn (ps &ParticleSystem) meshes() []TexturedMesh {
 
 // add_ribbon appends one particle's trail as a strip of quads: the head is as wide as `trail_width` of the
 // particle, the tail is a point and fully transparent.
-fn (ps &ParticleSystem) add_ribbon(p Particle, half f32, col core.Color, to_node core.Affine2, mut pos []f32, mut colors []core.Color, mut idx []int) {
-	mut pts := p.trail.clone()
+fn (ps &ParticleSystem) add_ribbon(p Particle, half f32, col core.Color, to_node core.Affine2, mut buf ParticleBuffers) {
+	buf.pts.clear()
+	buf.pts << p.trail
 	// the newest sample is often exactly where the particle is: a second, identical point would have no direction
-	if (p.pos - pts.last()).length() > 0.001 {
-		pts << p.pos
+	if (p.pos - buf.pts.last()).length() > 0.001 {
+		buf.pts << p.pos
 	}
+	pts := buf.pts
 	if pts.len < 2 {
 		return
 	}
-	base := pos.len / 2
+	base := buf.tpos.len / 2
 	for i, pt in pts {
 		// direction along the ribbon at this point
 		a := if i == 0 { pts[0] } else { pts[i - 1] }
@@ -400,16 +437,21 @@ fn (ps &ParticleSystem) add_ribbon(p Particle, half f32, col core.Color, to_node
 		l := to_node.apply(pt + perp)
 		r := to_node.apply(pt - perp)
 		c := core.Color{col.r, col.g, col.b, u8(f32(col.a) * t)}
-		pos << l.x
-		pos << l.y
-		pos << r.x
-		pos << r.y
-		colors << c
-		colors << c
+		buf.tpos << l.x
+		buf.tpos << l.y
+		buf.tpos << r.x
+		buf.tpos << r.y
+		buf.tcol << c
+		buf.tcol << c
 	}
 	for i in 0 .. pts.len - 1 {
 		v := base + i * 2
-		idx << [v, v + 1, v + 3, v, v + 3, v + 2]
+		buf.tidx << v
+		buf.tidx << v + 1
+		buf.tidx << v + 3
+		buf.tidx << v
+		buf.tidx << v + 3
+		buf.tidx << v + 2
 	}
 }
 

@@ -1380,6 +1380,7 @@ export class ParticleSystem extends core.Component {
 	additive = false
 	auto_destroy = false
 	particles: Particle[] = []
+	_buf = new ParticleBuffers() // meshes() storage, reused every frame
 	elapsed = 0
 	burst_done = false
 	carry = 0
@@ -1501,49 +1502,83 @@ export class ParticleSystem extends core.Component {
 		if (this.shape === 'box') return vec2((this.shape_size.x * signed_rand()) / 2, (this.shape_size.y * signed_rand()) / 2)
 		return new Vec2()
 	}
+	// meshes shares the system's buffers (typed arrays, viewed at this frame's length): valid until the next call.
 	meshes(): TexturedMesh[] {
 		if (this.particles.length === 0) return []
 		const to_node = this.world_space && this.node ? this.node.world_matrix().inverse() : Affine2.identity()
 		const tex = this.tex !== null && this.tex.width > 0 && this.tex.height > 0 ? this.tex : null
-		const mesh = new TexturedMesh()
-		mesh.texture = tex
-		mesh.additive = this.additive
 		const n = this.particles.length
-		const positions = new Array<number>(n * 8)
-		const uvs = tex ? new Array<number>(n * 8) : []
-		const colors = new Array<Color>(n * 4)
-		const indices = new Array<number>(n * 6)
-		const corners = [-1, -1, 1, -1, 1, 1, -1, 1]
+		const b = this._buf
+		b.reserve(n)
+		const pos = b.pos
+		const uvs = b.uvs
+		// matrix math in locals: writing doubles into Affine2 fields would box them (an allocation each)
+		const ta = to_node.a
+		const tb = to_node.b
+		const tc = to_node.c
+		const td = to_node.d
+		const ttx = to_node.tx
+		const tty = to_node.ty
 		for (let i = 0; i < n; i++) {
 			const p = this.particles[i]
 			const k = p.age / p.life
 			const h = (p.size_start + (p.size_end - p.size_start) * k) / 2
-			const col = lerp_color(this.start_color, this.end_color, k)
-			const quad = Affine2.trs(p.pos, p.rotation, vec2(h, h))
-			const m = to_node.mul(quad)
-			for (let c = 0; c < 4; c++) {
-				const cx = corners[c * 2]
-				const cy = corners[c * 2 + 1]
-				positions[i * 8 + c * 2] = m.apply_x(cx, cy)
-				positions[i * 8 + c * 2 + 1] = m.apply_y(cx, cy)
-				colors[i * 4 + c] = col
+			lerp_color_into(b.colors[i * 4], this.start_color, this.end_color, k) // the quad's 4 entries share it
+			// m = to_node * trs(pos, rotation, (h, h))
+			let cs = 1
+			let sn = 0
+			if (p.rotation !== 0) {
+				const rad = (p.rotation * Math.PI) / 180
+				cs = Math.cos(rad)
+				sn = Math.sin(rad)
 			}
+			const qa = cs * h
+			const qb = sn * h
+			const qc = -sn * h
+			const qd = cs * h
+			const px = p.pos.x
+			const py = p.pos.y
+			const ma = ta * qa + tc * qb
+			const mb = tb * qa + td * qb
+			const mc = ta * qc + tc * qd
+			const md = tb * qc + td * qd
+			const mtx = ta * px + tc * py + ttx
+			const mty = tb * px + td * py + tty
+			// corners (-1,-1) (1,-1) (1,1) (-1,1)
+			const o = i * 8
+			pos[o] = -ma - mc + mtx
+			pos[o + 1] = -mb - md + mty
+			pos[o + 2] = ma - mc + mtx
+			pos[o + 3] = mb - md + mty
+			pos[o + 4] = ma + mc + mtx
+			pos[o + 5] = mb + md + mty
+			pos[o + 6] = -ma + mc + mtx
+			pos[o + 7] = -mb + md + mty
 			if (tex) {
-				const [fx, fy, fw, fh] = tex.frame_rect(p.frame)
+				const fx = tex.frame_x(p.frame)
+				const fy = tex.frame_y(p.frame)
 				const u0 = fx / tex.width
 				const v0 = fy / tex.height
-				const u1 = (fx + fw) / tex.width
-				const v1 = (fy + fh) / tex.height
-				uvs.splice(i * 8, 8, u0, v0, u1, v0, u1, v1, u0, v1)
+				const u1 = (fx + tex.frame_w()) / tex.width
+				const v1 = (fy + tex.frame_h()) / tex.height
+				uvs[o] = u0
+				uvs[o + 1] = v0
+				uvs[o + 2] = u1
+				uvs[o + 3] = v0
+				uvs[o + 4] = u1
+				uvs[o + 5] = v1
+				uvs[o + 6] = u0
+				uvs[o + 7] = v1
 			}
-			const b = i * 4
-			indices.splice(i * 6, 6, b, b + 1, b + 2, b, b + 2, b + 3)
 		}
-		mesh.positions = positions
-		mesh.uvs = uvs
-		mesh.colors = colors
-		mesh.indices = indices
-		return [mesh]
+		const mesh = b.mesh
+		mesh.texture = tex
+		mesh.additive = this.additive
+		mesh.positions = pos.subarray(0, n * 8) as unknown as number[]
+		mesh.uvs = tex ? (uvs.subarray(0, n * 8) as unknown as number[]) : []
+		mesh.indices = b.idx.subarray(0, n * 6) as unknown as number[]
+		mesh.colors = b.colors // may be longer than 4 per particle: draw_mesh only reads the first ones
+		return b.out
 	}
 	debug_outline(): Vec2[] {
 		if (this.shape === 'circle') {
@@ -1588,6 +1623,40 @@ function direction(m: Affine2, v: Vec2): Vec2 {
 
 function signed_rand(): number {
 	return Math.random() * 2 - 1
+}
+
+// lerp_color_into: lerp_color written into `out` (no allocation).
+function lerp_color_into(out: Color, a: Color, b: Color, t: number) {
+	out.r = Math.trunc(a.r + (b.r - a.r) * t + 0.5) & 255
+	out.g = Math.trunc(a.g + (b.g - a.g) * t + 0.5) & 255
+	out.b = Math.trunc(a.b + (b.b - a.b) * t + 0.5) & 255
+	out.a = Math.trunc(a.a + (b.a - a.a) * t + 0.5) & 255
+}
+
+// ParticleBuffers — ParticleSystem.meshes' storage, grown as needed and reused every frame.
+class ParticleBuffers {
+	pos = new Float64Array(0) // f64 like the arrays it replaced: the same vertices as before
+	uvs = new Float32Array(0)
+	idx = new Uint32Array(0) // the quad index pattern 0 1 2 0 2 3, 4 5 6 ...
+	colors: Color[] = [] // 4 entries per particle pointing at the same Color object
+	mesh = new TexturedMesh()
+	out = [this.mesh]
+	// reserve makes room for n particles
+	reserve(n: number) {
+		if (this.pos.length >= n * 8) return
+		const cap = Math.max(n, 64, (this.pos.length / 8) * 2)
+		this.pos = new Float64Array(cap * 8)
+		this.uvs = new Float32Array(cap * 8)
+		this.idx = new Uint32Array(cap * 6)
+		for (let q = 0; q < cap; q++) {
+			const v = q * 4
+			this.idx.set([v, v + 1, v + 2, v, v + 2, v + 3], q * 6)
+		}
+		for (let q = this.colors.length / 4; q < cap; q++) {
+			const c = new core.Color(255, 255, 255, 255)
+			this.colors.push(c, c, c, c)
+		}
+	}
 }
 
 function lerp_color(a: Color, b: Color, t: number): Color {
@@ -2469,7 +2538,8 @@ export class Renderer {
 		const textured = mesh.texture !== null
 		if (mesh.indices.length < 3 || (textured && mesh.uvs.length < mesh.positions.length)) return
 		const nverts = mesh.positions.length / 2
-		for (const i of mesh.indices) if (i < 0 || i >= nverts) return
+		const ind = mesh.indices
+		for (let k = 0; k < ind.length; k++) if (ind[k] < 0 || ind[k] >= nverts) return
 		let gtex: WebGLTexture | null = null
 		if (textured) {
 			gtex = this.gfx.texture(mesh.texture!)
@@ -2489,11 +2559,16 @@ export class Renderer {
 				const i = mesh.indices[k]
 				const px = mesh.positions[i * 2]
 				const py = mesh.positions[i * 2 + 1]
-				const vc = per_vertex ? mul_color(c, mesh.colors[i]) : c
 				const u = textured ? mesh.uvs[i * 2] : 0
 				const v = textured ? mesh.uvs[i * 2 + 1] : 0
 				g.idx[g.nidx++] = g.nverts
-				g.vertex(m.apply_x(px, py), m.apply_y(px, py), u, v, vc)
+				// mesh color times the vertex color (mul_color), packed straight into the vertex: no Color per vertex
+				const vc = per_vertex ? mesh.colors[i] : c
+				const r = per_vertex ? Math.trunc((c.r * vc.r) / 255) : c.r
+				const gg = per_vertex ? Math.trunc((c.g * vc.g) / 255) : c.g
+				const bb = per_vertex ? Math.trunc((c.b * vc.b) / 255) : c.b
+				const a = per_vertex ? Math.trunc((c.a * vc.a) / 255) : c.a
+				g.vertex_rgba(m.apply_x(px, py), m.apply_y(px, py), u, v, (r & 255) | ((gg & 255) << 8) | ((bb & 255) << 16) | ((a & 255) << 24))
 			}
 		}
 		this.draw_calls++
