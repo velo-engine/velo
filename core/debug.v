@@ -118,6 +118,11 @@ mut:
 	current map[string]f32 // this frame, ms
 	smooth  map[string]f32
 	history []f32 // frame time, ms, oldest first
+	// Component updates, by component type index: nanoseconds this frame and the scope name ('update:Type').
+	// Kept apart from `current` so timing each update costs no string building or hashing (see add_update).
+	comp_ns   []u64
+	comp_name []string
+	comp_used []int // type indexes with time this frame
 pub mut:
 	enabled bool
 }
@@ -136,11 +141,32 @@ pub fn (mut p Profiler) end(name string) {
 	p.current[name] += f32(time.sys_mono_now() - t0) / 1_000_000.0
 }
 
+// add_update adds `ns` nanoseconds to the `update:Type` scope of the component `c`.
+fn (mut p Profiler) add_update(c IComponent, ns u64) {
+	idx := c.type_idx()
+	if idx >= p.comp_ns.len {
+		p.comp_ns << []u64{len: idx + 1 - p.comp_ns.len}
+		p.comp_name << []string{len: idx + 1 - p.comp_name.len}
+	}
+	if p.comp_ns[idx] == 0 {
+		if p.comp_name[idx] == '' {
+			p.comp_name[idx] = 'update:' + short_type_name(c.type_name())
+		}
+		p.comp_used << idx
+	}
+	p.comp_ns[idx] += if ns > 0 { ns } else { 1 } // 0 means "not used this frame"
+}
+
 // new_frame closes the frame: `frame_ms` goes to the history, scope times into the smoothed averages.
 pub fn (mut p Profiler) new_frame(frame_ms f32) {
 	if !p.enabled {
 		return
 	}
+	for idx in p.comp_used {
+		p.current[p.comp_name[idx]] += f32(p.comp_ns[idx]) / 1_000_000.0
+		p.comp_ns[idx] = 0
+	}
+	p.comp_used.clear()
 	p.history << frame_ms
 	if p.history.len > profile_history {
 		p.history.delete(0)
@@ -182,6 +208,10 @@ pub fn (mut p Profiler) reset() {
 	p.current.clear()
 	p.smooth.clear()
 	p.history.clear()
+	for idx in p.comp_used {
+		p.comp_ns[idx] = 0
+	}
+	p.comp_used.clear()
 }
 
 // ---------- Console ----------
@@ -306,5 +336,6 @@ pub fn (mut c Console) key(k Key) bool {
 			return false
 		}
 	}
+
 	return true
 }

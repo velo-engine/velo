@@ -1,5 +1,7 @@
 module core
 
+import time
+
 // A Node only holds a transform + the parent/child tree + a component list; all behavior lives in components.
 @[heap]
 pub struct Node {
@@ -334,6 +336,13 @@ fn (mut n Node) tick(dt f32, real f32, paused bool, mut stack []&Node) {
 	if !p {
 		// Snapshot the counts: components/children added during this frame run starting next frame.
 		count := n.components.len
+		mut prof := if n.scene != unsafe { nil } && n.scene.profiler.enabled {
+			n.scene.profiler
+		} else {
+			unsafe { &Profiler(nil) }
+		}
+		// with the profiler on: one clock read per update, each one's end is the next one's start
+		mut t0 := if prof != unsafe { nil } { time.sys_mono_now() } else { u64(0) }
 		for i in 0 .. count {
 			if !n.components[i].enabled {
 				continue
@@ -341,15 +350,15 @@ fn (mut n Node) tick(dt f32, real f32, paused bool, mut stack []&Node) {
 			if !n.components[i].started {
 				n.components[i].started = true
 				n.components[i].start()
+				if prof != unsafe { nil } {
+					t0 = time.sys_mono_now() // start() is not part of update's time
+				}
 			}
-			if n.scene != unsafe { nil } && n.scene.profiler.enabled {
-				mut prof := n.scene.profiler
-				name := 'update:' + short_type_name(n.components[i].type_name())
-				prof.begin(name)
-				n.components[i].update(d)
-				prof.end(name)
-			} else {
-				n.components[i].update(d)
+			n.components[i].update(d)
+			if prof != unsafe { nil } {
+				t1 := time.sys_mono_now()
+				prof.add_update(n.components[i], t1 - t0)
+				t0 = t1
 			}
 		}
 		n.tick_timers(d)
