@@ -16,7 +16,7 @@
 
 // VError — a V error (`error('...')`, `return error_with_code(...)`), thrown by `!T` functions.
 export class VError extends Error {
-	vcode: number
+	vcode = 0
 	constructor(message: string, code = 0) {
 		super(message)
 		this.vcode = code
@@ -59,7 +59,7 @@ export function panic(message: unknown): never {
 
 // VExit — `exit(code)`.
 export class VExit extends Error {
-	status: number
+	status = 0
 	constructor(status: number) {
 		super(`exit(${status})`)
 		this.status = status

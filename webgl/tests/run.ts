@@ -6,7 +6,7 @@
 // Needs `v` on PATH and `npm install` (esbuild) in webgl/.
 
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, readFileSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -337,8 +337,31 @@ async function runtime_tests() {
 	}
 }
 
+// ---------- 3. runtime source rules ----------
+
+// A class field declared `x: number` without a value starts as undefined (useDefineForClassFields: esbuild emits
+// __publicField(this, "x")), so V8 can never store it as a plain number: every fractional value written to it is
+// a new heap allocation (in Vec2, Affine2, Color... that was most of the runtime's garbage). Give it a value.
+function source_rules_test() {
+	const dir = join(webgl, 'runtime')
+	const offenders: string[] = []
+	for (const f of readdirSync(dir).filter((n) => n.endsWith('.ts')).sort()) {
+		let kind = ''
+		readFileSync(join(dir, f), 'utf8').split('\n').forEach((line, i) => {
+			const decl = line.match(/^(export\s+)?(abstract\s+)?(class|interface)\b/)
+			if (decl) kind = decl[3]
+			else if (/^[^\s}/]/.test(line)) kind = '' // another top-level declaration
+			if (kind === 'class' && /^\t[a-z_0-9]+: number$/.test(line)) offenders.push(`${f}:${i + 1}: ${line.trim()}`)
+		})
+	}
+	check('runtime: class number fields have an initial value (` = 0`)', offenders.length === 0, offenders.join('\n'))
+}
+
 const only = process.argv[2]
-if (!only || only === 'runtime') await runtime_tests()
+if (!only || only === 'runtime') {
+	source_rules_test()
+	await runtime_tests()
+}
 if ((!only || only === 'lang') && existsSync(join(webgl, 'node_modules', '.bin', 'esbuild'))) language_test()
 console.log(`${passes} passed, ${failures} failed`)
 process.exit(failures > 0 ? 1 : 0)

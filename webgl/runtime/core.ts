@@ -9,8 +9,8 @@ import type { AssetDatabase } from './assets.ts'
 // Vec2 — 2D vector. Screen coordinate system: x to the right, y downward. A value type: copy with clone().
 export class Vec2 {
 	static __vname = 'core.Vec2'
-	x: number
-	y: number
+	x = 0
+	y = 0
 	constructor(x = 0, y = 0) {
 		this.x = x
 		this.y = y
@@ -60,10 +60,10 @@ export function vec2(x: number, y: number): Vec2 {
 // Insets — distances in from each edge of a rectangle.
 export class Insets {
 	static __vname = 'core.Insets'
-	left: number
-	top: number
-	right: number
-	bottom: number
+	left = 0
+	top = 0
+	right = 0
+	bottom = 0
 	constructor(left = 0, top = 0, right = 0, bottom = 0) {
 		this.left = left
 		this.top = top
@@ -81,10 +81,10 @@ export class Insets {
 // Color — 8-bit RGBA color.
 export class Color {
 	static __vname = 'core.Color'
-	r: number
-	g: number
-	b: number
-	a: number
+	r = 0
+	g = 0
+	b = 0
+	a = 0
 	constructor(r = 255, g = 255, b = 255, a = 255) {
 		this.r = r
 		this.g = g
@@ -127,12 +127,12 @@ export class TickStack {
 
 export class Affine2 {
 	static __vname = 'core.Affine2'
-	a: number
-	b: number
-	c: number
-	d: number
-	tx: number
-	ty: number
+	a = 0
+	b = 0
+	c = 0
+	d = 0
+	tx = 0
+	ty = 0
 	constructor(a = 1, b = 0, c = 0, d = 1, tx = 0, ty = 0) {
 		this.a = a
 		this.b = b
@@ -1365,7 +1365,7 @@ export type TouchPhase = 'began' | 'moved' | 'stationary' | 'ended' | 'cancelled
 
 export class Touch {
 	static __vname = 'core.Touch'
-	id: number
+	id = 0
 	pos: Vec2
 	start: Vec2
 	phase: TouchPhase

@@ -40,7 +40,7 @@ export class RayHit {
 	node: core.Node
 	point: Vec2
 	normal: Vec2
-	fraction: number
+	fraction = 0
 	constructor(node: core.Node, point: Vec2, normal: Vec2, fraction: number) {
 		this.node = node
 		this.point = point

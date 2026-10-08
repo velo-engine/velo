@@ -315,7 +315,7 @@ export const os = {
 
 export class Time {
 	static __vname = 'time.Time'
-	ms: number
+	ms = 0
 	constructor(ms = Date.now()) {
 		this.ms = ms
 	}

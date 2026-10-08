@@ -158,11 +158,11 @@ export class Atlas {
 
 export class Pose {
 	static __vname = 'kine2d.Pose'
-	x: number
-	y: number
-	rotation: number
-	scale_x: number
-	scale_y: number
+	x = 0
+	y = 0
+	rotation = 0
+	scale_x = 0
+	scale_y = 0
 	constructor(x = 0, y = 0, rotation = 0, scale_x = 1, scale_y = 1) {
 		this.x = x
 		this.y = y

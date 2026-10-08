@@ -40,10 +40,10 @@ export const TextMeasurer = V.iface('render.TextMeasurer', ['width'])
 
 export class Rect {
 	static __vname = 'render.Rect'
-	x: number
-	y: number
-	w: number
-	h: number
+	x = 0
+	y = 0
+	w = 0
+	h = 0
 	constructor(x = 0, y = 0, w = 0, h = 0) {
 		this.x = x
 		this.y = y
@@ -221,14 +221,14 @@ export class Sprite extends core.Component {
 
 export class SpriteQuad {
 	static __vname = 'render.SpriteQuad'
-	x: number
-	y: number
-	w: number
-	h: number
-	u0: number
-	v0: number
-	u1: number
-	v1: number
+	x = 0
+	y = 0
+	w = 0
+	h = 0
+	u0 = 0
+	v0 = 0
+	u1 = 0
+	v1 = 0
 	constructor(x = 0, y = 0, w = 0, h = 0, u0 = 0, v0 = 0, u1 = 0, v1 = 0) {
 		this.x = x
 		this.y = y
