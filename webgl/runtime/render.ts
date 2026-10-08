@@ -176,46 +176,69 @@ export class Sprite extends core.Component {
 		return [x + dl, y + dt, x + w - dr, y + h - db]
 	}
 	quads(): SpriteQuad[] {
-		if (this.tex === null) return []
-		const [x, y, w, h] = this.local_rect()
-		const [fx, fy, fw, fh] = this.tex.frame_rect(this.frame)
+		const sc = new QuadScratch()
+		this.quads_into(sc)
+		return sc.quads.slice(0, sc.n)
+	}
+	// quads_into puts the sprite's quads (see quads) in sc.quads[0 .. sc.n), reusing sc's objects: the renderer
+	// keeps one QuadScratch, so drawing a sliced sprite allocates nothing (no tuples either, hence the inlining).
+	quads_into(sc: QuadScratch) {
+		sc.n = 0
+		const tex = this.tex
+		if (tex === null) return
+		const sized = this.size.x > 0 && this.size.y > 0
+		const w = sized ? this.size.x : tex.frame_w()
+		const h = sized ? this.size.y : tex.frame_h()
+		const x = -this.anchor.x * w
+		const y = -this.anchor.y * h
+		const fx = tex.frame_x(this.frame)
+		const fy = tex.frame_y(this.frame)
+		const fw = tex.frame_w()
+		const fh = tex.frame_h()
 		if (!this.is_sliced_mode()) {
-			return [this.flipped(x, y, w, h, { d0: 0, d1: w, s0: fx, s1: fx + fw, mid: false }, { d0: 0, d1: h, s0: fy, s1: fy + fh, mid: false })]
+			sc.xs.n = 0
+			sc.ys.n = 0
+			this.put_quad(sc, x, y, w, h, sc.xs.push(0, w, fx, fx + fw, false), sc.ys.push(0, h, fy, fy + fh, false))
+			return
 		}
-		const [l, t, r, b] = this.borders()
+		// borders(), without its tuples
+		let l = Math.max(this.border_left, 0)
+		let r = Math.max(this.border_right, 0)
+		if (l + r > fw) {
+			l = Math.min(l, fw)
+			r = fw - l
+		}
+		let t = Math.max(this.border_top, 0)
+		let b = Math.max(this.border_bottom, 0)
+		if (t + b > fh) {
+			t = Math.min(t, fh)
+			b = fh - t
+		}
 		const scale = sprite_pixel_scale(this.pixel_scale)
 		const tile = this.draw_mode === 'tiled'
-		const xs = axis_segments(w, fx, fw, l, r, scale, tile)
-		const ys = axis_segments(h, fy, fh, t, b, scale, tile)
-		const out: SpriteQuad[] = []
-		for (const sy of ys) {
-			for (const sx of xs) {
+		axis_segments_into(sc.xs, w, fx, fw, l, r, scale, tile)
+		axis_segments_into(sc.ys, h, fy, fh, t, b, scale, tile)
+		for (let j = 0; j < sc.ys.n; j++) {
+			const sy = sc.ys.segs[j]
+			for (let i = 0; i < sc.xs.n; i++) {
+				const sx = sc.xs.segs[i]
 				if (!this.fill_center && sx.mid && sy.mid) continue
-				out.push(this.flipped(x, y, w, h, sx, sy))
+				this.put_quad(sc, x, y, w, h, sx, sy)
 			}
 		}
-		return out
 	}
-	flipped(x: number, y: number, w: number, h: number, sx: Seg, sy: Seg): SpriteQuad {
-		let qx = x + sx.d0
-		const qw = sx.d1 - sx.d0
-		let u0 = sx.s0
-		let u1 = sx.s1
-		if (this.flip_x) {
-			qx = x + w - sx.d1
-			u0 = sx.s1
-			u1 = sx.s0
-		}
-		let qy = y + sy.d0
-		const qh = sy.d1 - sy.d0
-		let v0 = sy.s0
-		let v1 = sy.s1
-		if (this.flip_y) {
-			qy = y + h - sy.d1
-			v0 = sy.s1
-			v1 = sy.s0
-		}
-		return new SpriteQuad(qx, qy, qw, qh, u0, v0, u1, v1)
+	// put_quad appends the piece (sx, sy) of the rectangle (x, y, w, h) to sc, mirrored by flip_x / flip_y.
+	put_quad(sc: QuadScratch, x: number, y: number, w: number, h: number, sx: Seg, sy: Seg) {
+		if (sc.n === sc.quads.length) sc.quads.push(new SpriteQuad())
+		const q = sc.quads[sc.n++]
+		q.x = this.flip_x ? x + w - sx.d1 : x + sx.d0
+		q.w = sx.d1 - sx.d0
+		q.u0 = this.flip_x ? sx.s1 : sx.s0
+		q.u1 = this.flip_x ? sx.s0 : sx.s1
+		q.y = this.flip_y ? y + h - sy.d1 : y + sy.d0
+		q.h = sy.d1 - sy.d0
+		q.v0 = this.flip_y ? sy.s1 : sy.s0
+		q.v1 = this.flip_y ? sy.s0 : sy.s1
 	}
 }
 
@@ -244,12 +267,37 @@ export class SpriteQuad {
 	}
 }
 
-interface Seg {
-	d0: number
-	d1: number
-	s0: number
-	s1: number
-	mid: boolean
+// Seg — one piece along an axis: [d0, d1] in the destination, [s0, s1] texture pixels; `mid` = center band.
+class Seg {
+	d0 = 0
+	d1 = 0
+	s0 = 0
+	s1 = 0
+	mid = false
+}
+
+// SegList — segs[0 .. n), the objects kept for reuse.
+class SegList {
+	segs: Seg[] = []
+	n = 0
+	push(d0: number, d1: number, s0: number, s1: number, mid: boolean): Seg {
+		if (this.n === this.segs.length) this.segs.push(new Seg())
+		const g = this.segs[this.n++]
+		g.d0 = d0
+		g.d1 = d1
+		g.s0 = s0
+		g.s1 = s1
+		g.mid = mid
+		return g
+	}
+}
+
+// QuadScratch — what Sprite.quads_into fills: quads[0 .. n), plus its working lists.
+export class QuadScratch {
+	quads: SpriteQuad[] = []
+	n = 0
+	xs = new SegList()
+	ys = new SegList()
 }
 
 const max_tiles_per_axis = 256
@@ -274,13 +322,22 @@ function fit_borders(a: number, b: number, len: number): [number, number] {
 	return [a * k, b * k]
 }
 
-function axis_segments(len: number, start: number, src_len: number, b0: number, b1: number, scale: number, tile: boolean): Seg[] {
-	const out: Seg[] = []
-	if (len <= 0 || src_len <= 0) return out
-	const [d0, d1] = fit_borders(b0 * scale, b1 * scale, len)
+// axis_segments_into cuts one axis into `out` (cleared first): `len` destination units showing texture pixels
+// [start, start + src_len) with borders b0/b1; `tile` repeats the center band instead of stretching it.
+function axis_segments_into(out: SegList, len: number, start: number, src_len: number, b0: number, b1: number, scale: number, tile: boolean) {
+	out.n = 0
+	if (len <= 0 || src_len <= 0) return
+	// fit_borders, without its tuple
+	let d0 = b0 * scale
+	let d1 = b1 * scale
+	if (!(d0 + d1 <= len || d0 + d1 <= 0)) {
+		const k = Math.max(len, 0) / (d0 + d1)
+		d0 *= k
+		d1 *= k
+	}
 	const s = start
 	const e = start + src_len
-	if (d0 > 0) out.push({ d0: 0, d1: d0, s0: s, s1: s + b0, mid: false })
+	if (d0 > 0) out.push(0, d0, s, s + b0, false)
 	const mid_src0 = s + b0
 	const mid_src1 = e - b1
 	const mid_len = len - d0 - d1
@@ -292,15 +349,14 @@ function axis_segments(len: number, start: number, src_len: number, b0: number, 
 			const end = len - d1
 			while (p < end - 0.001) {
 				const q = Math.min(p + step, end)
-				out.push({ d0: p, d1: q, s0: mid_src0, s1: mid_src0 + ((mid_src1 - mid_src0) * (q - p)) / step, mid: true })
+				out.push(p, q, mid_src0, mid_src0 + ((mid_src1 - mid_src0) * (q - p)) / step, true)
 				p = q
 			}
 		} else {
-			out.push({ d0, d1: len - d1, s0: mid_src0, s1: mid_src1, mid: true })
+			out.push(d0, len - d1, mid_src0, mid_src1, true)
 		}
 	}
-	if (d1 > 0) out.push({ d0: len - d1, d1: len, s0: e - b1, s1: e, mid: false })
-	return out
+	if (d1 > 0) out.push(len - d1, len, e - b1, e, false)
 }
 
 // ---------- SpriteAnimator ----------
@@ -2249,6 +2305,7 @@ export class Renderer {
 	// Pack small textures into shared pages for sprites without an effect (see Gfx.atlas_slot). Off: every texture
 	// is its own GPU texture.
 	atlas_on = true
+	quad_scratch = new QuadScratch() // draw_sprite's quads of sliced sprites, reused every frame
 	// draw_tree counts the GPU draws it issued from here (Gfx.draw_calls, plus the batch still pending), like
 	// the native renderer counts sprite runs rather than sprites
 	draws_at_start = 0
@@ -2454,7 +2511,10 @@ export class Renderer {
 			]))
 		}
 		const quad = fx !== null ? this.gfx.effect_quad : this.gfx.quad
-		for (const q of s.quads()) {
+		const sc = this.quad_scratch
+		s.quads_into(sc)
+		for (let i = 0; i < sc.n; i++) {
+			const q = sc.quads[i]
 			const x1 = q.x + q.w
 			const y1 = q.y + q.h
 			quad.call(
