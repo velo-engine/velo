@@ -113,6 +113,55 @@ interface GpuEffect {
 	program: EffectProgram | null // null: does not compile (not retried until the source changes)
 }
 
+export const SPRITE_ATLAS = 2048 // page size
+const SPRITE_ATLAS_MAX = 512 // larger textures keep their own GPU texture
+
+// the offsets the image is uploaded at to fill the border, the last one (0, 0) being the image itself
+const ATLAS_BORDER_SHIFTS: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]
+
+// AtlasSlot — where a texture's own pixels start in an atlas page (inside its border).
+export interface AtlasSlot {
+	tex: WebGLTexture
+	x: number
+	y: number
+	version: number
+}
+
+// AtlasPage — one page of the sprite atlas: a GPU texture and its shelf packer.
+class AtlasPage {
+	tex: WebGLTexture
+	nearest: boolean
+	cx = 0 // next free x on the current row
+	cy = 0 // top of the current row
+	row_h = 0
+
+	constructor(gl: WebGLRenderingContext, nearest: boolean) {
+		this.nearest = nearest
+		this.tex = gl.createTexture()!
+		gl.bindTexture(gl.TEXTURE_2D, this.tex)
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, SPRITE_ATLAS, SPRITE_ATLAS, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+		const filter = nearest ? gl.NEAREST : gl.LINEAR
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter)
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter)
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+	}
+
+	// alloc reserves a w x h rectangle: its top-left corner, or [-1, -1] when the page is full.
+	alloc(w: number, h: number): [number, number] {
+		if (this.cx + w > SPRITE_ATLAS) {
+			this.cx = 0
+			this.cy += this.row_h
+			this.row_h = 0
+		}
+		if (this.cy + h > SPRITE_ATLAS) return [-1, -1]
+		const x = this.cx
+		this.cx += w
+		if (h > this.row_h) this.row_h = h
+		return [x, this.cy]
+	}
+}
+
 interface GpuTex {
 	tex: WebGLTexture
 	version: number
@@ -148,6 +197,8 @@ export class Gfx {
 	effects = new Map<string, GpuEffect>()
 	cur_effect: EffectProgram | null = null
 	cur_uniforms: Float32Array | null = null
+	atlas_pages: AtlasPage[] = []
+	atlas_slots = new Map<string, AtlasSlot>() // texture ID -> its place in the sprite atlas
 
 	constructor(canvas: HTMLCanvasElement) {
 		this.canvas = canvas
@@ -530,11 +581,61 @@ export class Gfx {
 	}
 
 	release_texture(id: string) {
+		this.atlas_forget(id)
 		const cached = this.textures.get(id)
 		if (!cached) return
 		this.flush()
 		this.gl.deleteTexture(cached.tex)
 		this.textures.delete(id)
+	}
+
+	// ---------- Sprite atlas ----------
+	// The same scheme as render/atlas.v on desktop: textures up to SPRITE_ATLAS_MAX are packed into shared
+	// SPRITE_ATLAS pages (one set per filter) so sprites alternating between textures stay in one batch. Here the
+	// image goes straight from the decoded TexImageSource into the page with texSubImage2D: no CPU copy of the page.
+	// Every texture gets a 1 pixel border repeating its edge (the image uploaded again one pixel off to each side,
+	// under the real one), so linear filtering and rotation never pull in a neighbour. Space of reloaded or released
+	// textures is not reused; when no texture is left the pages are dropped.
+
+	// atlas_slot: where `t` is in the sprite atlas (packing it on first use), or null when it does not fit.
+	atlas_slot(t: Texture): AtlasSlot | null {
+		const s = this.atlas_slots.get(t.id)
+		if (s !== undefined && s.version === t.version) return s
+		if (!t.image || t.width <= 0 || t.height <= 0 || t.width > SPRITE_ATLAS_MAX || t.height > SPRITE_ATLAS_MAX) return null
+		const nearest = t.filter === 'nearest'
+		const w = t.width + 2
+		const h = t.height + 2
+		let page: AtlasPage | null = null
+		let x = -1
+		let y = -1
+		for (const p of this.atlas_pages) {
+			if (p.nearest !== nearest) continue
+			;[x, y] = p.alloc(w, h)
+			if (x >= 0) {
+				page = p
+				break
+			}
+		}
+		if (page === null) {
+			page = new AtlasPage(this.gl, nearest)
+			this.atlas_pages.push(page)
+			;[x, y] = page.alloc(w, h)
+		}
+		const gl = this.gl
+		gl.bindTexture(gl.TEXTURE_2D, page.tex)
+		gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+		// the border: the image shifted by one pixel each way (edges, then corners), then the image itself on top
+		for (const [dx, dy] of ATLAS_BORDER_SHIFTS) gl.texSubImage2D(gl.TEXTURE_2D, 0, x + 1 + dx, y + 1 + dy, gl.RGBA, gl.UNSIGNED_BYTE, t.image)
+		const slot: AtlasSlot = { tex: page.tex, x: x + 1, y: y + 1, version: t.version }
+		this.atlas_slots.set(t.id, slot)
+		return slot
+	}
+
+	atlas_forget(id: string) {
+		if (!this.atlas_slots.delete(id) || this.atlas_slots.size > 0) return
+		this.flush()
+		for (const p of this.atlas_pages) this.gl.deleteTexture(p.tex)
+		this.atlas_pages.length = 0
 	}
 
 	// ---------- Text ----------

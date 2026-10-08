@@ -5,7 +5,7 @@ import * as V from './v.ts'
 import * as core from './core.ts'
 import * as assets from './assets.ts'
 import * as serialize from './serialize.ts'
-import { Gfx, type GfxColor, type HAlign, type VAlign } from './gfx.ts'
+import { Gfx, SPRITE_ATLAS, type GfxColor, type HAlign, type VAlign } from './gfx.ts'
 
 type FieldSpec = core.FieldSpec
 const { Vec2, Affine2, vec2, rgba } = core
@@ -2226,6 +2226,9 @@ export class Renderer {
 	db: assets.AssetDatabase
 	debug = false
 	show_shapes = false
+	// Pack small textures into shared pages for sprites without an effect (see Gfx.atlas_slot). Off: every texture
+	// is its own GPU texture.
+	atlas_on = true
 	// draw_tree counts the GPU draws it issued from here (Gfx.draw_calls, plus the batch still pending), like
 	// the native renderer counts sprite runs rather than sprites
 	draws_at_start = 0
@@ -2370,13 +2373,18 @@ export class Renderer {
 	draw_sprite(s: Sprite, m: Affine2) {
 		const tex = s.tex
 		if (tex === null || tex.width <= 0 || tex.height <= 0) return
-		const gtex = this.gfx.texture(tex)
-		if (gtex === null) return
-		const tw = tex.width
-		const th = tex.height
 		const col = s.color
 		const sh = s.shader_data
 		const fx = sh !== null ? this.gfx.effect(sh.id, sh.version, sh.source, sh.path) : null
+		// sprites without an effect draw from the sprite atlas when their texture fits (see Gfx.atlas_slot);
+		// tw, th is then the page's size and ox, oy where the texture's pixels start in it
+		const slot = fx === null && this.atlas_on ? this.gfx.atlas_slot(tex) : null
+		const gtex = slot !== null ? slot.tex : this.gfx.texture(tex)
+		if (gtex === null) return
+		const tw = slot !== null ? SPRITE_ATLAS : tex.width
+		const th = slot !== null ? SPRITE_ATLAS : tex.height
+		const ox = slot !== null ? slot.x : 0
+		const oy = slot !== null ? slot.y : 0
 		if (fx === null && !s.is_sliced_mode() && !this.debug) {
 			// the common case, without the quads() array: one quad over the whole display rect
 			const fw = tex.frame_w()
@@ -2388,8 +2396,8 @@ export class Renderer {
 			const y0 = -s.anchor.y * h
 			const x1 = x0 + w
 			const y1 = y0 + h
-			const fx0 = tex.frame_x(s.frame)
-			const fy0 = tex.frame_y(s.frame)
+			const fx0 = tex.frame_x(s.frame) + ox
+			const fy0 = tex.frame_y(s.frame) + oy
 			let u0 = fx0 / tw
 			let u1 = (fx0 + fw) / tw
 			let v0 = fy0 / th
@@ -2432,10 +2440,10 @@ export class Renderer {
 			quad.call(
 				this.gfx,
 				gtex,
-				m.apply_x(q.x, q.y), m.apply_y(q.x, q.y), q.u0 / tw, q.v0 / th,
-				m.apply_x(x1, q.y), m.apply_y(x1, q.y), q.u1 / tw, q.v0 / th,
-				m.apply_x(x1, y1), m.apply_y(x1, y1), q.u1 / tw, q.v1 / th,
-				m.apply_x(q.x, y1), m.apply_y(q.x, y1), q.u0 / tw, q.v1 / th,
+				m.apply_x(q.x, q.y), m.apply_y(q.x, q.y), (q.u0 + ox) / tw, (q.v0 + oy) / th,
+				m.apply_x(x1, q.y), m.apply_y(x1, q.y), (q.u1 + ox) / tw, (q.v0 + oy) / th,
+				m.apply_x(x1, y1), m.apply_y(x1, y1), (q.u1 + ox) / tw, (q.v1 + oy) / th,
+				m.apply_x(q.x, y1), m.apply_y(q.x, y1), (q.u0 + ox) / tw, (q.v1 + oy) / th,
 				col,
 			)
 		}

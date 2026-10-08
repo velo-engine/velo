@@ -27,6 +27,8 @@ export class Config {
 	font_path = ''
 	app_id = ''
 	save_file = ''
+	// Pack small textures into shared pages so sprites on different textures draw as one batch (see Gfx.atlas_slot).
+	atlas = true
 	on_scene_loaded: ((a: App) => void) | null = null
 }
 
@@ -114,6 +116,7 @@ export class App {
 		const canvas = canvas_el ?? make_canvas()
 		this.gfx = new Gfx(canvas)
 		this.renderer = render.new_renderer(this.gfx, this.db)
+		this.renderer.atlas_on = this.cfg.atlas
 		audio.start()
 		this.load_scene(this.cfg.scene)
 		this.install_input(canvas)
