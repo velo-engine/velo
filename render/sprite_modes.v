@@ -196,11 +196,6 @@ fn (s &Sprite) flipped(x f32, y f32, w f32, h f32, sx Seg, sy Seg) SpriteQuad {
 	return SpriteQuad{qx, qy, qw, qh, u0, v0, u1, v1}
 }
 
-// draw_sprite_quads draws a sliced/tiled sprite as one batch of textured quads through the node's matrix.
-fn (mut r Renderer) draw_sprite_quads(s &Sprite, m core.Affine2) {
-	r.draw_sprite_batch(s, m, r.ctx.pipeline.alpha, []f32{})
-}
-
 // draw_sprite_shaded draws any sprite (simple, sliced or tiled) through a shader pipeline (see shader.v).
 fn (mut r Renderer) draw_sprite_shaded(s &Sprite, m core.Affine2, pip sgl.Pipeline) {
 	tex := s.tex

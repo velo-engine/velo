@@ -7,8 +7,9 @@ import velo.assets
 // textures stay on one GPU texture. Switching textures is cheap on desktop but costs a lot on phones (the bench in
 // examples/bench: 20000 sprites on 16 textures took 2.7x as long as on one, on Android).
 //
-// Only plain sprites use it (Sprite in simple draw mode, no shader): sliced and tiled sprites, meshes and tile maps
-// need the texture on its own (repeat, UVs) and keep using image_for. A texture can be in both.
+// Sprites without a shader use it, sliced and tiled ones included (their pieces have their own UVs, no repeat).
+// Shaded sprites, meshes and tile maps need the texture on its own (the shader's UV built-ins, the meshes' UVs)
+// and keep using image_for. A texture can be in both.
 //
 // Packing is a shelf packer; every texture gets a 1 pixel border copied from its edge so linear filtering and
 // rotation never pull in a neighbour's pixels. Space of unloaded textures is not reused; when no texture is left

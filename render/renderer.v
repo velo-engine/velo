@@ -410,11 +410,6 @@ fn (mut r Renderer) draw_sprite(s &Sprite, m core.Affine2) {
 			return
 		}
 	}
-	if s.is_sliced_mode() {
-		r.flush_sprites()
-		r.draw_sprite_quads(s, m)
-		return
-	}
 	mut img_id := 0
 	mut ox := 0
 	mut oy := 0
@@ -429,8 +424,12 @@ fn (mut r Renderer) draw_sprite(s &Sprite, m core.Affine2) {
 		img := r.image_for(s.tex) or { return }
 		img_id = img.id
 	}
-	fx, fy, fw, fh := s.tex.frame_rect(s.frame)
-	r.batch_sprite(s, m, img_id, fx + ox, fy + oy, fw, fh)
+	if s.is_sliced_mode() {
+		r.batch_sliced(s, m, img_id, ox, oy)
+	} else {
+		fx, fy, fw, fh := s.tex.frame_rect(s.frame)
+		r.batch_sprite(s, m, img_id, fx + ox, fy + oy, fw, fh)
+	}
 	if r.debug {
 		r.flush_sprites()
 		x, y, w, h := s.local_rect()
