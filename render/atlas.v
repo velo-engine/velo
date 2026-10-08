@@ -97,6 +97,30 @@ mut:
 	retired []int                // GPU images replaced this frame: still used by queued draws, freed two frames later
 	old     []int
 	frame   u64
+	// Bumped whenever a slot or a page image changes: AtlasCache entries from an older generation are stale.
+	gen u64
+}
+
+// AtlasCache — a sprite's last atlas lookup, so drawing does not hash the texture ID every frame. Valid while it is
+// from the same renderer, the atlas has not changed since (gen), and the texture is the same at the same version.
+struct AtlasCache {
+	owner   voidptr
+	gen     u64
+	tex     voidptr
+	version int
+	img     int
+	x       int
+	y       int
+}
+
+// atlas_cached: the sprite's cached lookup, if still valid.
+fn (r &Renderer) atlas_cached(s &Sprite) ?(int, int, int) {
+	c := s.atlas_cache
+	if r.atlas_on && c.owner == voidptr(r) && c.gen == r.atlas.gen && c.tex == voidptr(s.tex)
+		&& c.version == s.tex.version {
+		return c.img, c.x, c.y
+	}
+	return none
 }
 
 // atlas_fits: the texture is small enough, and the atlas is on.
@@ -133,6 +157,7 @@ fn (mut r Renderer) atlas_add(t &assets.Texture, decoded DecodedImage) bool {
 		if x, y := r.atlas.pages[i].alloc(decoded.width, decoded.height) {
 			r.atlas.pages[i].blit(decoded.data, decoded.width, decoded.height, x, y)
 			r.atlas.slots[t.id] = AtlasSlot{i, x, y, t.version}
+			r.atlas.gen++
 			free_decoded(decoded)
 			return true
 		}
@@ -142,6 +167,7 @@ fn (mut r Renderer) atlas_add(t &assets.Texture, decoded DecodedImage) bool {
 	page.blit(decoded.data, decoded.width, decoded.height, x, y)
 	r.atlas.pages << page
 	r.atlas.slots[t.id] = AtlasSlot{r.atlas.pages.len - 1, x, y, t.version}
+	r.atlas.gen++
 	free_decoded(decoded)
 	return true
 }
@@ -157,6 +183,7 @@ fn (mut r Renderer) atlas_lookup(t &assets.Texture) ?(int, int, int) {
 			return r.atlas_page_image(s.page), s.x, s.y
 		}
 		r.atlas.slots.delete(t.id) // reloaded from disk: pack the new pixels
+		r.atlas.gen++
 	}
 	decoded := decode_image(t.path) or { return none }
 	if !r.atlas_add(t, decoded) {
@@ -189,6 +216,7 @@ fn (mut r Renderer) atlas_page_image(i int) int {
 	img.data = unsafe { nil }
 	img.id = r.ctx.cache_image(img)
 	p.img = img
+	r.atlas.gen++ // the page has a new image id
 	p.has_gpu = true
 	p.dirty = false
 	return img.id
@@ -200,6 +228,7 @@ fn (mut r Renderer) atlas_forget(id string) {
 		return
 	}
 	r.atlas.slots.delete(id)
+	r.atlas.gen++
 	if r.atlas.slots.len == 0 {
 		for p in r.atlas.pages {
 			if p.has_gpu {

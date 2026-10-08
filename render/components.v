@@ -64,6 +64,7 @@ pub mut:
 	tex         &assets.Texture = unsafe { nil } @[hide]
 	loaded      string          @[hide]
 	shader_data &assets.Shader = unsafe { nil }  @[hide]
+	atlas_cache AtlasCache      @[hide] // draw_sprite's last atlas lookup (see AtlasCache)
 }
 
 // on_load: fetches the texture from the AssetDatabase (increments the reference count).

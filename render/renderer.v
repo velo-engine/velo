@@ -75,6 +75,7 @@ pub fn (mut r Renderer) draw_scene(scene &core.Scene, window core.Affine2) {
 // Canvas skip it) and `view` maps the screen into the window (the scale mode in the game, pan/zoom in the editor).
 pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2, camera core.Affine2) {
 	r.draw_calls = 0
+	r.atlas_begin_frame() // also done by atlas_lookup, which cached sprites skip
 	base := r.base_rect()
 	r.clip = base
 	mut lit := r.light_scene == unsafe { nil }
@@ -413,8 +414,13 @@ fn (mut r Renderer) draw_sprite(s &Sprite, m core.Affine2) {
 	mut img_id := 0
 	mut ox := 0
 	mut oy := 0
-	if id, x, y := r.atlas_lookup(s.tex) {
+	if id, x, y := r.atlas_cached(s) {
 		img_id, ox, oy = id, x, y
+	} else if id, x, y := r.atlas_lookup(s.tex) {
+		img_id, ox, oy = id, x, y
+		mut ms := unsafe { s }
+		ms.atlas_cache =
+			AtlasCache{voidptr(r), r.atlas.gen, voidptr(s.tex), s.tex.version, id, x, y}
 	} else {
 		img := r.image_for(s.tex) or { return }
 		img_id = img.id
