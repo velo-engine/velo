@@ -98,10 +98,11 @@ fn fit_borders(a f32, b f32, len f32) (f32, f32) {
 
 // axis_segments cuts one axis: `len` destination units showing texture pixels [start, start + src_len)
 // with borders b0/b1; `tile` repeats the center band every (src center * scale) units instead of stretching it.
-fn axis_segments(len f32, start int, src_len int, b0 int, b1 int, scale f32, tile bool) []Seg {
-	mut out := []Seg{}
+// `out` is cleared and filled, so the renderer can reuse its memory every frame.
+fn axis_segments(mut out []Seg, len f32, start int, src_len int, b0 int, b1 int, scale f32, tile bool) {
+	out.clear()
 	if len <= 0 || src_len <= 0 {
-		return out
+		return
 	}
 	d0, d1 := fit_borders(f32(b0) * scale, f32(b1) * scale, len)
 	s := f32(start)
@@ -133,38 +134,51 @@ fn axis_segments(len f32, start int, src_len int, b0 int, b1 int, scale f32, til
 	if d1 > 0 {
 		out << Seg{len - d1, len, e - f32(b1), e, false}
 	}
-	return out
 }
 
 // quads: the pieces the sprite is drawn with, in node space (one for 'simple', up to 9 for 'sliced',
 // many for 'tiled'). Empty without a loaded texture.
 pub fn (s &Sprite) quads() []SpriteQuad {
+	mut sc := &QuadScratch{}
+	s.quads_into(mut sc)
+	return sc.quads
+}
+
+// QuadScratch — the buffers quads_into fills; the renderer keeps one so drawing a sliced sprite does not allocate.
+@[heap]
+struct QuadScratch {
+mut:
+	quads []SpriteQuad
+	xs    []Seg
+	ys    []Seg
+}
+
+// quads_into puts the sprite's quads (see quads) in `sc.quads`, reusing the memory of all of sc's buffers.
+fn (s &Sprite) quads_into(mut sc QuadScratch) {
+	sc.quads.clear()
 	if s.tex == unsafe { nil } {
-		return []
+		return
 	}
 	x, y, w, h := s.local_rect()
 	fx, fy, fw, fh := s.tex.frame_rect(s.frame)
 	if !s.is_sliced_mode() {
-		return [
-			s.flipped(x, y, w, h, Seg{0, w, f32(fx), f32(fx + fw), false}, Seg{0, h, f32(fy), f32(
-				fy + fh), false}),
-		]
+		sc.quads << s.flipped(x, y, w, h, Seg{0, w, f32(fx), f32(fx + fw), false}, Seg{0, h, f32(fy), f32(
+			fy + fh), false})
+		return
 	}
 	l, t, r, b := s.borders()
 	scale := sprite_pixel_scale(s.pixel_scale)
 	tile := s.draw_mode == 'tiled'
-	xs := axis_segments(w, fx, fw, l, r, scale, tile)
-	ys := axis_segments(h, fy, fh, t, b, scale, tile)
-	mut out := []SpriteQuad{cap: xs.len * ys.len}
-	for sy in ys {
-		for sx in xs {
+	axis_segments(mut sc.xs, w, fx, fw, l, r, scale, tile)
+	axis_segments(mut sc.ys, h, fy, fh, t, b, scale, tile)
+	for sy in sc.ys {
+		for sx in sc.xs {
 			if !s.fill_center && sx.mid && sy.mid {
 				continue
 			}
-			out << s.flipped(x, y, w, h, sx, sy)
+			sc.quads << s.flipped(x, y, w, h, sx, sy)
 		}
 	}
-	return out
 }
 
 // flipped places a piece in the sprite's rectangle (x, y, w, h), mirrored by flip_x / flip_y.
@@ -211,8 +225,9 @@ fn (mut r Renderer) draw_sprite_batch(s &Sprite, m core.Affine2, pip sgl.Pipelin
 	if !img.simg_ok {
 		return
 	}
-	quads := s.quads()
-	if quads.len == 0 {
+	mut qs := r.quad_scratch
+	s.quads_into(mut qs)
+	if qs.quads.len == 0 {
 		return
 	}
 	tw, th := f32(tex.width), f32(tex.height)
@@ -227,7 +242,7 @@ fn (mut r Renderer) draw_sprite_batch(s &Sprite, m core.Affine2, pip sgl.Pipelin
 	sgl.enable_texture()
 	sgl.texture(img.simg, img.ssmp)
 	sgl.begin_quads()
-	for q in quads {
+	for q in qs.quads {
 		u0, v0, u1, v1 := q.u0 / tw, q.v0 / th, q.u1 / tw, q.v1 / th
 		a := m.apply(core.vec2(q.x, q.y))
 		b := m.apply(core.vec2(q.x + q.w, q.y))

@@ -15,6 +15,7 @@ import velo.render
 //   v run examples/bench -d bench_sprites=20000
 //   v run examples/bench -d bench_rotate=true               every sprite rotated
 //   v run examples/bench -d bench_world=4                   spread over 4x4 screens: ~1/16 on screen (culling)
+//   v run examples/bench -d bench_sliced=true               9-slice sprites (draw_mode sliced, 32x32, borders 8)
 //   velo run android examples/bench       `velo run/build` for phones takes no -d: edit the two constants below
 //                                         (bench_textures 16 then 1) and compare the two frame times
 //
@@ -25,6 +26,7 @@ const sprite_count = $d('bench_sprites', 10000)
 const texture_count = $d('bench_textures', 16)
 const rotate = $d('bench_rotate', false)
 const world = $d('bench_world', 1)
+const sliced = $d('bench_sliced', false)
 
 pub struct Bench {
 	core.Component
@@ -48,10 +50,22 @@ pub fn (mut b Bench) start() {
 		if rotate {
 			n.rotation = f32(i % 360)
 		}
-		n.add_component(&render.Sprite{
-			texture: refs[i % texture_count] // neighbours in draw order use different textures
-			size:    core.vec2(16, 16)
-		})
+		if sliced {
+			n.add_component(&render.Sprite{
+				texture:       refs[i % texture_count]
+				size:          core.vec2(32, 32)
+				draw_mode:     'sliced'
+				border_left:   8
+				border_top:    8
+				border_right:  8
+				border_bottom: 8
+			})
+		} else {
+			n.add_component(&render.Sprite{
+				texture: refs[i % texture_count] // neighbours in draw order use different textures
+				size:    core.vec2(16, 16)
+			})
+		}
 		b.node.add_child(mut n)
 	}
 	mut ln := core.Node.new('Stats')

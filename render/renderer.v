@@ -33,6 +33,8 @@ mut:
 	shaders      map[string]GpuShader // shader asset ID -> pipeline
 	draw_list    &DrawList = unsafe { nil } // draw_tree's, kept between frames so drawing does not allocate it
 	batch        SpriteBatch // the open run of plain sprites (see batch.v)
+	quad_scratch &QuadScratch = &QuadScratch{} // draw_sprite_batch's quads, reused every frame
+	cell_scratch &CellScratch = &CellScratch{} // draw_tilemap's visible cells, reused every frame
 	sgl_warned   bool
 pub mut:
 	debug bool // F1: draw node bounds + center

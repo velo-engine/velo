@@ -415,7 +415,21 @@ pub fn (tm &TileMap) local_to_cell(p core.Vec2) (int, int) {
 // visible_cells: the cells whose tile box touches the node-space rectangle (x0, y0)-(x1, y1), as
 // row * columns + col, in drawing order (back to front: rows top to bottom, isometric diagonals).
 pub fn (tm &TileMap) visible_cells(x0 f32, y0 f32, x1 f32, y1 f32) []int {
-	mut out := []int{}
+	mut sc := &CellScratch{}
+	tm.visible_cells_into(mut sc, x0, y0, x1, y1)
+	return sc.cells
+}
+
+// CellScratch — the buffer visible_cells_into fills; the renderer keeps one so drawing a map does not allocate.
+@[heap]
+struct CellScratch {
+mut:
+	cells []int
+}
+
+// visible_cells_into puts the visible cells (see visible_cells) in `sc.cells`, reusing its memory.
+fn (tm &TileMap) visible_cells_into(mut sc CellScratch, x0 f32, y0 f32, x1 f32, y1 f32) {
+	sc.cells.clear()
 	ox, oy, _, _ := tm.local_rect()
 	cs := tm.cell_size()
 	sx, sy := tm.step(cs)
@@ -429,7 +443,7 @@ pub fn (tm &TileMap) visible_cells(x0 f32, y0 f32, x1 f32, y1 f32) []int {
 				cols - 1)
 			for r in r_from .. r_to + 1 {
 				for c in c_from .. c_to + 1 {
-					out << r * cols + c
+					sc.cells << r * cols + c
 				}
 			}
 		}
@@ -446,7 +460,7 @@ pub fn (tm &TileMap) visible_cells(x0 f32, y0 f32, x1 f32, y1 f32) []int {
 					r := s - c
 					d := c - r
 					if r >= 0 && r < rows && d >= d_lo && d <= d_hi {
-						out << r * cols + c
+						sc.cells << r * cols + c
 					}
 				}
 			}
@@ -469,14 +483,12 @@ pub fn (tm &TileMap) visible_cells(x0 f32, y0 f32, x1 f32, y1 f32) []int {
 				for c in math.max(c_lo, 0) .. math.min(c_hi + 1, cols) {
 					x, y := tm.cell_origin(c, r, cs)
 					if x < rx1 && x + cs.x > rx0 && y < ry1 && y + cs.y > ry0 {
-						out << r * cols + c
+						sc.cells << r * cols + c
 					}
 				}
 			}
 		}
 	}
-
-	return out
 }
 
 // world_to_cell: the (col, row) under a world point, e.g. the player's feet.
@@ -530,16 +542,14 @@ fn (mut r Renderer) draw_tilemap(tm &TileMap, m core.Affine2) {
 	// visible cell range: the clip rectangle brought back into node space
 	inv := m.inverse()
 	cl := r.clip
-	mut lx0, mut ly0 := f32(1e30), f32(1e30)
-	mut lx1, mut ly1 := f32(-1e30), f32(-1e30)
-	for p in [core.vec2(cl.x, cl.y), core.vec2(cl.x + cl.w, cl.y),
-		core.vec2(cl.x + cl.w, cl.y + cl.h), core.vec2(cl.x, cl.y + cl.h)] {
-		q := inv.apply(p)
-		lx0, ly0 = math.min(lx0, q.x), math.min(ly0, q.y)
-		lx1, ly1 = math.max(lx1, q.x), math.max(ly1, q.y)
-	}
-	cells := tm.visible_cells(lx0, ly0, lx1, ly1)
-	if cells.len == 0 {
+	p0 := inv.apply(core.vec2(cl.x, cl.y))
+	p1 := inv.apply(core.vec2(cl.x + cl.w, cl.y))
+	p2 := inv.apply(core.vec2(cl.x + cl.w, cl.y + cl.h))
+	p3 := inv.apply(core.vec2(cl.x, cl.y + cl.h))
+	mut sc := r.cell_scratch
+	tm.visible_cells_into(mut sc, min4(p0.x, p1.x, p2.x, p3.x), min4(p0.y, p1.y, p2.y, p3.y), max4(p0.x,
+		p1.x, p2.x, p3.x), max4(p0.y, p1.y, p2.y, p3.y))
+	if sc.cells.len == 0 {
 		return
 	}
 	cs := tm.cell_size()
@@ -554,7 +564,7 @@ fn (mut r Renderer) draw_tilemap(tm &TileMap, m core.Affine2) {
 	sgl.enable_texture()
 	sgl.texture(img.simg, img.ssmp)
 	sgl.begin_quads()
-	for i in cells {
+	for i in sc.cells {
 		c, row := i % tm.columns, i / tm.columns
 		t0 := tm.get(c, row)
 		if t0 < 0 {
