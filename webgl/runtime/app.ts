@@ -27,6 +27,8 @@ export class Config {
 	font_path = ''
 	app_id = ''
 	save_file = ''
+	// Language used when neither the saved choice nor the browser's language has a table in `locales/` (see core.Locale).
+	language = 'en'
 	// Pack small textures into shared pages so sprites on different textures draw as one batch (see Gfx.atlas_slot).
 	atlas = true
 	on_scene_loaded: ((a: App) => void) | null = null
@@ -52,6 +54,12 @@ export function is_web(): boolean {
 	return true
 }
 
+// locale_code: 'locales/vi.txt' -> 'vi'; '' for any other asset.
+function locale_code(path: string): string {
+	if (!path.startsWith('locales/') || !path.endsWith('.txt')) return ''
+	return path.slice('locales/'.length, -'.txt'.length)
+}
+
 export class App {
 	static __vname = 'app.App'
 	cfg: Config
@@ -66,6 +74,7 @@ export class App {
 	fit = new core.ScreenFit()
 	safe_insets = new core.Insets()
 	store: core.Store
+	locale = new core.Locale() // the game's texts; filled from the `locales/*.txt` assets
 	keyboard_shown = false
 	fade = new SceneFade()
 	mode: core.ScaleMode
@@ -86,6 +95,33 @@ export class App {
 		this.loader = serialize.new_loader(this.registry, db)
 		this.store = open_store(cfg)
 		this.update_fit()
+		this.setup_locale()
+	}
+
+	// setup_locale loads every `locales/<lang>.txt` and picks the startup language.
+	setup_locale() {
+		this.locale.store = this.store
+		for (const e of this.db.all()) {
+			if (e.kind === 'text') this.load_locale_asset(e.id)
+		}
+		this.locale.choose_startup_language(this.store.get_string('language', ''), this.cfg.language)
+		if (this.locale.language() !== '') console.log(`[velo] language ${this.locale.language()} (${this.locale.languages().length} available)`)
+	}
+
+	load_locale_asset(id: string) {
+		const path = this.db.path_of(id)
+		if (path === null) return
+		const code = locale_code(path)
+		if (code === '') return
+		let t: assets.TextAsset
+		try {
+			t = this.db.load<assets.TextAsset>(assets.TextAsset, id)
+		} catch (e) {
+			console.error(`[velo] ${path}: ${V.as_error(e).message}`)
+			return
+		}
+		this.locale.add_table(code, t.text)
+		this.db.release(id)
 	}
 
 	register(t: V.TypeDesc) {
@@ -96,6 +132,7 @@ export class App {
 		const next = this.loader.load_scene(key)
 		next.input = this.input
 		next.store = this.store
+		next.locale = this.locale
 		next.key = this.db.resolve(key) ?? key
 		this.apply_fit(next)
 		if (this.scene) {
@@ -233,6 +270,7 @@ export class App {
 
 	on_asset_event(ev: assets.AssetEvent) {
 		this.renderer.on_asset_event(ev)
+		if (ev.kind === 'modified' || ev.kind === 'added') this.load_locale_asset(ev.id)
 		if (ev.kind === 'unloaded' || ev.kind === 'removed') audio.mixer().forget(ev.id)
 	}
 

@@ -335,6 +335,43 @@ async function runtime_tests() {
 		check('frame_rect: frame 5', JSON.stringify(t.frame_rect(5)) === '[16,16,16,16]')
 		check('frame_rect: wraps negative', JSON.stringify(t.frame_rect(-1)) === '[48,16,16,16]')
 	}
+	// locale (same cases as tests/locale_test.v)
+	{
+		const loc = new core.Locale()
+		loc.add_table('en', '# texts\nmenu.play = Play\ncoins.one = {n} coin\ncoins.other = {n} coins\ngreet = Hi\\n{name}\nonly.en = English\n')
+		loc.add_table('vi', 'menu.play = Chơi\ncoins.other = {n} xu\n')
+		loc.add_table('pt', 'menu.play = Jogar\n')
+		check('locale: normalize_lang', core.normalize_lang('pt_BR.UTF-8') === 'pt-br' && core.normalize_lang('C') === '')
+		check('locale: resolve base language', loc.resolve_language('pt-BR') === 'pt' && loc.resolve_language('de') === '')
+		check('locale: set_language', loc.set_language('vi') && loc.tr('menu.play') === 'Chơi' && !loc.set_language('de') && loc.language() === 'vi')
+		check('locale: fallback to en', loc.tr('only.en') === 'English' && loc.tr('nope') === 'nope' && loc.find('nope') === null)
+		check('locale: plurals', loc.tr_n('coins', 1) === '1 xu' && (loc.set_language('en'), loc.tr_n('coins', 1) === '1 coin') && loc.tr_n('coins', 3) === '3 coins')
+		check('locale: escapes and args', loc.tr_args('greet', new Map([['name', 'An']])) === 'Hi\nAn')
+		check('locale: plural_category', core.plural_category('ru', 22) === 'few' && core.plural_category('ru', 11) === 'many' && core.plural_category('fr', 0) === 'one')
+		loc.choose_startup_language('', 'pt')
+		check('locale: startup prefers the system language, then the default', loc.language() === (loc.resolve_language(core.system_language()) || 'pt'))
+
+		const s = core.Scene.new('t')
+		s.locale = loc
+		loc.set_language('en')
+		const n = core.Node.new('L')
+		s.add(n)
+		const l = new render.Label()
+		l.text = 'placeholder'
+		l.text_key = 'menu.play'
+		n.with(l)
+		s.update(0.016)
+		check('locale: Label text_key', l.text === 'Play')
+		loc.set_language('vi')
+		s.update(0.016)
+		check('locale: Label follows the language', l.text === 'Chơi')
+		const l2 = new render.Label()
+		l2.text = 'keep me'
+		l2.text_key = 'unknown.key'
+		s.add(core.Node.new('M').with(l2))
+		s.update(0.016)
+		check('locale: Label keeps text for an unknown key', l2.text === 'keep me')
+	}
 }
 
 // ---------- 3. runtime source rules ----------

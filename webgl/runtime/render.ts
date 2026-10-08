@@ -420,6 +420,7 @@ export class Label extends core.Component {
 	static __vname = 'render.Label'
 	static __fields: FieldSpec[] = [
 		{ name: 'text', type: 'string' },
+		{ name: 'text_key', type: 'string' },
 		{ name: 'size', type: 'int' },
 		{ name: 'color', type: 'Color' },
 		{ name: 'align', type: 'string', choices: ['left', 'center', 'right'] },
@@ -434,6 +435,9 @@ export class Label extends core.Component {
 		{ name: 'outline_width', type: 'f32' },
 	]
 	text = ''
+	// A key of the game's texts (`locales/<language>.txt`): the label shows its translation instead of `text`
+	// and follows language changes. `text` stays as the placeholder when the key is unknown.
+	text_key = ''
 	size = 20
 	color = core.white.clone()
 	align = 'left'
@@ -449,9 +453,25 @@ export class Label extends core.Component {
 	font_data: assets.Font | null = null
 	layout_key = ''
 	layout = new TextBlock()
+	shown_version = -1 // Locale.version `text` was translated at
+	shown_key = ''
 
 	on_load() {
 		this.font_data = load_font(this.node, this.font)
+		this.apply_translation()
+	}
+	update(_dt: number) {
+		this.apply_translation()
+	}
+	// apply_translation sets `text` from `text_key` when the key or the language changed.
+	apply_translation() {
+		if (this.text_key === '' || !this.node || !this.node.scene) return
+		const loc = this.node.scene.locale
+		if (this.shown_version === loc.version && this.shown_key === this.text_key) return
+		this.shown_version = loc.version
+		this.shown_key = this.text_key
+		const s = loc.find(this.text_key)
+		if (s !== null) this.text = s
 	}
 	on_destroy() {
 		this.font_data = release_font(this.node, this.font_data)

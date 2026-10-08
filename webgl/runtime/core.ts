@@ -1034,6 +1034,7 @@ export class Scene {
 	cameras: Camera[] = []
 	key = ''
 	store: Store = new Store()
+	locale: Locale = new Locale() // the game's texts, shared by every scene (App fills it from `locales/*.txt`)
 	next_scene = ''
 	next_change = new SceneChange()
 
@@ -1658,6 +1659,172 @@ export class Store {
 		const lines = ['# velo save data']
 		for (const k of this.keys()) lines.push(`${k} = ${encode_value(this.values.get(k)!)}`)
 		return lines.join('\n') + '\n'
+	}
+}
+
+// ---------- Locale (core/locale.v) ----------
+
+// Locale — the game's text in several languages, shared by every scene through `scene.locale`: one
+// `locales/<code>.txt` asset per language (`key = text`, plural forms `key.one` / `key.other` ...). App loads them
+// and picks the saved language, else the browser's, else Config.language. A Label with `text_key` follows it.
+export class Locale {
+	static __vname = 'core.Locale'
+	tables = new Map<string, Map<string, string>>() // language -> key -> text
+	lang = ''
+	warned = new Set<string>()
+	fallback = 'en' // used for keys the current language lacks
+	store: Store | null = null // saves the chosen language ('language') when set
+	version = 0 // counts changes of language or tables
+
+	add_table(lang: string, text: string) {
+		this.tables.set(normalize_lang(lang), parse_locale_text(text))
+		this.version++
+	}
+	remove_table(lang: string) {
+		this.tables.delete(normalize_lang(lang))
+		this.version++
+	}
+	languages(): string[] {
+		return [...this.tables.keys()].sort()
+	}
+	language(): string {
+		return this.lang
+	}
+	// resolve_language picks the table for a wanted code: exact ('pt-br'), else its base ('pt'), else ''.
+	resolve_language(code: string): string {
+		const c = normalize_lang(code)
+		if (this.tables.has(c)) return c
+		const base = c.split('-')[0]
+		return this.tables.has(base) ? base : ''
+	}
+	// set_language switches language (and saves the choice). false when no table matches the code.
+	set_language(code: string): boolean {
+		const found = this.resolve_language(code)
+		if (found === '') return false
+		this.apply(found)
+		if (this.store !== null) this.store.set_string('language', found)
+		return true
+	}
+	apply(code: string) {
+		if (this.lang !== code) {
+			this.lang = code
+			this.version++
+		}
+	}
+	// choose_startup_language: the saved language, else the system's, else `default_lang`, else the fallback,
+	// else any table. Does not write the store.
+	choose_startup_language(saved: string, default_lang: string) {
+		for (const c of [saved, system_language(), default_lang, this.fallback]) {
+			const found = this.resolve_language(c)
+			if (found !== '') {
+				this.apply(found)
+				return
+			}
+		}
+		const langs = this.languages()
+		if (langs.length > 0) this.apply(langs[0])
+	}
+	// find returns the text of a key in the current language, else in the fallback; null when neither has it.
+	find(key: string): string | null {
+		const t = this.tables.get(this.lang)
+		if (t !== undefined) {
+			const s = t.get(key)
+			if (s !== undefined) return s
+			// 'pt-br' falls back to 'pt' before the fallback language
+			const base = this.lang.split('-')[0]
+			if (base !== this.lang) {
+				const b = this.tables.get(base)?.get(key)
+				if (b !== undefined) return b
+			}
+		}
+		return this.tables.get(this.fallback)?.get(key) ?? null
+	}
+	has(key: string): boolean {
+		return this.find(key) !== null
+	}
+	// tr returns the text of a key; a missing key gives the key itself (and is reported once).
+	tr(key: string): string {
+		const s = this.find(key)
+		if (s !== null) return s
+		if (!this.warned.has(key)) {
+			this.warned.add(key)
+			console.warn(`[velo] missing text "${key}" (language ${this.lang})`)
+		}
+		return key
+	}
+	// tr_args translates and replaces `{name}` with args[name].
+	tr_args(key: string, args: Map<string, string>): string {
+		return format_locale(this.tr(key), args)
+	}
+	// tr_n picks the plural form for `n` (`key.one`, `key.other`, ...), falling back to `key.other`, then `key`.
+	tr_n(key: string, n: number): string {
+		const cat = plural_category(this.lang, n)
+		for (const k of [`${key}.${cat}`, `${key}.other`, key]) {
+			const s = this.find(k)
+			if (s !== null) return format_locale(s, new Map([['n', String(n)]]))
+		}
+		return this.tr(key)
+	}
+}
+
+// normalize_lang: 'pt_BR.UTF-8' -> 'pt-br'.
+export function normalize_lang(code: string): string {
+	let c = code.split('.')[0].split('@')[0].replaceAll('_', '-').toLowerCase().trim()
+	if (c === 'c' || c === 'posix') c = ''
+	return c
+}
+
+// parse_locale_text reads the `key = text` format.
+export function parse_locale_text(text: string): Map<string, string> {
+	const out = new Map<string, string>()
+	for (const line of text.split(/\r?\n/)) {
+		const l = line.trim()
+		if (l === '' || l.startsWith('#')) continue
+		const i = l.indexOf('=')
+		if (i < 0) continue
+		out.set(l.slice(0, i).trim(), unescape_locale(l.slice(i + 1).trim()))
+	}
+	return out
+}
+
+function unescape_locale(s: string): string {
+	if (!s.includes('\\')) return s
+	return s.replace(/\\(.)/g, (_, c: string) => (c === 'n' ? '\n' : c === 't' ? '\t' : c))
+}
+
+function format_locale(text: string, args: Map<string, string>): string {
+	if (args.size === 0 || !text.includes('{')) return text
+	let out = text
+	for (const [k, v] of args) out = out.replaceAll(`{${k}}`, v)
+	return out
+}
+
+// system_language: the browser's language ('' when unknown).
+export function system_language(): string {
+	const nav = (globalThis as any).navigator
+	const l = nav?.languages?.[0] ?? nav?.language ?? ''
+	return normalize_lang(l)
+}
+
+// plural_category: 'zero' | 'one' | 'few' | 'many' | 'other' for a whole number, for the common languages.
+export function plural_category(lang: string, n: number): string {
+	const base = lang.split('-')[0]
+	const count = Math.abs(Math.trunc(n))
+	switch (base) {
+		case 'ja': case 'zh': case 'ko': case 'vi': case 'th': case 'id': case 'ms': case 'lo': case 'my': case 'km':
+			return 'other'
+		case 'fr': case 'pt':
+			return count === 0 || count === 1 ? 'one' : 'other'
+		case 'ru': case 'uk': case 'be':
+			if (count % 10 === 1 && count % 100 !== 11) return 'one'
+			if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14)) return 'few'
+			return 'many'
+		case 'pl':
+			if (count === 1) return 'one'
+			if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14)) return 'few'
+			return 'many'
+		default:
+			return count === 1 ? 'one' : 'other'
 	}
 }
 
