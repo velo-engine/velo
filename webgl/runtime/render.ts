@@ -2226,7 +2226,9 @@ export class Renderer {
 	db: assets.AssetDatabase
 	debug = false
 	show_shapes = false
-	draw_calls = 0
+	// draw_tree counts the GPU draws it issued from here (Gfx.draw_calls, plus the batch still pending), like
+	// the native renderer counts sprite runs rather than sprites
+	draws_at_start = 0
 	base_clip = new Rect()
 	clip = new Rect()
 	// draw_tree's draw list, kept between frames (null while a draw_tree uses it: a nested one makes its own)
@@ -2235,6 +2237,10 @@ export class Renderer {
 	constructor(gfx: Gfx, db: assets.AssetDatabase) {
 		this.gfx = gfx
 		this.db = db
+	}
+
+	get draw_calls(): number {
+		return this.gfx.draw_calls - this.draws_at_start + (this.gfx.nidx > 0 ? 1 : 0)
 	}
 
 	draw_scene(scene: core.Scene, window: Affine2) {
@@ -2248,7 +2254,7 @@ export class Renderer {
 	}
 
 	draw_tree(root: core.Node, view: Affine2, camera: Affine2) {
-		this.draw_calls = 0
+		this.draws_at_start = this.gfx.draw_calls
 		const base = this.base_rect()
 		this.clip = base
 		this.set_scissor(base)
@@ -2320,7 +2326,6 @@ export class Renderer {
 		} else {
 			this.gfx.convex_poly(quad_points(m, rc), c)
 		}
-		this.draw_calls++
 	}
 
 	draw_quad_empty(m: Affine2, rc: Rect, c: GfxColor) {
@@ -2407,7 +2412,6 @@ export class Renderer {
 				m.apply_x(x0, y1), m.apply_y(x0, y1), u0, v1,
 				col,
 			)
-			this.draw_calls++
 			return
 		}
 		if (fx !== null) {
@@ -2436,7 +2440,6 @@ export class Renderer {
 			)
 		}
 		if (fx !== null) this.gfx.end_effect()
-		this.draw_calls++
 		if (this.debug) {
 			const [x, y, w, h] = s.local_rect()
 			this.draw_quad_empty(m, new Rect(x, y, w, h), rgba(0, 255, 0, 160))
@@ -2485,15 +2488,12 @@ export class Renderer {
 		if (l.shadow_color.a > 0) {
 			const o = l.shadow_offset.mul(k)
 			g.draw_text(Math.trunc(x + o.x), Math.trunc(y + o.y), text, { size, color: l.shadow_color, align, valign, family })
-			this.draw_calls++
 		}
 		if (l.outline_color.a > 0 && l.outline_width > 0) {
 			const w = l.outline_width * k
 			for (const d of outline_dirs) g.draw_text(Math.trunc(x + d.x * w + 0.5), Math.trunc(y + d.y * w + 0.5), text, { size, color: l.outline_color, align, valign, family })
-			this.draw_calls += outline_dirs.length
 		}
 		g.draw_text(Math.trunc(x), Math.trunc(y), text, { size, color: l.color, align, valign, family })
-		this.draw_calls++
 	}
 
 	draw_text_input(t: TextInput, m: Affine2) {
@@ -2523,7 +2523,6 @@ export class Renderer {
 				valign: 'middle',
 				family,
 			})
-			this.draw_calls++
 		}
 		if (t.caret_visible()) {
 			const cx = empty ? rc.x + t.padding : x0 + caret_x
@@ -2571,7 +2570,6 @@ export class Renderer {
 				g.vertex_rgba(m.apply_x(px, py), m.apply_y(px, py), u, v, (r & 255) | ((gg & 255) << 8) | ((bb & 255) << 16) | ((a & 255) << 24))
 			}
 		}
-		this.draw_calls++
 		if (this.debug) {
 			let x0 = 1e9
 			let y0 = 1e9
@@ -2647,7 +2645,6 @@ export class Renderer {
 				col,
 			)
 		}
-		this.draw_calls++
 	}
 
 	draw_texture_frame(t: assets.Texture, frame: number, x: number, y: number, w: number, h: number) {
