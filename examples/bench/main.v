@@ -63,7 +63,9 @@ pub fn (mut b Bench) start() {
 	})
 	b.node.add_child(mut ln)
 	// CPU time of drawing, which stays measurable when the frame time is capped by vsync
-	b.scene().profiler.enabled = true
+	$if !webgl ? {
+		b.scene().profiler.enabled = true // the WebGL runtime has no profiler
+	}
 	b.t0 = time.ticks()
 }
 
@@ -75,8 +77,11 @@ pub fn (mut b Bench) update(dt f32) {
 	now := time.ticks()
 	ms := f64(now - b.t0) / 200.0
 	b.t0 = now
-	prof := b.scene().profiler
-	line := '${sprite_count} sprites, ${texture_count} textures: ${ms:.2f} ms/frame (${1000.0 / ms:.0f} fps), CPU: render ${prof.scope_ms('render'):.2f} ms, draw ${prof.scope_ms('draw'):.2f} ms'
+	mut line := '${sprite_count} sprites, ${texture_count} textures: ${ms:.2f} ms/frame (${1000.0 / ms:.0f} fps)'
+	$if !webgl ? {
+		prof := b.scene().profiler
+		line += ', CPU: render ${prof.scope_ms('render'):.2f} ms, draw ${prof.scope_ms('draw'):.2f} ms'
+	}
 	eprintln('[bench] ${line}')
 	b.label.text = line
 }

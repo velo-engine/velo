@@ -237,6 +237,104 @@ async function runtime_tests() {
 	ball.get_component<any>(physics.RigidBody).set_velocity(core.vec2(400, 0))
 	for (let i = 0; i < 90; i++) bs.update(1 / 60)
 	check('physics: restitution bounces back', ball.get_component<any>(physics.RigidBody).velocity().x < -300 && ball.position.x < 290, `${ball.position.x} ${ball.get_component<any>(physics.RigidBody).velocity().x}`)
+
+	// draw order (render/renderer.v): pooled draw list, sorted and already-ordered paths, Canvas, y_sort
+	const names = (ns: any[]) => ns.map((n) => n.name).join(',')
+	{
+		const r = core.Node.new('R')
+		const a = core.Node.new('A')
+		const b = core.Node.new('B')
+		const c = core.Node.new('C')
+		r.add_child(a)
+		r.add_child(b)
+		r.add_child(c)
+		check('draw order: tree order', names(render.draw_order(r)) === 'R,A,B,C')
+		a.z_index = 5
+		check('draw order: z_index sorts', names(render.draw_order(r)) === 'R,B,C,A')
+		a.z_index = 0
+		c.z_index = -1
+		check('draw order: negative z', names(render.draw_order(r)) === 'C,R,A,B')
+	}
+	{
+		const root = core.Node.new('Root')
+		const hud = core.Node.new('HUD').with(new core.Canvas())
+		const a = core.Node.new('A')
+		const b = core.Node.new('B')
+		b.z_index = -1
+		const c = core.Node.new('C')
+		const c1 = core.Node.new('C1')
+		c1.z_index = 1
+		c.add_child(c1)
+		const d = core.Node.new('D')
+		const hidden = core.Node.new('Hidden')
+		hidden.active = false
+		for (const n of [hud, a, b, c, d, hidden]) root.add_child(n)
+		hud.z_index = -5
+		const got = names(render.draw_order(root))
+		check('draw order: z, relative z, Canvas last', got === 'B,Root,A,C,D,C1,HUD', got)
+		const ys = core.Node.new('YS')
+		ys.y_sort = true
+		const tree = core.Node.new('Tree')
+		tree.position = core.vec2(0, 300)
+		tree.add_child(core.Node.new('Leaf'))
+		const hero = core.Node.new('Hero')
+		hero.position = core.vec2(0, 200)
+		ys.add_child(tree)
+		ys.add_child(hero)
+		check('draw order: y_sort', names(render.draw_order(ys)) === 'YS,Hero,Tree,Leaf')
+		hero.position.y = 400
+		check('draw order: y_sort follows moves', names(render.draw_order(ys)) === 'YS,Tree,Leaf,Hero')
+	}
+	// cached local matrix follows in-place changes of position / rotation / scale
+	{
+		const p = core.Node.new('P')
+		const ch = core.Node.new('Ch')
+		p.add_child(ch)
+		ch.position = core.vec2(10, 0)
+		check('local matrix: initial', ch.world_position().x === 10)
+		ch.position.x = 20
+		check('local matrix: position mutated in place', ch.world_position().x === 20)
+		p.scale.x = 2
+		check('local matrix: parent scale', ch.world_position().x === 40)
+		p.rotation = 90
+		const wp = ch.world_position()
+		check('local matrix: parent rotation', Math.abs(wp.x) < 1e-9 && Math.abs(wp.y - 40) < 1e-9, `${wp.x} ${wp.y}`)
+		const m = ch.local_matrix()
+		m.tx = 999
+		check('local matrix: returned copy does not touch the cache', ch.world_position().y === 40 && ch.local_matrix().tx === 20)
+	}
+	// tick: children are snapshotted (on the shared stack) after the node's own components ran, so a child added by
+	// its parent's update ticks that same frame
+	{
+		const ts = core.Scene.new('T')
+		let ticks = 0
+		class Counter extends core.Component {
+			update(_dt: number) { ticks++ }
+		}
+		class Spawner extends core.Component {
+			done = false
+			update(_dt: number) {
+				if (this.done) return
+				this.done = true
+				this.node.add_child(core.Node.new('Late').with(new Counter()))
+			}
+		}
+		ts.add(core.Node.new('S').with(new Spawner()))
+		ts.update(1 / 60)
+		check('tick: child added by the parent updates the same frame', ticks === 1)
+		ts.update(1 / 60)
+		check('tick: and every frame after', ticks === 2)
+	}
+	// frame_rect / frame_x / frame_y agree (sprite sheet 4x2 frames of 16x16)
+	{
+		const t = new assets.Texture()
+		t.width = 64
+		t.height = 32
+		t.frame_width = 16
+		t.frame_height = 16
+		check('frame_rect: frame 5', JSON.stringify(t.frame_rect(5)) === '[16,16,16,16]')
+		check('frame_rect: wraps negative', JSON.stringify(t.frame_rect(-1)) === '[48,16,16,16]')
+	}
 }
 
 const only = process.argv[2]

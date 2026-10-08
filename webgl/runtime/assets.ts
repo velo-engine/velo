@@ -97,14 +97,22 @@ export class Texture {
 	}
 	// frame_rect returns (x, y, w, h) of frame i in the source image.
 	frame_rect(i: number): [number, number, number, number] {
+		return [this.frame_x(i), this.frame_y(i), this.frame_w(), this.frame_h()]
+	}
+	// frame_x / frame_y: frame_rect's x and y without allocating (the renderer's per-sprite path).
+	frame_x(i: number): number {
 		const fw = this.frame_w()
-		const fh = this.frame_h()
 		const cols = fw > 0 ? Math.trunc(this.width / fw) : 1
+		return cols > 0 ? (this.frame_index(i) % cols) * fw : 0
+	}
+	frame_y(i: number): number {
+		const fw = this.frame_w()
+		const cols = fw > 0 ? Math.trunc(this.width / fw) : 1
+		return cols > 0 ? Math.trunc(this.frame_index(i) / cols) * this.frame_h() : 0
+	}
+	frame_index(i: number): number {
 		const count = this.frame_count()
-		const idx = count > 0 ? ((i % count) + count) % count : 0
-		const c = cols > 0 ? idx % cols : 0
-		const r = cols > 0 ? Math.trunc(idx / cols) : 0
-		return [c * fw, r * fh, fw, fh]
+		return count > 0 ? ((i % count) + count) % count : 0
 	}
 }
 

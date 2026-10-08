@@ -118,6 +118,13 @@ export const white = new Color()
 export const black = new Color(0, 0, 0, 255)
 
 // Affine2 — 2D transformation matrix:  | a c tx |  | b d ty |
+// TickStack — Node.tick's scratch space. The array is never shortened (`top` marks the end) so it keeps its
+// capacity; entries above `top` are stale.
+export class TickStack {
+	nodes: Node[] = []
+	top = 0
+}
+
 export class Affine2 {
 	static __vname = 'core.Affine2'
 	a: number
@@ -147,6 +154,39 @@ export class Affine2 {
 	}
 	clone(): Affine2 {
 		return new Affine2(this.a, this.b, this.c, this.d, this.tx, this.ty)
+	}
+	// set_trs: trs() written into this matrix (no allocation).
+	set_trs(px: number, py: number, rotation_deg: number, sx: number, sy: number): Affine2 {
+		let cs = 1
+		let sn = 0
+		if (rotation_deg !== 0) {
+			const r = (rotation_deg * Math.PI) / 180
+			cs = Math.cos(r)
+			sn = Math.sin(r)
+		}
+		this.a = cs * sx
+		this.b = sn * sx
+		this.c = -sn * sy
+		this.d = cs * sy
+		this.tx = px
+		this.ty = py
+		return this
+	}
+	// set_mul: this = m * o, without allocating (`this` may be `m` or `o`).
+	set_mul(m: Affine2, o: Affine2): Affine2 {
+		const a = m.a * o.a + m.c * o.b
+		const b = m.b * o.a + m.d * o.b
+		const c = m.a * o.c + m.c * o.d
+		const d = m.b * o.c + m.d * o.d
+		const tx = m.a * o.tx + m.c * o.ty + m.tx
+		const ty = m.b * o.tx + m.d * o.ty + m.ty
+		this.a = a
+		this.b = b
+		this.c = c
+		this.d = d
+		this.tx = tx
+		this.ty = ty
+		return this
 	}
 	// mul returns m * o (applies o first, then m).
 	mul(o: Affine2): Affine2 {
@@ -258,6 +298,14 @@ export class Node {
 	prefab_id = ''
 	tweens: Tween[] = []
 	timers: Timer[] = []
+	// local_matrix_ref() cache: the transform it was computed from
+	_lm = new Affine2()
+	_lm_ok = false
+	_lm_px = 0
+	_lm_py = 0
+	_lm_rot = 0
+	_lm_sx = 1
+	_lm_sy = 1
 
 	static new(name: string): Node {
 		const n = new Node()
@@ -392,12 +440,32 @@ export class Node {
 	// ---------- Transform ----------
 
 	local_matrix(): Affine2 {
-		return Affine2.trs(this.position, this.rotation, this.scale)
+		return this.local_matrix_ref().clone()
+	}
+
+	// local_matrix_ref: the cached local matrix itself (callers must not change it). sin/cos only run again when
+	// position, rotation or scale changed.
+	local_matrix_ref(): Affine2 {
+		const p = this.position
+		const s = this.scale
+		if (
+			!this._lm_ok || p.x !== this._lm_px || p.y !== this._lm_py || this.rotation !== this._lm_rot ||
+			s.x !== this._lm_sx || s.y !== this._lm_sy
+		) {
+			this._lm.set_trs(p.x, p.y, this.rotation, s.x, s.y)
+			this._lm_px = p.x
+			this._lm_py = p.y
+			this._lm_rot = this.rotation
+			this._lm_sx = s.x
+			this._lm_sy = s.y
+			this._lm_ok = true
+		}
+		return this._lm
 	}
 
 	world_matrix(): Affine2 {
 		if (this.parent === null) return this.local_matrix()
-		return this.parent.world_matrix().mul(this.local_matrix())
+		return this.parent.world_matrix().mul(this.local_matrix_ref())
 	}
 
 	world_position(): Vec2 {
@@ -435,7 +503,9 @@ export class Node {
 		this.scene = null as unknown as Scene
 	}
 
-	tick(dt: number, real: number, paused: boolean) {
+	// `stack` is scratch space shared by the whole walk (see Scene.tick_stack): each node snapshots its children on
+	// top of it instead of copying its child list.
+	tick(dt: number, real: number, paused: boolean, stack: TickStack = new TickStack()) {
 		if (!this.active || this.destroyed) return
 		const d = this.unscaled_time ? real : dt
 		const p = paused && !this.unscaled_time
@@ -454,8 +524,15 @@ export class Node {
 			this.tick_timers(d)
 			this.tick_tweens(d)
 		}
-		const kids = this.children.slice()
-		for (const ch of kids) ch.tick(d, real, p)
+		// snapshot the children: nodes added, removed or moved during this frame do not change who ticks now
+		const base = stack.top
+		const kids = this.children
+		const end = base + kids.length
+		const a = stack.nodes
+		for (let i = 0; i < kids.length; i++) a[base + i] = kids[i]
+		stack.top = end
+		for (let i = base; i < end; i++) a[i].tick(d, real, p, stack)
+		stack.top = base
 	}
 
 	// ---------- Timers (core/timer.v) ----------
@@ -949,6 +1026,7 @@ export class Scene {
 	dt = 0
 	unscaled_dt = 0
 	pending_destroy: Node[] = []
+	tick_stack = new TickStack() // scratch space for the update walk (see Node.tick)
 	instantiate_fn: InstantiateFn | null = null
 	view_origin = new Vec2()
 	view_size = new Vec2(960, 540)
@@ -1021,7 +1099,7 @@ export class Scene {
 		this.time += dt
 		this.real_time += real_dt
 		this.frame++
-		this.root.tick(dt, real_dt, this.paused)
+		this.root.tick(dt, real_dt, this.paused, this.tick_stack)
 		const cam = this.active_camera()
 		if (cam !== null) cam.late_update(cam.node.unscaled_time ? real_dt : dt)
 		this.flush_destroyed()

@@ -2023,38 +2023,71 @@ export function register_builtins(r: serialize.Registry) {
 
 // ---------- Renderer (render/renderer.v) ----------
 
-interface DrawItem {
-	node: core.Node
-	m: Affine2
-	clip: Rect
-	canvas: boolean
-	z: number
-	seq: number
+// DrawItem — one node to draw. Kept in a pool between frames (see Renderer.draw_list) with its own matrices, so
+// collecting the draw list allocates nothing once the pool has grown.
+class DrawItem {
+	node: core.Node = null as unknown as core.Node // null once unused (see draw_tree)
+	w = new Affine2() // node -> world
+	m = new Affine2() // node -> window
+	clip: Rect = null as unknown as Rect
+	canvas = false
+	z = 0
+	seq = 0
 }
 
 interface CollectState {
 	view: Affine2
 	view_cam: Affine2
-	items: DrawItem[]
+	items: DrawItem[] // the pool: items[0 .. count) are this frame's
+	count: number
 }
 
-function collect_draw_items(root: core.Node, view: Affine2, camera: Affine2, clip: Rect): DrawItem[] {
-	const st: CollectState = { view, view_cam: view.mul(camera), items: [] }
-	collect_node(st, root, Affine2.identity(), false, 0, clip)
-	st.items.sort(compare_draw_items)
-	return st.items
+const identity_matrix = new Affine2()
+
+// collect_draw_items fills `items` (a pool, reused) with the visible nodes sorted by draw order: world before
+// Canvas, then z_index, then tree order. Returns how many of them are this frame's.
+function collect_draw_items(items: DrawItem[], root: core.Node, view: Affine2, camera: Affine2, clip: Rect): number {
+	const st: CollectState = { view, view_cam: view.mul(camera), items, count: 0 }
+	collect_node(st, root, identity_matrix, false, 0, clip)
+	// most scenes are already in draw order (no z_index, no Canvas in the middle): skip the sort then
+	let ordered = true
+	for (let i = 1; i < st.count; i++) {
+		if (compare_draw_items(items[i - 1], items[i]) > 0) {
+			ordered = false
+			break
+		}
+	}
+	if (!ordered) {
+		const sorted = items.slice(0, st.count).sort(compare_draw_items)
+		for (let i = 0; i < sorted.length; i++) items[i] = sorted[i]
+	}
+	return st.count
 }
 
 function collect_node(st: CollectState, n: core.Node, parent_world: Affine2, canvas: boolean, z: number, clip: Rect) {
 	if (!n.active || n.destroyed) return
-	const w = parent_world.mul(n.local_matrix())
+	let it = st.items[st.count]
+	if (it === undefined) {
+		it = new DrawItem()
+		st.items.push(it)
+	}
+	const seq = st.count++
+	// one pass over the components for what the walk needs (constant instanceof checks stay fast in V8)
 	let in_canvas = canvas
-	if (!in_canvas && n.get_component(core.Canvas) !== null) in_canvas = true
-	const m = in_canvas ? st.view.mul(w) : st.view_cam.mul(w)
+	let sv: ScrollView | null = null
+	for (const c of n.components) {
+		if (c instanceof core.Canvas) in_canvas = true
+		else if (sv === null && c instanceof ScrollView) sv = c
+	}
+	const w = it.w.set_mul(parent_world, n.local_matrix_ref())
+	const m = it.m.set_mul(in_canvas ? st.view : st.view_cam, w)
 	const zz = z + n.z_index
-	st.items.push({ node: n, m, clip, canvas: in_canvas, z: zz, seq: st.items.length })
+	it.node = n
+	it.clip = clip
+	it.canvas = in_canvas
+	it.z = zz
+	it.seq = seq
 	let child_clip = clip
-	const sv = n.get_component<ScrollView>(ScrollView)
 	if (sv !== null && sv.enabled && sv.clip) {
 		const vr = node_rect(n)
 		if (vr !== null) child_clip = clip.intersect(screen_bounds(m, vr))
@@ -2076,7 +2109,11 @@ function compare_draw_items(a: DrawItem, b: DrawItem): number {
 }
 
 export function draw_order(root: core.Node): core.Node[] {
-	return collect_draw_items(root, Affine2.identity(), Affine2.identity(), new Rect()).map((it) => it.node)
+	const items: DrawItem[] = []
+	const n = collect_draw_items(items, root, Affine2.identity(), Affine2.identity(), new Rect())
+	const out: core.Node[] = new Array(n)
+	for (let i = 0; i < n; i++) out[i] = items[i].node
+	return out
 }
 
 function screen_bounds(m: Affine2, rc: Rect): Rect {
@@ -2123,6 +2160,8 @@ export class Renderer {
 	draw_calls = 0
 	base_clip = new Rect()
 	clip = new Rect()
+	// draw_tree's draw list, kept between frames (null while a draw_tree uses it: a nested one makes its own)
+	draw_list: DrawItem[] | null = []
 
 	constructor(gfx: Gfx, db: assets.AssetDatabase) {
 		this.gfx = gfx
@@ -2144,13 +2183,23 @@ export class Renderer {
 		const base = this.base_rect()
 		this.clip = base
 		this.set_scissor(base)
-		for (const it of collect_draw_items(root, view, camera, base)) {
-			if (!it.clip.op_eq(this.clip)) {
+		const list = this.draw_list ?? []
+		this.draw_list = null
+		const count = collect_draw_items(list, root, view, camera, base)
+		for (let i = 0; i < count; i++) {
+			const it = list[i]
+			if (it.clip !== this.clip && !it.clip.op_eq(this.clip)) {
 				this.clip = it.clip
 				this.set_scissor(this.clip)
 			}
 			this.draw_node(it.node, it.m)
 		}
+		// pooled items past this frame's would keep removed nodes (a previous scene) alive
+		for (let i = count; i < list.length && list[i].node !== null; i++) {
+			list[i].node = null as unknown as core.Node
+			list[i].clip = null as unknown as Rect
+		}
+		this.draw_list = list
 		this.clip = base
 		this.set_scissor(base)
 	}
@@ -2254,6 +2303,44 @@ export class Renderer {
 		const col = s.color
 		const sh = s.shader_data
 		const fx = sh !== null ? this.gfx.effect(sh.id, sh.version, sh.source, sh.path) : null
+		if (fx === null && !s.is_sliced_mode() && !this.debug) {
+			// the common case, without the quads() array: one quad over the whole display rect
+			const fw = tex.frame_w()
+			const fh = tex.frame_h()
+			const sized = s.size.x > 0 && s.size.y > 0
+			const w = sized ? s.size.x : fw
+			const h = sized ? s.size.y : fh
+			const x0 = -s.anchor.x * w
+			const y0 = -s.anchor.y * h
+			const x1 = x0 + w
+			const y1 = y0 + h
+			const fx0 = tex.frame_x(s.frame)
+			const fy0 = tex.frame_y(s.frame)
+			let u0 = fx0 / tw
+			let u1 = (fx0 + fw) / tw
+			let v0 = fy0 / th
+			let v1 = (fy0 + fh) / th
+			if (s.flip_x) {
+				const t = u0
+				u0 = u1
+				u1 = t
+			}
+			if (s.flip_y) {
+				const t = v0
+				v0 = v1
+				v1 = t
+			}
+			this.gfx.quad(
+				gtex,
+				m.apply_x(x0, y0), m.apply_y(x0, y0), u0, v0,
+				m.apply_x(x1, y0), m.apply_y(x1, y0), u1, v0,
+				m.apply_x(x1, y1), m.apply_y(x1, y1), u1, v1,
+				m.apply_x(x0, y1), m.apply_y(x0, y1), u0, v1,
+				col,
+			)
+			this.draw_calls++
+			return
+		}
 		if (fx !== null) {
 			const [fx0, fy0, fw, fh] = tex.frame_rect(s.frame)
 			const p = s.shader_params
