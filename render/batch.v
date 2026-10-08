@@ -32,16 +32,6 @@ fn (mut r Renderer) batch_sprite(s &Sprite, m core.Affine2, img_id int, fx f32, 
 	if !img.simg_ok || img.width <= 0 || img.height <= 0 {
 		return
 	}
-	if !r.batch.open || r.batch.img_id != img_id {
-		r.flush_sprites()
-		sgl.load_pipeline(r.ctx.pipeline.alpha)
-		sgl.enable_texture()
-		sgl.texture(img.simg, img.ssmp)
-		sgl.begin_quads()
-		r.batch.open = true
-		r.batch.img_id = img_id
-		r.draw_calls++ // one per run: what sokol_gl actually issues
-	}
 	iw := f32(img.width)
 	ih := f32(img.height)
 	mut u0 := fx / iw
@@ -60,12 +50,49 @@ fn (mut r Renderer) batch_sprite(s &Sprite, m core.Affine2, img_id int, fx f32, 
 	y0 := -s.anchor.y * sz.y
 	x1 := x0 + sz.x
 	y1 := y0 + sz.y
+	// corners in window points
+	ax, ay := m.a * x0 + m.c * y0 + m.tx, m.b * x0 + m.d * y0 + m.ty
+	bx, by := m.a * x1 + m.c * y0 + m.tx, m.b * x1 + m.d * y0 + m.ty
+	cx, cy := m.a * x1 + m.c * y1 + m.tx, m.b * x1 + m.d * y1 + m.ty
+	dx, dy := m.a * x0 + m.c * y1 + m.tx, m.b * x0 + m.d * y1 + m.ty
+	// culling: skip a sprite whose bounds are entirely outside the clip rect (the window, the scene view or a
+	// ScrollView), so off-screen sprites cost no vertices
+	cl := r.clip
+	if max4(ax, bx, cx, dx) < cl.x || min4(ax, bx, cx, dx) > cl.x + cl.w
+		|| max4(ay, by, cy, dy) < cl.y || min4(ay, by, cy, dy) > cl.y + cl.h {
+		r.culled++
+		return
+	}
+	if !r.batch.open || r.batch.img_id != img_id {
+		r.flush_sprites()
+		sgl.load_pipeline(r.ctx.pipeline.alpha)
+		sgl.enable_texture()
+		sgl.texture(img.simg, img.ssmp)
+		sgl.begin_quads()
+		r.batch.open = true
+		r.batch.img_id = img_id
+		r.draw_calls++ // one per run: what sokol_gl actually issues
+	}
 	k := r.ctx.scale // gg draws in window points; sokol_gl works in framebuffer pixels
 	sgl.c4b(s.color.r, s.color.g, s.color.b, s.color.a)
-	sgl.v2f_t2f((m.a * x0 + m.c * y0 + m.tx) * k, (m.b * x0 + m.d * y0 + m.ty) * k, u0, v0)
-	sgl.v2f_t2f((m.a * x1 + m.c * y0 + m.tx) * k, (m.b * x1 + m.d * y0 + m.ty) * k, u1, v0)
-	sgl.v2f_t2f((m.a * x1 + m.c * y1 + m.tx) * k, (m.b * x1 + m.d * y1 + m.ty) * k, u1, v1)
-	sgl.v2f_t2f((m.a * x0 + m.c * y1 + m.tx) * k, (m.b * x0 + m.d * y1 + m.ty) * k, u0, v1)
+	sgl.v2f_t2f(ax * k, ay * k, u0, v0)
+	sgl.v2f_t2f(bx * k, by * k, u1, v0)
+	sgl.v2f_t2f(cx * k, cy * k, u1, v1)
+	sgl.v2f_t2f(dx * k, dy * k, u0, v1)
+}
+
+@[inline]
+fn min4(a f32, b f32, c f32, d f32) f32 {
+	ab := if a < b { a } else { b }
+	cd := if c < d { c } else { d }
+	return if ab < cd { ab } else { cd }
+}
+
+@[inline]
+fn max4(a f32, b f32, c f32, d f32) f32 {
+	ab := if a > b { a } else { b }
+	cd := if c > d { c } else { d }
+	return if ab > cd { ab } else { cd }
 }
 
 // check_sgl_overflow warns (once) when this frame ran out of sokol_gl space: sokol_gl then draws nothing that frame.

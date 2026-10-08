@@ -41,6 +41,7 @@ pub mut:
 	// Draw DebugShape outlines (colliders) even when `debug` is off (the editor turns it on).
 	show_shapes bool
 	draw_calls  int
+	culled      int // sprites skipped this frame because they were outside the clip rect (see batch.v)
 	// Screen area the tree is drawn into (the editor's scene view); ScrollView clipping stays inside it.
 	// Zero size = the whole window.
 	base_clip Rect
@@ -75,6 +76,7 @@ pub fn (mut r Renderer) draw_scene(scene &core.Scene, window core.Affine2) {
 // Canvas skip it) and `view` maps the screen into the window (the scale mode in the game, pan/zoom in the editor).
 pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2, camera core.Affine2) {
 	r.draw_calls = 0
+	r.culled = 0
 	r.atlas_begin_frame() // also done by atlas_lookup, which cached sprites skip
 	base := r.base_rect()
 	r.clip = base
