@@ -787,7 +787,9 @@ class TextAtlas {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 		this.canvas = make_canvas(256, 64)
-		this.ctx = this.canvas.getContext('2d', { willReadFrequently: false }) as CanvasRenderingContext2D
+		// every new string is read back with getImageData: a CPU canvas makes that a copy, where a GPU one stalls the
+		// frame on a readback (a hitch per new damage number on phones)
+		this.ctx = this.canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D
 		this.measure_ctx = (make_canvas(4, 4).getContext('2d') as CanvasRenderingContext2D)
 	}
 

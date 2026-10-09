@@ -12,6 +12,10 @@ import * as render from './render.ts'
 import * as audio from './audio.ts'
 import { Gfx } from './gfx.ts'
 
+// Phones report a pixel ratio of 3 or more: drawing every frame at that size costs the GPU 2-3x the pixels of 2 for
+// a difference nobody sees in a 2D game, so the canvas stops at 2 (text and sprites stay sharp).
+const MAX_DPR = 2
+
 export class Config {
 	static __vname = 'app.Config'
 	title = 'Velo Engine'
@@ -195,7 +199,7 @@ export class App {
 		const gfx = this.gfx!
 		const w = this.window_points()
 		const bg = this.cfg.background
-		gfx.begin(w.x, w.y, window.devicePixelRatio || 1, bg)
+		gfx.begin(w.x, w.y, Math.min(window.devicePixelRatio || 1, MAX_DPR), bg)
 		this.renderer.base_clip = new render.Rect(this.fit.area_pos.x, this.fit.area_pos.y, this.fit.area_size.x, this.fit.area_size.y)
 		this.renderer.draw_scene(this.scene, this.fit.to_window())
 		this.draw_fade()
