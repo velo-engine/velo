@@ -223,7 +223,9 @@ export class Gfx {
 
 	constructor(canvas: HTMLCanvasElement) {
 		this.canvas = canvas
-		const opts: WebGLContextAttributes = { alpha: false, antialias: true, premultipliedAlpha: false, preserveDrawingBuffer: false }
+		// no MSAA, as on desktop (gg's sample_count 1): sprites are textured rectangles, and a multisampled full-screen
+		// framebuffer resolved every frame is a large share of a phone GPU's time at a pixel ratio of 2
+		const opts: WebGLContextAttributes = { alpha: false, antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: false }
 		const gl = (canvas.getContext('webgl2', opts) ?? canvas.getContext('webgl', opts)) as WebGLRenderingContext | null
 		if (!gl) throw new Error('WebGL is not available in this browser')
 		this.gl = gl
