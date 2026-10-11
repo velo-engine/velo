@@ -238,9 +238,7 @@ export class Gfx {
 		this.vu32 = new Uint32Array(this.verts)
 		this.idx = new Uint16Array(MAX_VERTS * 3)
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.vbuf)
-		gl.bufferData(gl.ARRAY_BUFFER, this.verts.byteLength, gl.DYNAMIC_DRAW)
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibuf)
-		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, this.idx.byteLength, gl.DYNAMIC_DRAW)
 		const stride = FLOATS_PER_VERT * 4
 		const a_pos = gl.getAttribLocation(this.prog, 'a_pos')
 		const a_uv = gl.getAttribLocation(this.prog, 'a_uv')
@@ -302,10 +300,13 @@ export class Gfx {
 			return
 		}
 		const gl = this.gl
+		// bufferData, not bufferSubData: every flush rewrites the start of buffers the previous draw still reads, and
+		// WebKit's WebGL (ANGLE on Metal, so every iOS browser) answers a sub-update of a busy buffer by copying the
+		// whole buffer (1.7 MB) into a new one — per flush. A fresh store of just this batch's size costs no copy.
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.vbuf)
-		gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Uint8Array(this.verts, 0, this.nverts * FLOATS_PER_VERT * 4))
+		gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(this.verts, 0, this.nverts * FLOATS_PER_VERT * 4), gl.STREAM_DRAW)
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibuf)
-		gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, this.idx.subarray(0, this.nidx))
+		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, this.idx.subarray(0, this.nidx), gl.STREAM_DRAW)
 		gl.activeTexture(gl.TEXTURE0)
 		gl.bindTexture(gl.TEXTURE_2D, this.cur_tex ?? this.white)
 		const fx = this.cur_effect
