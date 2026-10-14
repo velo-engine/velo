@@ -30,6 +30,7 @@ Options:
   --zip              desktop: also write <name>-<version>-<os>.zip, ready to upload
   --device <id>      android/ios: device to deploy to (run only; default: first found)
   --aab              android: build an Android App Bundle for Google Play instead of an APK
+  --map              webgl: also write a source map (game.js.map); otherwise game.js is minified without one
   -v, --verbose      print the commands being run
   Desktop: any other arguments are passed to the game (run) or to `v` (build).
 
@@ -144,6 +145,7 @@ mut:
 	run     bool
 	release bool
 	aab     bool
+	map     bool
 	output  string
 	device  string
 }
@@ -160,6 +162,9 @@ fn parse_mobile_options(cmd string, args []string) MobileOptions {
 			}
 			'--aab' {
 				o.aab = true
+			}
+			'--map' {
+				o.map = true
 			}
 			'-o', '--device' {
 				if i + 1 >= args.len {

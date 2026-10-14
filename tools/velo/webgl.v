@@ -6,7 +6,7 @@ import hash.fnv1a
 
 // WebGL builds: the game's V code is translated to JavaScript and runs on the engine's TypeScript runtime
 // (webgl/runtime), drawing with WebGL — no Emscripten, small downloads, instant start.
-//   velo build webgl [dir] [--release] [-o <dir>]   writes <out>/index.html + game.js + assets/
+//   velo build webgl [dir] [--release] [--map] [-o <dir>]   writes <out>/index.html + game.js + assets/
 //   velo run webgl [dir]                            builds, serves it on http://localhost:8080 and watches the sources:
 //                                                   a changed .v file rebuilds everything, a changed asset only re-syncs
 //                                                   the assets; the open page reloads itself, or shows the build error
@@ -143,16 +143,14 @@ fn (b WebglBuild) build() string {
 		return out
 	}
 
-	step('bundling${if b.o.release { ' (release)' } else { '' }}')
+	step('bundling${if b.o.map { ' (with source map)' } else { '' }}')
 	runtime := os.join_path(b.home, 'webgl', 'runtime', 'index.ts')
 	mut args := [os.join_path(gen_dir, 'entry.js'), '--bundle', '--format=esm', '--target=es2020',
 		'--keep-names', '--alias:velo-runtime=${runtime}',
 		'--outfile=${os.join_path(b.out_dir,
-			'game.js')}', '--log-level=warning']
-	if b.o.release {
-		args << ['--minify']
-	} else {
-		args << ['--sourcemap']
+			'game.js')}', '--log-level=warning', '--minify']
+	if b.o.map {
+		args << '--sourcemap'
 	}
 	out = run_step(b.esbuild, args)
 	if out != '' {
