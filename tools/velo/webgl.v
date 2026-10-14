@@ -6,13 +6,13 @@ import hash.fnv1a
 
 // WebGL builds: the game's V code is translated to JavaScript and runs on the engine's TypeScript runtime
 // (webgl/runtime), drawing with WebGL — no Emscripten, small downloads, instant start.
-//   velo build webgl [dir] [--release] [--map] [-o <dir>]   writes <out>/index.html + game.js + assets/
+//   velo build webgl [dir] [--release] [--map] [-o <dir>]   writes <out>/index.html + game.<hash>.js + assets/
 //   velo run webgl [dir]                            builds, serves it on http://localhost:8080 and watches the sources:
 //                                                   a changed .v file rebuilds everything, a changed asset only re-syncs
 //                                                   the assets; the open page reloads itself, or shows the build error
 //
 // Steps: tools/v2js (built once, cached in <engine>/build/tools) type-checks the game with the V compiler
-// and writes one .js file per V module; esbuild bundles them with the runtime into game.js; the assets are
+// and writes one .js file per V module; esbuild bundles them with the runtime into game.<hash>.js; the assets are
 // copied next to it with assets.json, the list the runtime downloads before the game starts.
 
 const webgl_shell = $embed_file('../../webgl/shell.html').to_string()
@@ -147,21 +147,30 @@ fn (b WebglBuild) build() string {
 	runtime := os.join_path(b.home, 'webgl', 'runtime', 'index.ts')
 	mut args := [os.join_path(gen_dir, 'entry.js'), '--bundle', '--format=esm', '--target=es2020',
 		'--keep-names', '--alias:velo-runtime=${runtime}',
-		'--outfile=${os.join_path(b.out_dir,
-			'game.js')}', '--log-level=warning', '--minify']
+		'--outdir=${b.out_dir}', '--entry-names=game.[hash]', '--log-level=warning', '--minify']
 	if b.o.map {
 		args << '--sourcemap'
+	}
+	for f in os.ls(b.out_dir) or { []string{} } { // bundles of earlier builds
+		if f.starts_with('game.') && (f.ends_with('.js') || f.ends_with('.js.map')) {
+			os.rm(os.join_path(b.out_dir, f)) or {}
+		}
 	}
 	out = run_step(b.esbuild, args)
 	if out != '' {
 		return out
+	}
+	// the content hash in the file name makes browsers fetch a new build instead of showing a cached one
+	game := os.ls(b.out_dir) or { []string{} }.filter(it.starts_with('game.') && it.ends_with('.js'))
+	if game.len != 1 {
+		return 'esbuild did not write exactly one game.<hash>.js into ${b.out_dir}'
 	}
 
 	n := b.sync_assets()
 	// `velo run webgl` pages reload themselves when the game is rebuilt (see serve.mjs)
 	dev := if b.o.run { webgl_dev_script } else { '' }
 	os.write_file(os.join_path(b.out_dir, 'index.html'), webgl_shell.replace('{{TITLE}}',
-		html_escape(p.name)).replace('{{DEV}}', dev)) or { fail(err.msg()) }
+		html_escape(p.name)).replace('{{GAME}}', game[0]).replace('{{DEV}}', dev)) or { fail(err.msg()) }
 	step('built ${os.join_path(b.out_dir, 'index.html')} (${n} assets)')
 	return ''
 }

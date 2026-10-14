@@ -1188,7 +1188,7 @@ on the engine's TypeScript runtime, drawing with WebGL. Downloads are small (the
 60 KB gzipped, plus its assets) and the page starts at once; physics works too.
 
 ```bash
-velo build webgl                 # build/webgl/index.html + game.js + assets/ (upload the folder as is)
+velo build webgl                 # build/webgl/index.html + game.<hash>.js + assets/ (upload the folder as is)
 velo build webgl --release       # minified, no source map
 velo run webgl                   # build, serve on http://localhost:8080, open the browser;
                                  # dev mode: edit a .v file (full rebuild) or an asset (only re-synced, fast) and the

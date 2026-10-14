@@ -515,7 +515,9 @@ export function open(_root: string): AssetDatabase {
 
 // preload downloads assets.json and every asset it lists, reporting progress (0..1).
 export async function preload(root: string, on_progress: (done: number, total: number) => void): Promise<AssetDatabase> {
-	const res = await fetch(`${root}/assets.json`)
+	// revalidate the list on every start (it is the one file whose name does not change); the assets it lists are
+	// fetched with their content hash in the URL, so the browser cache can keep them until they change
+	const res = await fetch(`${root}/assets.json`, { cache: 'no-cache' })
 	if (!res.ok) throw new Error(`cannot download ${root}/assets.json (${res.status})`)
 	const manifest = (await res.json()) as Manifest
 	const data = new Preloaded()
@@ -525,20 +527,20 @@ export async function preload(root: string, on_progress: (done: number, total: n
 		done++
 		on_progress(done, total)
 	}
-	const url = (p: string) => `${root}/${p.split('/').map(encodeURIComponent).join('/')}`
+	const url = (e: ManifestEntry) => `${root}/${e.path.split('/').map(encodeURIComponent).join('/')}?v=${e.hash}`
 	const jobs = manifest.entries.map(async (e) => {
 		try {
 			switch (kind_from_str(e.kind)) {
 				case 'scene':
 				case 'text':
 				case 'shader': {
-					const r = await fetch(url(e.path))
+					const r = await fetch(url(e))
 					if (!r.ok) throw new Error(`HTTP ${r.status}`)
 					data.text.set(e.id, await r.text())
 					break
 				}
 				case 'texture': {
-					const r = await fetch(url(e.path))
+					const r = await fetch(url(e))
 					if (!r.ok) throw new Error(`HTTP ${r.status}`)
 					const blob = await r.blob()
 					// premultiplication is done in the shader-friendly way by the renderer (UNPACK_PREMULTIPLY_ALPHA)
@@ -547,14 +549,14 @@ export async function preload(root: string, on_progress: (done: number, total: n
 					break
 				}
 				case 'audio': {
-					const r = await fetch(url(e.path))
+					const r = await fetch(url(e))
 					if (!r.ok) throw new Error(`HTTP ${r.status}`)
 					data.bytes.set(e.id, await r.arrayBuffer())
 					break
 				}
 				case 'font': {
 					const family = `velo-font-${e.id}`
-					const face = new FontFace(family, `url(${url(e.path)})`)
+					const face = new FontFace(family, `url(${url(e)})`)
 					await face.load()
 					;(document as any).fonts.add(face)
 					data.fonts.set(e.id, family)
