@@ -608,15 +608,46 @@ fn (mut r Renderer) draw_label(l &Label, m core.Affine2) {
 	}
 }
 
+// draw_text_f draws text at a fractional position: gg.draw_text snaps to whole logical pixels (2 device
+// pixels on a retina screen), which makes offset copies (outline, shadow) look stair-stepped.
+fn (r &Renderer) draw_text_f(x f32, y f32, text string, cfg gg.TextCfg) {
+	$if macos {
+		if r.ctx.native_rendering {
+			r.ctx.draw_text(int(x + 0.5), int(y + 0.5), text, cfg)
+			return
+		}
+	}
+	if !r.ctx.font_inited {
+		return
+	}
+	r.ctx.set_text_cfg(cfg)
+	scale := if r.ctx.ft.scale == 0 { f32(1) } else { r.ctx.ft.scale }
+	r.ctx.ft.fons.draw_text(x * scale, y * scale, text)
+}
+
 // draw_text_fx draws one line with the label's outline and shadow under it (`k` = node scale, for offsets).
 fn (mut r Renderer) draw_text_fx(l &Label, p core.Vec2, text string, cfg gg.TextCfg, k f32) {
 	if l.shadow_color.a > 0 {
+		// Soft shadow: a core copy plus four slightly spread, fainter ones, so the edge feathers instead of
+		// looking like a hard duplicate. Follows the label's own alpha so fades take the shadow along.
 		o := l.shadow_offset.mul(k)
-		r.ctx.draw_text(int(p.x + o.x), int(p.y + o.y), text, gg.TextCfg{
-			...cfg
-			color: to_gg(l.shadow_color)
-		})
-		r.draw_calls++
+		sa := f32(l.shadow_color.a) * f32(l.color.a) / 255
+		spread := math.max(k * 0.9, f32(0.75))
+		for i in 0 .. 5 {
+			mut dx := f32(0)
+			mut dy := f32(0)
+			mut a := sa * 0.55
+			if i > 0 {
+				dx = shadow_dirs[i - 1].x * spread
+				dy = shadow_dirs[i - 1].y * spread
+				a = sa * 0.22
+			}
+			r.draw_text_f(p.x + o.x + dx, p.y + o.y + dy, text, gg.TextCfg{
+				...cfg
+				color: gg.Color{l.shadow_color.r, l.shadow_color.g, l.shadow_color.b, u8(a)}
+			})
+		}
+		r.draw_calls += 5
 	}
 	if l.outline_color.a > 0 && l.outline_width > 0 {
 		w := l.outline_width * k
@@ -624,12 +655,23 @@ fn (mut r Renderer) draw_text_fx(l &Label, p core.Vec2, text string, cfg gg.Text
 			...cfg
 			color: to_gg(l.outline_color)
 		}
-		for d in outline_dirs {
-			r.ctx.draw_text(int(p.x + d.x * w + 0.5), int(p.y + d.y * w + 0.5), text, oc)
+		// Sample the ring densely (about one copy per 2px of circumference, 8..24), plus an inner ring for
+		// thick outlines, so wide strokes come out solid instead of a stair-stepped smear.
+		mut n := int(math.ceil(f64(w) * 3))
+		n = if n < 8 { 8 } else if n > 24 { 24 } else { n }
+		mut drawn := 0
+		rings := if w > 2.5 { 2 } else { 1 }
+		for ring in 0 .. rings {
+			rad := if ring == 0 { w } else { w * 0.5 }
+			for i in 0 .. n {
+				ang := f32(2 * math.pi) * f32(i) / f32(n) + f32(ring) * 0.3
+				r.draw_text_f(p.x + math.cosf(ang) * rad, p.y + math.sinf(ang) * rad, text, oc)
+				drawn++
+			}
 		}
-		r.draw_calls += outline_dirs.len
+		r.draw_calls += drawn
 	}
-	r.ctx.draw_text(int(p.x), int(p.y), text, cfg)
+	r.draw_text_f(p.x, p.y, text, cfg)
 	r.draw_calls++
 }
 
@@ -681,7 +723,9 @@ fn (mut r Renderer) draw_text_input(t &TextInput, m core.Affine2) {
 	r.set_scissor(old)
 }
 
-const outline_dirs = [core.vec2(-1, 0), core.vec2(1, 0), core.vec2(0, -1),
+const shadow_dirs = [core.vec2(-1, 0), core.vec2(1, 0), core.vec2(0, -1), core.vec2(0, 1)]
+
+const outline_dirs =[core.vec2(-1, 0), core.vec2(1, 0), core.vec2(0, -1),
 	core.vec2(0, 1), core.vec2(-0.7, -0.7), core.vec2(0.7, -0.7),
 	core.vec2(-0.7, 0.7), core.vec2(0.7, 0.7)]
 
