@@ -2,6 +2,7 @@ module main
 
 import os
 import hash.fnv1a
+import zztkm.vdotenv
 
 // Android builds are compiled and packaged by vab (https://github.com/vlang/vab), V's Android tool:
 // it cross-compiles for every ABI with the NDK, then packages, signs and deploys the APK/AAB.
@@ -59,8 +60,27 @@ fn ensure_java_home() {
 	}
 }
 
+// load_android_env reads <project>/.env (variables already set in the shell win) for vab's settings such as
+// AAPT2, and maps the documented VAB_KS_PASS / VAB_KS_ALIAS_PASS to the KEYSTORE_PASSWORD /
+// KEYSTORE_ALIAS_PASSWORD names that vab reads. Keep the file out of version control: it holds passwords.
+fn load_android_env(p Project) {
+	env_file := os.join_path(p.dir, '.env')
+	if os.is_file(env_file) {
+		vdotenv.load(env_file) or { fail('cannot read ${env_file}: ${err.msg()}') }
+	}
+	for from, to in {
+		'VAB_KS_PASS':       'KEYSTORE_PASSWORD'
+		'VAB_KS_ALIAS_PASS': 'KEYSTORE_ALIAS_PASSWORD'
+	} {
+		if os.getenv(from) != '' && os.getenv(to) == '' {
+			os.setenv(to, os.getenv(from), true)
+		}
+	}
+}
+
 fn build_android(home string, p Project, o MobileOptions) {
 	vab := find_vab()
+	load_android_env(p)
 	ensure_java_home()
 	prepare_mobile_build(home, p)
 

@@ -197,7 +197,7 @@ orientation = "landscape"         # landscape | portrait | any (iOS; Android fol
 
 [android]
 # keystore = "release.keystore"   # release signing (default: a debug key); passwords come from
-# keystore_alias = "release"      # the VAB_KS_PASS and VAB_KS_ALIAS_PASS environment variables
+# keystore_alias = "release"      # VAB_KS_PASS / VAB_KS_ALIAS_PASS, in the environment or a .env file
 # min_sdk = 26                  # 26 is the lowest the engine supports (audio needs AAudio)
 
 [ios]
