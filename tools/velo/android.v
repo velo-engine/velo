@@ -107,6 +107,8 @@ fn build_android(home string, p Project, o MobileOptions) {
 		p.id,
 		'--version-code',
 		p.build.str(),
+		'--version-name',
+		p.version,
 		'--package',
 		ext,
 		// vab runs `v` through a shell, hence the quotes around the `|`-separated path.
