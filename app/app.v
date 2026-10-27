@@ -72,6 +72,7 @@ mut:
 	reload_timer   f32
 	fps            f32
 	safe_timer     f32
+	gc_timer       f32
 }
 
 // new opens the AssetDatabase and registers built-in components. Call app.register[T]() for the game's components,
@@ -159,6 +160,7 @@ pub fn (mut a App) load_scene(key string) ! {
 	if a.scene != unsafe { nil } {
 		next.take_persistent(mut a.scene)
 		a.scene.unload()
+		android_gc_collect()
 	}
 	a.scene = next
 	a.scene_id = next.key
@@ -190,6 +192,7 @@ pub fn (mut a App) run() {
 }
 
 fn on_init(mut a App) {
+	android_gc_register_thread()
 	a.renderer = render.new_renderer(a.ctx, a.db)
 	a.renderer.atlas_on = a.cfg.atlas
 	audio.start()
@@ -240,7 +243,7 @@ fn on_frame(mut a App) {
 	a.input.end_frame()
 	a.preload.pump(mut a.renderer)
 	a.update_scene_change(dt)
-	a.scene.loading = if a.fade.fading { a.preload.progress() } else { f32(1) }
+	a.scene.loading = a.preload.progress()
 	a.profiler.begin('audio')
 	audio.pump()
 	a.profiler.end('audio')
@@ -267,6 +270,13 @@ fn on_frame(mut a App) {
 		if a.reload_timer >= 0.5 {
 			a.reload_timer = 0
 			a.check_hot_reload()
+		}
+	}
+	$if android {
+		a.gc_timer += dt
+		if a.gc_timer >= 1.0 {
+			a.gc_timer = 0
+			android_gc_collect()
 		}
 	}
 }

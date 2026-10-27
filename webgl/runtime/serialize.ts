@@ -540,7 +540,8 @@ export class SceneLoader {
 	new_scene(root: core.Node): core.Scene {
 		const scene = core.Scene.new(root.name)
 		scene.assets = this.db
-		scene.instantiate_fn = (k: string) => this.instantiate(k)
+		scene.loader_ctx = this
+		scene.instantiate_fn = (ctx: any, k: string) => ctx.instantiate(k)
 		scene.set_root(root)
 		return scene
 	}

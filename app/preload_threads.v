@@ -59,6 +59,7 @@ fn (mut w WorkerPool) close() {
 }
 
 fn load_worker(jobs chan LoadJob, results chan LoadResult) {
+	android_gc_register_thread()
 	for {
 		job := <-jobs or { return }
 		results <- run_job(job)

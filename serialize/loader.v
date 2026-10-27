@@ -42,15 +42,17 @@ pub fn (mut l SceneLoader) load_scene(key string) !&core.Scene {
 	return l.new_scene(mut root)
 }
 
+fn loader_instantiate_adapter(ctx voidptr, k string) !&core.Node {
+	mut ld := unsafe { &SceneLoader(ctx) }
+	return ld.instantiate(k)
+}
+
 // new_scene creates a Scene around an existing node tree (calls on_load) and installs the prefab loader for scene.instantiate.
 pub fn (mut l SceneLoader) new_scene(mut root core.Node) &core.Scene {
 	mut scene := core.Scene.new(root.name)
 	scene.assets = l.db
-	loader := unsafe { &l }
-	scene.instantiate_fn = fn [loader] (k string) !&core.Node {
-		mut ld := unsafe { loader }
-		return ld.instantiate(k)
-	}
+	scene.loader_ctx = unsafe { &l }
+	scene.instantiate_fn = loader_instantiate_adapter
 	scene.set_root(mut root)
 	return scene
 }

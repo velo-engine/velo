@@ -4,7 +4,7 @@ import velo.assets
 
 // InstantiateFn is installed into the Scene by App so components can create prefabs at runtime
 // without the core module depending on the serialize module.
-pub type InstantiateFn = fn (key string) !&Node
+pub type InstantiateFn = fn (ctx voidptr, key string) !&Node
 
 // Scene — a running node tree. In Velo, .scene files and prefabs are the SAME format:
 // a scene is simply a prefab chosen as the root when running.
@@ -27,6 +27,7 @@ pub mut:
 	dt              f32
 	unscaled_dt     f32
 	pending_destroy []&Node
+	loader_ctx      voidptr       = unsafe { nil }
 	instantiate_fn  InstantiateFn = unsafe { nil }
 	// Scratch space for the update walk (see Node.tick), kept so frames do not allocate.
 	tick_stack []&Node @[hide]
@@ -175,7 +176,7 @@ pub fn (mut s Scene) instantiate(key string, mut parent Node) !&Node {
 	if s.instantiate_fn == unsafe { nil } {
 		return error('scene "${s.name}" has no prefab loader (run it through app.App)')
 	}
-	mut n := s.instantiate_fn(key)!
+	mut n := s.instantiate_fn(s.loader_ctx, key)!
 	parent.add_child(mut n)
 	return n
 }

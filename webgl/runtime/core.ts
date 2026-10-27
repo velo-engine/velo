@@ -988,7 +988,7 @@ export class Tween {
 
 // ---------- Scene (core/scene.v) ----------
 
-export type InstantiateFn = (key: string) => Node
+export type InstantiateFn = (ctx: any, key: string) => Node
 
 // SceneChange — how change_scene switches: a fade to `color` and back, `fade` seconds each way (0 = cut).
 export class SceneChange {
@@ -1027,6 +1027,7 @@ export class Scene {
 	unscaled_dt = 0
 	pending_destroy: Node[] = []
 	tick_stack = new TickStack() // scratch space for the update walk (see Node.tick)
+	loader_ctx: any = null
 	instantiate_fn: InstantiateFn | null = null
 	view_origin = new Vec2()
 	view_size = new Vec2(960, 540)
@@ -1088,7 +1089,7 @@ export class Scene {
 
 	instantiate(key: string, parent: Node): Node {
 		if (this.instantiate_fn === null) throw new V.VError(`scene "${this.name}" has no prefab loader (run it through app.App)`)
-		const n = this.instantiate_fn(key)
+		const n = this.instantiate_fn(this.loader_ctx, key)
 		parent.add_child(n)
 		return n
 	}
