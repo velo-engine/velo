@@ -118,6 +118,8 @@ fn build_android(home string, p Project, o MobileOptions) {
 		extra,
 		'-o',
 		output,
+		'-gc',
+		'none',
 	]
 	if o.release {
 		args << '-prod'
