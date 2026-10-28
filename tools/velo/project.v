@@ -65,7 +65,7 @@ fn load_project(dir string) Project {
 		keystore:       path('android.keystore')
 		keystore_alias: str('android.keystore_alias', '')
 		min_sdk:        doc.value('android.min_sdk').default_to(0).int()
-		ios_min:        str('ios.min_version', '14.0')
+		ios_min:        str('ios.min_version', '15.0')
 		ios_identity:   str('ios.identity', '')
 		ios_profile:    path('ios.provisioning_profile')
 		ios_simulator:  str('ios.simulator', '')

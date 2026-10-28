@@ -248,8 +248,59 @@ fn (b IosBuild) bundle(app string) {
 	}
 }
 
+struct XcodeInfo {
+	xcode_code  string
+	xcode_build string
+	sdk_version string
+	sdk_build   string
+	macos_build string
+}
+
+fn (b IosBuild) query_xcode_info() XcodeInfo {
+	sdk_ver := capture(b.xcrun, ['--sdk', b.sdk, '--show-sdk-version'])
+	sdk_build := capture(b.xcrun, ['--sdk', b.sdk, '--show-sdk-build-version'])
+	macos_build := capture('sw_vers', ['-buildVersion'])
+
+	mut xcode_ver := ''
+	mut xcode_build := ''
+	xcode_dev := capture('xcode-select', ['-p'])
+	version_plist := os.join_path(os.dir(xcode_dev), 'version.plist')
+	if os.is_file(version_plist) {
+		xcode_ver = capture('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString',
+			version_plist])
+		xcode_build = capture('/usr/libexec/PlistBuddy', ['-c', 'Print :ProductBuildVersion',
+			version_plist])
+	} else {
+		res := os.execute('xcodebuild -version')
+		if res.exit_code == 0 {
+			for line in res.output.split_into_lines() {
+				if line.starts_with('Xcode ') {
+					xcode_ver = line.all_after('Xcode ').trim_space()
+				} else if line.starts_with('Build version ') {
+					xcode_build = line.all_after('Build version ').trim_space()
+				}
+			}
+		}
+	}
+
+	parts := xcode_ver.split('.')
+	major := if parts.len > 0 { parts[0].int() } else { 0 }
+	minor := if parts.len > 1 { parts[1].int() } else { 0 }
+	patch := if parts.len > 2 { parts[2].int() } else { 0 }
+	dt_xcode := '${major:02d}${minor}${patch}'
+
+	return XcodeInfo{
+		xcode_code:  dt_xcode
+		xcode_build: xcode_build
+		sdk_version: sdk_ver
+		sdk_build:   sdk_build
+		macos_build: macos_build
+	}
+}
+
 fn (b IosBuild) info_plist() string {
 	p := b.p
+	xc := b.query_xcode_info()
 	orientations := match p.orientation {
 		'portrait' {
 			['UIInterfaceOrientationPortrait']
@@ -280,11 +331,23 @@ fn (b IosBuild) info_plist() string {
 		'CFBundleDevelopmentRegion':     'en'
 		'MinimumOSVersion':              p.ios_min
 		'DTPlatformName':                b.sdk
+		'DTPlatformVersion':             xc.sdk_version
+		'DTSDKName':                     '${b.sdk}${xc.sdk_version}'
+		'DTSDKBuild':                    xc.sdk_build
+		'DTPlatformBuild':               xc.sdk_build
+		'DTXcode':                       xc.xcode_code
+		'DTXcodeBuild':                  xc.xcode_build
+		'DTCompiler':                    'com.apple.compilers.llvm.clang.1_0'
+		'BuildMachineOSBuild':           xc.macos_build
 	} {
 		s << '\t<key>${k}</key>\n\t<string>${xml_escape(v)}</string>'
 	}
 	s << '\t<key>CFBundleSupportedPlatforms</key>\n\t<array><string>${platform}</string></array>'
 	s << '\t<key>LSRequiresIPhoneOS</key>\n\t<true/>'
+	if !b.sim || os.uname().machine == 'arm64' {
+		s << '\t<key>UIRequiredDeviceCapabilities</key>\n\t<array><string>arm64</string></array>'
+	}
+	s << '\t<key>ITSAppUsesNonExemptEncryption</key>\n\t<false/>'
 	// Without a launch screen iOS runs the app in a letterboxed compatibility mode.
 	s << '\t<key>UILaunchScreen</key>\n\t<dict/>'
 	s << '\t<key>UIRequiresFullScreen</key>\n\t<true/>'
@@ -303,7 +366,7 @@ fn (b IosBuild) compile_icon(app string, plist string) {
 	os.mkdir_all(set) or { fail(err.msg()) }
 	os.cp(b.p.icon, os.join_path(set, 'icon.png')) or { fail(err.msg()) }
 	os.write_file(os.join_path(set, 'Contents.json'),
-		'{"images":[{"filename":"icon.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"author":"velo","version":1}}') or {
+		'{"images":[{"filename":"icon.png","idiom":"universal","platform":"ios","size":"1024x1024"},{"filename":"icon.png","idiom":"ios-marketing","scale":"1x","size":"1024x1024"}],"info":{"author":"xcode","version":1}}') or {
 		fail(err.msg())
 	}
 	partial := os.join_path(b.dir, 'icon-info.plist')
@@ -320,8 +383,8 @@ fn xml_escape(s string) string {
 // ---------- signing (device) ----------
 
 fn (b IosBuild) sign_device(app string) {
-	identity := if b.p.ios_identity != '' { b.p.ios_identity } else { default_identity() }
-	profile := if b.p.ios_profile != '' { b.p.ios_profile } else { find_profile(b.p.id) }
+	identity := if b.p.ios_identity != '' { b.p.ios_identity } else { default_identity(b.release) }
+	profile := if b.p.ios_profile != '' { b.p.ios_profile } else { find_profile(b.p.id, b.release) }
 	decoded := os.join_path(b.dir, 'profile.plist')
 	os.write_file(decoded, capture('security', ['cms', '-D', '-i', profile])) or { fail(err.msg()) }
 	ents := os.join_path(b.dir, 'entitlements.plist')
@@ -329,25 +392,38 @@ fn (b IosBuild) sign_device(app string) {
 		decoded])) or { fail(err.msg()) }
 	os.cp(profile, os.join_path(app, 'embedded.mobileprovision')) or { fail(err.msg()) }
 	step('signing with "${identity}" and ${os.file_name(profile)}')
-	must('codesign', ['--force', '--sign', identity, '--entitlements', ents, '--timestamp=none',
-		app])
+	mut sign_args := ['--force', '--sign', identity, '--entitlements', ents]
+	if b.release || identity.contains('Distribution') {
+		sign_args << '--timestamp'
+	} else {
+		sign_args << '--timestamp=none'
+	}
+	sign_args << app
+	must('codesign', sign_args)
 }
 
-fn default_identity() string {
+fn default_identity(release bool) string {
 	out := capture('security', ['find-identity', '-v', '-p', 'codesigning'])
+	if release {
+		for line in out.split_into_lines() {
+			if line.contains('"Apple Distribution') || line.contains('"iPhone Distribution') {
+				return line.all_after('"').all_before('"')
+			}
+		}
+	}
 	for line in out.split_into_lines() {
 		if line.contains('"Apple Development') || line.contains('"iPhone Developer') {
 			return line.all_after('"').all_before('"')
 		}
 	}
-	fail('no "Apple Development" signing identity found — sign in to your Apple ID in Xcode (Settings > Accounts), or set ios.identity in velo.toml')
+	fail('no signing identity found — sign in to your Apple ID in Xcode (Settings > Accounts), or set ios.identity in velo.toml')
 }
 
 // find_profile looks for an installed provisioning profile for `id` (exact match first, then wildcards).
-fn find_profile(id string) string {
+fn find_profile(id string, release bool) string {
 	home := os.home_dir()
 	mut best := ''
-	mut best_len := -1
+	mut best_score := -1
 	for dir in [
 		os.join_path(home, 'Library', 'Developer', 'Xcode', 'UserData', 'Provisioning Profiles'),
 		os.join_path(home, 'Library', 'MobileDevice', 'Provisioning Profiles'),
@@ -369,9 +445,12 @@ fn find_profile(id string) string {
 			} else {
 				pattern == id
 			}
-			// the most specific pattern wins
-			if matched && pattern.len > best_len {
-				best, best_len = path, pattern.len
+			if matched {
+				is_dist := !res.output.contains('<key>ProvisionedDevices</key>')
+				score := pattern.len + if release == is_dist { 1000 } else { 0 }
+				if score > best_score {
+					best, best_score = path, score
+				}
 			}
 		}
 	}
@@ -388,7 +467,7 @@ fn make_ipa(app string, ipa string) {
 	os.mkdir_all(payload) or { fail(err.msg()) }
 	must('cp', ['-R', app, payload])
 	os.rm(ipa) or {}
-	must('ditto', ['-c', '-k', '--keepParent', payload, ipa])
+	must('ditto', ['-c', '-k', '--keepParent', '--norsrc', payload, ipa])
 	os.rmdir_all(staging) or {}
 }
 
