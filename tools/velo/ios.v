@@ -218,6 +218,22 @@ fn patch_generated_c(c_file string) {
 		'\tswapchain.metal.current_drawable = sapp_sc.metal.current_drawable;\n' +
 		'\tswapchain.metal.depth_stencil_texture = sapp_sc.metal.depth_stencil_texture;\n' +
 		'\tswapchain.metal.msaa_color_texture = sapp_sc.metal.msaa_color_texture;\n')
+	status_bar_patch := '
+#if defined(__APPLE__)
+#import <UIKit/UIKit.h>
+@implementation UIViewController (VeloStatusBar)
+- (BOOL)prefersStatusBarHidden {
+    return YES;
+}
+- (BOOL)prefersHomeIndicatorAutoHidden {
+    return YES;
+}
+@end
+#endif
+'
+	if !src.contains('UIViewController (VeloStatusBar)') {
+		src += status_bar_patch
+	}
 	os.write_file(c_file, src) or { fail(err.msg()) }
 }
 
@@ -352,6 +368,7 @@ fn (b IosBuild) info_plist() string {
 	s << '\t<key>UILaunchScreen</key>\n\t<dict/>'
 	s << '\t<key>UIRequiresFullScreen</key>\n\t<true/>'
 	s << '\t<key>UIStatusBarHidden</key>\n\t<true/>'
+	s << '\t<key>UIViewControllerBasedStatusBarAppearance</key>\n\t<false/>'
 	s << '\t<key>UIDeviceFamily</key>\n\t<array><integer>1</integer><integer>2</integer></array>'
 	s << '\t<key>UISupportedInterfaceOrientations</key>\n\t<array>' +
 		orientations.map('<string>${it}</string>').join('') + '</array>'
