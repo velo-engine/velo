@@ -63,6 +63,29 @@ static int velo_android_safe_insets(const void* native_activity, int* out) {
 	if (window != NULL) (*env)->DeleteLocalRef(env, window);
 	return ok;
 }
+
+static void velo_android_hide_nav_bar(const void* native_activity) {
+	const ANativeActivity* act = (const ANativeActivity*)native_activity;
+	if (act == NULL || act->vm == NULL) return;
+	JavaVM* vm = act->vm;
+	JNIEnv* env = NULL;
+	if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) != JNI_OK) {
+		if ((*vm)->AttachCurrentThread(vm, &env, NULL) != JNI_OK) return;
+	}
+	jclass cls = (*env)->GetObjectClass(env, act->clazz);
+	if (cls != NULL) {
+		jmethodID m = (*env)->GetMethodID(env, cls, "hideSystemUI", "()V");
+		if (m != NULL && !(*env)->ExceptionCheck(env)) {
+			(*env)->CallVoidMethod(env, act->clazz, m);
+		}
+		if ((*env)->ExceptionCheck(env)) {
+			(*env)->ExceptionClear(env);
+		}
+		(*env)->DeleteLocalRef(env, cls);
+	}
+}
+#else
+static inline void velo_android_hide_nav_bar(const void* native_activity) {}
 #endif
 
 #if defined(__APPLE__)

@@ -7,6 +7,7 @@ import sokol.sapp
 #include "@VMODROOT/app/safe_area.h"
 
 fn C.velo_android_safe_insets(activity voidptr, out &int) int
+fn C.velo_android_hide_nav_bar(activity voidptr)
 fn C.velo_ios_safe_insets(window voidptr, out &f64) int
 fn C.sapp_ios_get_window() voidptr
 

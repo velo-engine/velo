@@ -193,6 +193,9 @@ pub fn (mut a App) run() {
 
 fn on_init(mut a App) {
 	android_gc_register_thread()
+	$if android {
+		C.velo_android_hide_nav_bar(sapp.android_get_native_activity())
+	}
 	a.renderer = render.new_renderer(a.ctx, a.db)
 	a.renderer.atlas_on = a.cfg.atlas
 	audio.start()
