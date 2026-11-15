@@ -191,7 +191,8 @@ fn (b IosBuild) find_ios_frameworks() ([]string, []string, []string) {
 	}
 
 	if has_gma {
-		extra_ld << ['-ObjC', '-lc++', '-framework', 'JavaScriptCore', '-framework', 'WebKit', '-framework', 'StoreKit']
+		extra_ld << ['-ObjC', '-lc++', '-framework', 'JavaScriptCore', '-framework', 'WebKit', '-framework', 'StoreKit',
+			'-Wl,-rpath,/usr/lib/swift', '-Wl,-rpath,@executable_path/Frameworks']
 		xcode_dev := capture('xcode-select', ['-p'])
 		for sub in ['swift', 'swift-5.0'] {
 			swift_lib := os.join_path(xcode_dev, 'Toolchains', 'XcodeDefault.xctoolchain', 'usr', 'lib', sub, b.sdk)
