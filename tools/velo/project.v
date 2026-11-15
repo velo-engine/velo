@@ -23,6 +23,8 @@ struct Project {
 	ios_identity  string // codesign identity for device builds; default: the first "Apple Development" one
 	ios_profile   string // .mobileprovision for device builds; default: an installed one matching `id`
 	ios_simulator string // simulator name or UDID for `velo run ios-sim`; default: a booted one, else the first iPhone
+	// [admob]
+	admob_app_id_ios string
 }
 
 fn (p Project) assets_dir() string {
@@ -69,6 +71,7 @@ fn load_project(dir string) Project {
 		ios_identity:   str('ios.identity', '')
 		ios_profile:    path('ios.provisioning_profile')
 		ios_simulator:  str('ios.simulator', '')
+		admob_app_id_ios: str('admob.app_id_ios', '')
 	}
 	if p.orientation !in ['landscape', 'portrait', 'any'] {
 		fail('velo.toml: app.orientation must be landscape, portrait or any (got "${p.orientation}")')

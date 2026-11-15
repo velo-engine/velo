@@ -96,7 +96,7 @@ fn (b IosBuild) compile(home string, exe string) {
 	lines := os.read_lines(flags_file) or { fail('V did not dump the C flags (${flags_file})') }
 	f := parse_c_flags(lines)
 
-	patch_generated_c(c_file)
+	patch_generated_c(c_file, b.p.orientation)
 
 	mut common := b.target.clone()
 	common << ['-std=c99', '-D_DEFAULT_SOURCE', '-Wno-incompatible-function-pointer-types',
@@ -209,15 +209,26 @@ fn object_source(obj string) (string, []string) {
 //   * os declares posix_spawn* with void* parameters, which conflicts with <spawn.h> pulled in by UIKit;
 //   * sokol.sapp only passes the Metal device and drawable to sokol_gfx on macOS (not iOS), so rendering
 //     setup asserts. Each patch is skipped when the generated code no longer needs it.
-fn patch_generated_c(c_file string) {
+fn patch_generated_c(c_file string, orientation string) {
 	mut src := os.read_file(c_file) or { fail(err.msg()) }
-	src = src.split_into_lines().filter(!it.starts_with('extern int posix_spawn')).join('\n')
+	src = src.replace('extern int posix_spawn', '// extern int posix_spawn')
 	src = insert_before_return(src, 'sokol__sapp__glue_environment(void) {', '\treturn env;',
 		'\tenv.metal.device = sapp_env.metal.device;\n')
 	src = insert_before_return(src, 'sokol__sapp__glue_swapchain(void) {', '\treturn swapchain;',
 		'\tswapchain.metal.current_drawable = sapp_sc.metal.current_drawable;\n' +
 		'\tswapchain.metal.depth_stencil_texture = sapp_sc.metal.depth_stencil_texture;\n' +
 		'\tswapchain.metal.msaa_color_texture = sapp_sc.metal.msaa_color_texture;\n')
+	orient_code := match orientation {
+		'portrait' {
+			'if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) { return UIInterfaceOrientationMaskPortrait | UIInterfaceOrientationMaskPortraitUpsideDown; } return UIInterfaceOrientationMaskPortrait;'
+		}
+		'landscape' {
+			'return UIInterfaceOrientationMaskLandscape;'
+		}
+		else {
+			'return UIInterfaceOrientationMaskAll;'
+		}
+	}
 	status_bar_patch := '
 #if defined(__APPLE__)
 #import <UIKit/UIKit.h>
@@ -226,6 +237,12 @@ fn patch_generated_c(c_file string) {
     return YES;
 }
 - (BOOL)prefersHomeIndicatorAutoHidden {
+    return YES;
+}
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+    ${orient_code}
+}
+- (BOOL)shouldAutorotate {
     return YES;
 }
 @end
@@ -372,6 +389,23 @@ fn (b IosBuild) info_plist() string {
 	s << '\t<key>UIDeviceFamily</key>\n\t<array><integer>1</integer><integer>2</integer></array>'
 	s << '\t<key>UISupportedInterfaceOrientations</key>\n\t<array>' +
 		orientations.map('<string>${it}</string>').join('') + '</array>'
+	ipad_orientations := match p.orientation {
+		'portrait' {
+			['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown']
+		}
+		'landscape' {
+			['UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight']
+		}
+		else {
+			['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
+				'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight']
+		}
+	}
+	s << '\t<key>UISupportedInterfaceOrientations~ipad</key>\n\t<array>' +
+		ipad_orientations.map('<string>${it}</string>').join('') + '</array>'
+	if p.admob_app_id_ios != '' {
+		s << '\t<key>GADApplicationIdentifier</key>\n\t<string>${xml_escape(p.admob_app_id_ios)}</string>'
+	}
 	s << '</dict>\n</plist>\n'
 	return s.join('\n')
 }
