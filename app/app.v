@@ -188,7 +188,9 @@ pub fn (mut a App) run() {
 		a.ctx.window.gl.major_version = 3
 		a.ctx.window.gl.minor_version = 0
 	}
+	precise_timers(true) // Windows: 1 ms sleep granularity for gg's frame pacing (timer_windows.c.v)
 	a.ctx.run()
+	precise_timers(false)
 }
 
 fn on_init(mut a App) {
@@ -527,7 +529,11 @@ fn on_event(e &gg.Event, mut a App) {
 		.touches_began, .touches_moved, .touches_ended, .touches_cancelled {
 			a.on_touch(e)
 		}
+		.unfocused {
+			a.input.focus_lost = true
+		}
 		.suspended, .iconified {
+			a.input.focus_lost = true
 			mut m := audio.mixer()
 			m.set_paused(true) // app in the background (phones) or minimized
 			a.store.save_if_changed() // a phone may kill a background app without warning
