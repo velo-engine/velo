@@ -144,8 +144,8 @@ fn test_spatial_gain() {
 	vol, pan := audio.spatial_gain(core.vec2(100, 0), core.vec2(0, 0), 400, 200)
 	assert close(vol, 0.75)
 	assert close(pan, 0.4)
-	far, side := audio.spatial_gain(core.vec2(-900, 0), core.vec2(0, 0), 400, 200)
-	assert far == 0 && close(side, -0.8)
+	far_gain, side := audio.spatial_gain(core.vec2(-900, 0), core.vec2(0, 0), 400, 200)
+	assert far_gain == 0 && close(side, -0.8)
 }
 
 fn ogg_sample() ?string {

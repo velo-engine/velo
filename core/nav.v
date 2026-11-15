@@ -84,7 +84,7 @@ pub fn (mut g NavGrid) free_rect(x f32, y f32, w f32, h f32) {
 
 fn (mut g NavGrid) set_rect(x f32, y f32, w f32, h f32, blocked bool) {
 	c0, r0 := g.cell_of(vec2(x, y))
-	// the far edge belongs to the cell before it when it lands exactly on a cell border
+	// the farthest edge belongs to the cell before it when it lands exactly on a cell border
 	c1, r1 := g.cell_of(vec2(x + w - 0.0001, y + h - 0.0001))
 	for r in math.max(r0, 0) .. math.min(r1 + 1, g.rows) {
 		for c in math.max(c0, 0) .. math.min(c1 + 1, g.columns) {
@@ -150,7 +150,7 @@ pub fn (g &NavGrid) line_clear(a Vec2, b Vec2) bool {
 	} else {
 		0
 	}
-	// Amanatides & Woo: how far along the segment (0..1) the next vertical / horizontal cell border is
+	// Amanatides & Woo: how farthest along the segment (0..1) the next vertical / horizontal cell border is
 	mut t_max_x := f32(1e30)
 	mut t_max_y := f32(1e30)
 	mut t_dx := f32(1e30)
@@ -394,16 +394,16 @@ fn (g &NavGrid) smooth_path(from Vec2, pts []Vec2) []Vec2 {
 	mut anchor := from
 	mut i := 0
 	for i < pts.len {
-		mut far := i
+		mut farthest := i
 		for k := pts.len - 1; k > i; k-- {
 			if g.line_clear(anchor, pts[k]) {
-				far = k
+				farthest = k
 				break
 			}
 		}
-		out << pts[far]
-		anchor = pts[far]
-		i = far + 1
+		out << pts[farthest]
+		anchor = pts[farthest]
+		i = farthest + 1
 	}
 	return out
 }
