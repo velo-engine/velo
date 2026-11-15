@@ -101,7 +101,7 @@ fn (b IosBuild) compile(home string, exe string) {
 	fpaths, fnames, extra_ld := b.find_ios_frameworks()
 
 	mut common := b.target.clone()
-	common << ['-std=c99', '-D_DEFAULT_SOURCE', '-Wno-incompatible-function-pointer-types',
+	common << ['-std=c99', '-D_DEFAULT_SOURCE', '-DMAX_ROOT_SETS=16384', '-Wno-incompatible-function-pointer-types',
 		'-Wno-typedef-redefinition', '-Wno-int-conversion', '-w']
 	common << if b.release { ['-O2', '-DNDEBUG'] } else { ['-O0', '-g'] }
 	common << f.cflags
