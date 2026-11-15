@@ -752,6 +752,16 @@ fn (mut r Renderer) image_for(t &assets.Texture) ?gg.Image {
 		}
 		r.release_gpu(t.id)
 	}
+	if t.path.to_lower().ends_with('.webp') {
+		// gg/stb_image cannot read WebP: decode it ourselves and upload the pixels
+		decoded := decode_image(t.path) or {
+			eprintln('[render] cannot create image ${t.path}: ${err}')
+			return none
+		}
+		r.adopt_image(t, decoded)
+		g := r.gpu[t.id] or { return none }
+		return g.img
+	}
 	filter := if t.filter == 'nearest' { gg.TextureFilter.nearest } else { gg.TextureFilter.linear }
 	img := r.ctx.create_image(t.path, texture_filter: filter) or {
 		eprintln('[render] cannot create image ${t.path}: ${err}')

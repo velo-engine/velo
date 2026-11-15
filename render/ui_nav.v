@@ -19,7 +19,7 @@ import velo.core
 pub struct UINav {
 	core.Component
 pub mut:
-	wrap         bool       = true // past the last Button in a direction, go to the far side
+	wrap         bool       = true // past the last Button in a direction, go to the farthest side
 	follow_mouse bool       = true // hovering a Button with the mouse focuses it
 	auto_focus   bool       = true // a first direction press focuses the top-left Button
 	ring_color   core.Color = core.rgba(255, 215, 80, 255)
@@ -148,7 +148,7 @@ fn collect_nav(node &core.Node, mut out []NavCand) {
 fn (n &UINav) pick(cands []NavCand, cur core.Vec2, cur_node &core.Node, dir core.Vec2) ?&core.Node {
 	mut best := unsafe { &core.Node(nil) }
 	mut best_score := f32(1e30)
-	mut far := unsafe { &core.Node(nil) }
+	mut farthest := unsafe { &core.Node(nil) }
 	mut far_score := f32(1e30)
 	for c in cands {
 		if voidptr(c.node) == voidptr(cur_node) {
@@ -167,15 +167,15 @@ fn (n &UINav) pick(cands []NavCand, cur core.Vec2, cur_node &core.Node, dir core
 			wrap_score := along + 2 * perp // the most "behind" one, lined up with us
 			if wrap_score < far_score {
 				far_score = wrap_score
-				far = c.node
+				farthest = c.node
 			}
 		}
 	}
 	if best != unsafe { nil } {
 		return best
 	}
-	if n.wrap && far != unsafe { nil } {
-		return far
+	if n.wrap && farthest != unsafe { nil } {
+		return farthest
 	}
 	return none
 }

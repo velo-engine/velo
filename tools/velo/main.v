@@ -216,7 +216,8 @@ fn run(exe string, args []string) int {
 	if verbose() {
 		println('> ${shell_join(exe, args)}')
 	}
-	mut p := os.new_process(os.find_abs_path_of_executable(exe) or { exe })
+	real_exe := if os.is_file(exe) { exe } else { os.find_abs_path_of_executable(exe) or { exe } }
+	mut p := os.new_process(real_exe)
 	p.set_args(args)
 	p.run()
 	p.wait()

@@ -138,12 +138,12 @@ fn test_seek_flee_arrive() {
 	}
 	assert math.abs(b.pos.x - 200) < 2 && b.vel.length() < 5
 	// far from the target it goes at full speed, inside the radius it slows
-	far := core.SteerAgent{
+	far_agent := core.SteerAgent{
 		max_speed: 100
 		max_force: 1e6
 	}
-	assert near(far.arrive(core.vec2(1000, 0), 80).length(), 100)
-	assert far.arrive(core.vec2(20, 0), 80).length() < 30
+	assert near(far_agent.arrive(core.vec2(1000, 0), 80).length(), 100)
+	assert far_agent.arrive(core.vec2(20, 0), 80).length() < 30
 }
 
 fn test_pursue_leads_the_target_and_evade_runs_from_it() {

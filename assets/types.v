@@ -14,10 +14,10 @@ pub enum AssetKind {
 pub fn kind_from_ext(path string) AssetKind {
 	ext := path.all_after_last('.').to_lower()
 	return match ext {
-		'png', 'jpg', 'jpeg', 'bmp', 'tga' { .texture }
+		'png', 'jpg', 'jpeg', 'bmp', 'tga', 'webp' { .texture }
 		'wav', 'ogg', 'mp3' { .audio }
 		'scene', 'prefab' { .scene }
-		'txt', 'json', 'md', 'csv', 'anim', 'tilerules' { .text }
+		'txt', 'json', 'md', 'csv', 'anim', 'tilerules', 'atlas' { .text } // .atlas: Spine/libGDX texture atlas
 		'ttf', 'otf' { .font }
 		'glsl', 'frag' { .shader }
 		else { .unknown }

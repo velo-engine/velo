@@ -128,3 +128,34 @@ fn test_duplicate_id_gets_new_id() {
 	assert a != b
 	assert db.warnings.len == 1
 }
+
+// A mounted read-only folder: its files load as `<prefix>/...`, get path-derived IDs and no .meta is written.
+fn test_mount_read_only_folder() {
+	base := os.join_path(os.temp_dir(), 'velo_mount_test_${os.getpid()}')
+	root := os.join_path(base, 'assets')
+	ext := os.join_path(base, 'external', 'pack')
+	os.mkdir_all(root)!
+	os.mkdir_all(ext)!
+	defer {
+		os.rmdir_all(base) or {}
+	}
+	os.write_file(os.join_path(root, 'local.txt'), 'local')!
+	os.write_file(os.join_path(ext, 'hero.json'), '{"a": 1}')!
+	mut db := assets.open(root)!
+	db.mount('refs', os.join_path(base, 'external'))!
+	id := db.id_of('refs/pack/hero.json') or { panic('mounted file not found') }
+	assert id.len == 8
+	txt := db.load[assets.TextAsset]('refs/pack/hero.json')!
+	assert txt.text == '{"a": 1}'
+	assert !os.exists(os.join_path(ext, 'hero.json.meta')) // read-only: nothing written there
+	assert os.exists(os.join_path(root, 'local.txt.meta'))
+	// the same path gives the same ID in a fresh database
+	mut db2 := assets.open(root)!
+	db2.mount('refs', os.join_path(base, 'external'))!
+	assert db2.id_of('refs/pack/hero.json') or { '' } == id
+	// a prefix that collides with a folder in the assets directory is refused
+	os.mkdir_all(os.join_path(root, 'taken'))!
+	if _ := db.mount('taken', ext) {
+		assert false
+	}
+}

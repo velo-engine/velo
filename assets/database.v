@@ -59,8 +59,16 @@ mut:
 	entries map[string]&AssetEntry // id -> entry
 	by_path map[string]string      // relative path -> id
 	events  []AssetEvent
+	mounts  []Mount
 pub mut:
 	warnings []string
+}
+
+// Mount — a read-only folder outside `root`, seen as `<prefix>/<path inside it>` (see mount).
+pub struct Mount {
+pub:
+	prefix string
+	dir    string
 }
 
 // open scans the `root` directory and imports every file found.
@@ -100,7 +108,56 @@ pub fn (db &AssetDatabase) resolve(key string) ?string {
 }
 
 pub fn (db &AssetDatabase) abs_path(e &AssetEntry) string {
-	return os.join_path(db.root, e.path)
+	return db.file_of(e.path)
+}
+
+// mount adds a read-only folder outside the assets directory: its files become assets at `<prefix>/...`
+// (mount('refs', '../Refs') makes `refs/hero/hero.json` loadable). Nothing is ever written into it: its
+// assets get IDs derived from their path (or keep the ID of a .meta already sitting next to them).
+// Desktop only: packaged builds contain the assets directory alone. Mounting a prefix again replaces it.
+pub fn (mut db AssetDatabase) mount(prefix string, dir string) ! {
+	p := prefix.trim('/').trim('\\')
+	if p == '' || p.contains('/') || p.contains('\\') {
+		return error('mount prefix must be one path segment, got "${prefix}"')
+	}
+	if !os.is_dir(dir) {
+		return error('mount "${p}": folder not found: ${dir}')
+	}
+	if os.exists(os.join_path(db.root, p)) {
+		return error('mount "${p}": the assets directory already has a "${p}" entry')
+	}
+	db.mounts = db.mounts.filter(it.prefix != p)
+	db.mounts << Mount{p, os.real_path(dir)}
+	db.sync()
+	db.events.clear()
+}
+
+pub fn (db &AssetDatabase) mounts() []Mount {
+	return db.mounts
+}
+
+// file_of: the file on disk for an asset path (inside `root`, or inside a mounted folder).
+pub fn (db &AssetDatabase) file_of(rel string) string {
+	for m in db.mounts {
+		if rel.starts_with(m.prefix + '/') {
+			return os.join_path(m.dir, rel[m.prefix.len + 1..])
+		}
+	}
+	return os.join_path(db.root, rel)
+}
+
+fn (db &AssetDatabase) is_mounted(rel string) bool {
+	for m in db.mounts {
+		if rel.starts_with(m.prefix + '/') {
+			return true
+		}
+	}
+	return false
+}
+
+// mount_id: a stable 8-hex-digit ID from a mounted asset's path (no .meta can be written there).
+fn mount_id(rel string) string {
+	return '${fnv1a.sum32_string('mount:' + rel):08x}'
 }
 
 // all returns every asset, sorted by path.
@@ -311,10 +368,20 @@ pub fn (mut db AssetDatabase) poll_changes() []AssetEvent {
 
 fn (mut db AssetDatabase) sync() {
 	mut seen := map[string]bool{}
+	mut rels := []string{}
 	mut files := os.walk_ext(db.root, '')
 	files.sort()
 	for abs in files {
-		rel := normalize(abs.replace(db.root, '').trim_left('/\\'))
+		rels << normalize(abs.replace(db.root, '').trim_left('/\\'))
+	}
+	for m in db.mounts {
+		mut mf := os.walk_ext(m.dir, '')
+		mf.sort()
+		for abs in mf {
+			rels << m.prefix + '/' + normalize(abs.replace(m.dir, '').trim_left('/\\'))
+		}
+	}
+	for rel in rels {
 		name := os.file_name(rel)
 		if name.starts_with('.') || rel.ends_with('.meta') || rel.starts_with('library/') {
 			continue
@@ -337,7 +404,8 @@ fn (mut db AssetDatabase) sync() {
 
 // import_file reads/creates the .meta and updates the entry for a file. Returns the ID.
 fn (mut db AssetDatabase) import_file(rel string) !string {
-	abs := os.join_path(db.root, rel)
+	abs := db.file_of(rel)
+	read_only := db.is_mounted(rel)
 	meta_path := abs + '.meta'
 	// Combined mtime of the file and its .meta (changing import settings also requires re-importing).
 	mtime := os.file_last_mod_unix(abs) * 2 + if os.exists(meta_path) {
@@ -366,6 +434,12 @@ fn (mut db AssetDatabase) import_file(rel string) !string {
 			meta.kind = kind.str()
 			write = true
 		}
+	} else if read_only {
+		meta = Meta{
+			id:       mount_id(rel)
+			kind:     kind.str()
+			settings: default_settings(kind)
+		}
 	} else {
 		meta = Meta{
 			id:       new_id()
@@ -376,13 +450,13 @@ fn (mut db AssetDatabase) import_file(rel string) !string {
 	}
 	// Two files with the same ID (usually from copying both the file and its .meta): assign a new ID to the latter.
 	if other := db.entries[meta.id] {
-		if other.path != rel && os.exists(os.join_path(db.root, other.path)) {
+		if other.path != rel && os.exists(db.file_of(other.path)) {
 			db.warn('duplicate ID ${meta.id} between "${other.path}" and "${rel}" — assigning a new ID to "${rel}"')
 			meta.id = new_id()
 			write = true
 		}
 	}
-	if write {
+	if write && !read_only {
 		write_meta(meta_path, meta)!
 	}
 

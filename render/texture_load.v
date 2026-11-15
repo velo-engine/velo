@@ -4,6 +4,7 @@ import os
 import gg
 import stbi
 import velo.assets
+import velo.webp
 
 // DecodedImage — RGBA pixels decoded off the main thread (see decode_image), waiting to be uploaded by adopt_image.
 pub struct DecodedImage {
@@ -24,6 +25,16 @@ pub fn decode_image(path string) !DecodedImage {
 		} $else {
 			return error('image file "${path}" not found')
 		}
+	}
+	if webp.is_webp(bytes) {
+		// stb_image has no WebP: decode with velo.webp (lossless VP8L) into a C buffer that free_decoded can free
+		img := webp.decode(bytes)!
+		buf := unsafe { malloc(isize(img.rgba.len)) } // freed by stbi (V free), see free_decoded
+		if buf == unsafe { nil } {
+			return error('out of memory decoding "${path}"')
+		}
+		unsafe { vmemcpy(buf, img.rgba.data, img.rgba.len) }
+		return DecodedImage{img.width, img.height, buf}
 	}
 	img := stbi.load_from_memory(bytes.data, bytes.len)!
 	return DecodedImage{img.width, img.height, img.data}

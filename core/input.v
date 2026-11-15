@@ -140,6 +140,9 @@ pub mut:
 	// Per-frame mouse state (reset by end_frame), set through mouse_press / mouse_release / mouse_scroll.
 	mouse_pressed  bool
 	mouse_released bool
+	// The window lost focus, or the app went to the background or was minimized (this frame only): games
+	// auto-pause on it.
+	focus_lost bool
 	scroll         Vec2 // wheel delta this frame (y > 0 = wheel up)
 	// Fingers currently down, plus the ones lifted this frame. Set through touch_begin / touch_move / touch_end.
 	touches []Touch
@@ -290,6 +293,7 @@ pub fn (mut i Input) end_frame() {
 	i.text = ''
 	i.text_editing = false
 	i.mouse_pressed = false
+	i.focus_lost = false
 	i.mouse_released = false
 	i.scroll = Vec2{}
 	i.touches = i.touches.filter(!it.is_up())

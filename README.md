@@ -995,7 +995,17 @@ position and rotation keys, scale keys, skins, attachment switching (display ind
 Editing the exported files hot reloads them. It draws textured triangles through the renderer's `render.MeshDrawable`
 hook, so any component with a `meshes() []render.TexturedMesh` method is drawn the same way.
 
-Limits: IK, transform and physics constraints and event keys are not applied yet (bake them into keys before exporting);
+**Spine 4.2 exports** play directly, too: point `data` at the Spine JSON (`"skeleton": {"spine": "4.2.x"}`) and
+`atlas` at its text `.atlas` (old `xy`/`size`/`orig`/`offset` or 4.x `bounds`/`offsets` form, rotated regions,
+several pages); pages may be PNG or lossless WebP (`velo.webp`, pure V; lossy WebP is rejected). `skin` picks a
+Spine skin (falling back to `default`). Applied: bone rotate/translate/scale/shear, slot attachment, rgba/rgb/alpha,
+draw order and 4.2 deform timelines, linear/stepped/bezier curves, all bone inherit modes, 1- and 2-bone IK (with
+mix/bendPositive keys), region, weighted mesh and linked-mesh attachments, additive blending. Not applied
+(listed in `SpineData.skipped` when a file uses them): transform/path/physics constraints, IK softness/stretch/
+compress, clipping, sequences, tint black, events, multiply/screen blending. `tests/spine42_test.v` checks real
+packs; poses match the official spine-core 4.2 runtime within 0.01 px.
+
+Limits: IK, transform and physics constraints and event keys are not applied yet for Kine2D exports (bake them into keys before exporting);
 the binary export (`.skel.bin`) is not read, only the JSON one; the editor cannot click-select a skeleton in the scene view
 (select it in the Hierarchy); `velo assets unused` does not know that the atlas uses its image.
 
