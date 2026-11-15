@@ -27,9 +27,10 @@ fn find_node_tool(name string) string {
 // ensure_webgl_deps installs esbuild into <engine>/webgl/node_modules the first time.
 fn ensure_webgl_deps(home string) string {
 	dir := os.join_path(home, 'webgl')
-	esbuild := os.join_path(dir, 'node_modules', '.bin', 'esbuild')
+	esbuild_name := $if windows { 'esbuild.cmd' } $else { 'esbuild' }
+	esbuild := os.join_path(dir, 'node_modules', '.bin', esbuild_name)
 	if !os.is_file(esbuild) {
-		npm := find_node_tool('npm')
+		npm := find_node_tool($if windows { 'npm.cmd' } $else { 'npm' })
 		step('installing the WebGL build tools (esbuild) into ${dir}')
 		os.chdir(dir) or { fail(err.msg()) }
 		must(npm, ['install', '--no-audit', '--no-fund'])
@@ -41,7 +42,8 @@ fn ensure_webgl_deps(home string) string {
 fn ensure_v2js(home string) string {
 	src := os.join_path(home, 'tools', 'v2js')
 	bin_dir := os.join_path(home, 'build', 'tools')
-	bin := os.join_path(bin_dir, 'v2js')
+	bin_name := $if windows { 'v2js.exe' } $else { 'v2js' }
+	bin := os.join_path(bin_dir, bin_name)
 	mut stale := !os.is_file(bin)
 	if !stale {
 		built := os.file_last_mod_unix(bin)

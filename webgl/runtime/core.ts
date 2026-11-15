@@ -517,9 +517,9 @@ export class Node {
 				if (!c.enabled) continue
 				if (!c.started) {
 					c.started = true
-					c.start()
+					if (typeof (c as any).start === 'function') (c as any).start()
 				}
-				c.update(d)
+				if (typeof (c as any).update === 'function') (c as any).update(d)
 			}
 			this.tick_timers(d)
 			this.tick_tweens(d)
