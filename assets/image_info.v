@@ -1,8 +1,9 @@
 module assets
 
 import os
+import velo.webp
 
-// image_size reads the image size from its header (PNG / JPEG / BMP) without decoding
+// image_size reads the image size from its header (PNG / JPEG / BMP / WebP) without decoding
 // and without a GPU — so AssetDatabase works in tools and unit tests too.
 pub fn image_size(path string) !(int, int) {
 	mut f := os.open(path)!
@@ -14,6 +15,9 @@ pub fn image_size(path string) !(int, int) {
 	b := unsafe { head[..n] }
 	if b.len >= 24 && b[0] == 0x89 && b[1] == `P` && b[2] == `N` && b[3] == `G` {
 		return be32(b, 16), be32(b, 20)
+	}
+	if webp.is_webp(b) {
+		return webp.info(b)
 	}
 	if b.len >= 26 && b[0] == `B` && b[1] == `M` {
 		w := int(u32(b[18]) | u32(b[19]) << 8 | u32(b[20]) << 16 | u32(b[21]) << 24)
