@@ -98,11 +98,16 @@ fn (b IosBuild) compile(home string, exe string) {
 
 	patch_generated_c(c_file, b.p.orientation)
 
+	fpaths, fnames, extra_ld := b.find_ios_frameworks()
+
 	mut common := b.target.clone()
 	common << ['-std=c99', '-D_DEFAULT_SOURCE', '-Wno-incompatible-function-pointer-types',
 		'-Wno-typedef-redefinition', '-Wno-int-conversion', '-w']
 	common << if b.release { ['-O2', '-DNDEBUG'] } else { ['-O0', '-g'] }
 	common << f.cflags
+	for fp in fpaths {
+		common << ['-F', fp]
+	}
 
 	mut objs := []string{}
 	for o in f.objects {
@@ -122,8 +127,80 @@ fn (b IosBuild) compile(home string, exe string) {
 	link << main_o
 	link << objs
 	link << f.ldflags
+	for fp in fpaths {
+		link << ['-F', fp]
+	}
+	for fnm in fnames {
+		link << ['-framework', fnm]
+	}
+	link << extra_ld
 	link << ['-o', exe]
 	must(b.clang, link)
+}
+
+// find_ios_frameworks inspects <project>/ios/frameworks for .xcframework bundles and returns
+// framework search paths, framework names, and any additional linker flags.
+fn (b IosBuild) find_ios_frameworks() ([]string, []string, []string) {
+	fw_dir := os.join_path(b.p.dir, 'ios', 'frameworks')
+	if !os.is_dir(fw_dir) {
+		return []string{}, []string{}, []string{}
+	}
+	mut fpaths := []string{}
+	mut fnames := []string{}
+	mut extra_ld := []string{}
+	mut has_gma := false
+
+	entries := os.ls(fw_dir) or { return []string{}, []string{}, []string{} }
+	for entry in entries {
+		if !entry.ends_with('.xcframework') {
+			continue
+		}
+		xc_path := os.join_path(fw_dir, entry)
+		slices := os.ls(xc_path) or { continue }
+		mut chosen_slice := ''
+		for slice in slices {
+			if !os.is_dir(os.join_path(xc_path, slice)) {
+				continue
+			}
+			if b.sim {
+				if slice.contains('simulator') {
+					chosen_slice = slice
+					break
+				}
+			} else {
+				if slice.starts_with('ios-arm64') && !slice.contains('simulator') {
+					chosen_slice = slice
+					break
+				}
+			}
+		}
+		if chosen_slice == '' {
+			continue
+		}
+		slice_dir := os.join_path(xc_path, chosen_slice)
+		fpaths << slice_dir
+		for f in os.ls(slice_dir) or { [] } {
+			if f.ends_with('.framework') {
+				name := f.all_before_last('.framework')
+				fnames << name
+				if name == 'GoogleMobileAds' {
+					has_gma = true
+				}
+			}
+		}
+	}
+
+	if has_gma {
+		extra_ld << ['-ObjC', '-lc++', '-framework', 'JavaScriptCore', '-framework', 'WebKit', '-framework', 'StoreKit']
+		xcode_dev := capture('xcode-select', ['-p'])
+		for sub in ['swift', 'swift-5.0'] {
+			swift_lib := os.join_path(xcode_dev, 'Toolchains', 'XcodeDefault.xctoolchain', 'usr', 'lib', sub, b.sdk)
+			if os.is_dir(swift_lib) {
+				extra_ld << ['-L', swift_lib]
+			}
+		}
+	}
+	return fpaths, fnames, extra_ld
 }
 
 // compile_cached compiles a C dependency (libgc, stb_image, ...) once per set of flags.
@@ -164,7 +241,8 @@ fn parse_c_flags(lines []string) CFlags {
 			f.cflags << line[..2] + line[2..].trim_space().trim('"\'')
 		} else if line.starts_with('-framework ') {
 			f.ldflags << ['-framework', line.all_after(' ').trim_space()]
-		} else if line.starts_with('-l') || line.starts_with('-L') || line.starts_with('-Wl,') {
+		} else if line.starts_with('-l') || line.starts_with('-L') || line.starts_with('-Wl,')
+			|| line.starts_with('-F') {
 			f.ldflags << line[..2] + line[2..].trim_space().trim('"\'')
 		} else if line.starts_with('-std=') || line.starts_with('-fobjc') {
 			// set per file by velo
@@ -405,6 +483,7 @@ fn (b IosBuild) info_plist() string {
 		ipad_orientations.map('<string>${it}</string>').join('') + '</array>'
 	if p.admob_app_id_ios != '' {
 		s << '\t<key>GADApplicationIdentifier</key>\n\t<string>${xml_escape(p.admob_app_id_ios)}</string>'
+		s << '\t<key>SKAdNetworkItems</key>\n\t<array>\n\t\t<dict>\n\t\t\t<key>SKAdNetworkIdentifier</key>\n\t\t\t<string>cstr6suwn9.skadnetwork</string>\n\t\t</dict>\n\t</array>'
 	}
 	s << '</dict>\n</plist>\n'
 	return s.join('\n')
