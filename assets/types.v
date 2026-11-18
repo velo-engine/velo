@@ -103,8 +103,8 @@ pub fn (t &Texture) frame_rect(i int) (int, int, int, int) {
 // SceneAsset — text content of a .scene/.prefab file. Parsing is handled by the serialize module.
 pub struct SceneAsset {
 pub:
-	id   string
-	path string
+	id      string
+	path    string
 pub mut:
 	source  string
 	version int

@@ -191,10 +191,11 @@ pub fn (mut db AssetDatabase) load[T](key string) !&T {
 	} $else $if T is SceneAsset {
 		db.expect_kind(e, .scene, 'SceneAsset')!
 		if e.scene == unsafe { nil } {
+			p := db.abs_path(e)
 			e.scene = &SceneAsset{
 				id:     e.id
-				path:   db.abs_path(e)
-				source: os.read_file(db.abs_path(e))!
+				path:   p
+				source: os.read_file(p)!
 			}
 		}
 		e.refs++
