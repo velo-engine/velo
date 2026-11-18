@@ -80,9 +80,12 @@ mut:
 //
 // On Android/iOS, assets_dir is ignored: the assets packaged by `velo build android|ios` are used instead.
 pub fn new(config Config) !&App {
+	assets_dir := runtime_assets_dir(config.assets_dir)!
+	font_path := resolve_font_path(config.font_path, assets_dir)
 	cfg := Config{
 		...config
-		assets_dir: runtime_assets_dir(config.assets_dir)!
+		assets_dir: assets_dir
+		font_path:  font_path
 		hot_reload: config.hot_reload && !is_mobile() && !is_web() // packaged assets never change
 	}
 	mode := core.scale_mode_from_str(cfg.scale_mode)!

@@ -121,6 +121,41 @@ fn ios_bundle_dir() string {
 	return os.dir(unsafe { cstring_to_vstring(&char(&buf[0])) })
 }
 
+// resolve_font_path resolves the font path across platforms (desktop, Android, iOS, web).
+// It maps host paths into runtime asset directories or APK asset paths, and prioritizes
+// any font shipped in assets/fonts/ before falling back to system defaults.
+pub fn resolve_font_path(configured string, assets_dir string) string {
+	if configured != '' {
+		if os.is_file(configured) {
+			return configured
+		}
+		name := os.file_name(configured)
+		cand := os.join_path(assets_dir, 'fonts', name)
+		if os.is_file(cand) {
+			return cand
+		}
+		$if android {
+			return 'fonts/' + name
+		}
+		$if ios {
+			cand_ios := os.join_path(ios_bundle_dir(), 'assets', 'fonts', name)
+			if os.is_file(cand_ios) {
+				return cand_ios
+			}
+		}
+	}
+	// Fall back: check if runtime assets has any font in fonts/
+	fonts_dir := os.join_path(assets_dir, 'fonts')
+	if os.is_dir(fonts_dir) {
+		for f in os.ls(fonts_dir) or { []string{} } {
+			if f.ends_with('.ttf') || f.ends_with('.otf') {
+				return os.join_path(fonts_dir, f)
+			}
+		}
+	}
+	return system_font()
+}
+
 // system_font returns a font file for text rendering on platforms where gg cannot find one by itself.
 fn system_font() string {
 	$if ios {
