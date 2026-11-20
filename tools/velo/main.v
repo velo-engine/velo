@@ -47,6 +47,12 @@ App name, ID, version, icon and signing come from velo.toml in the project (see 
 Install (once, from the engine repo):
   v -o ~/.local/bin/velo tools/velo     (any directory on your PATH works)
 
+ Windows (PowerShell):
+   $bin = Join-Path $env:USERPROFILE ".local\bin"
+   New-Item -ItemType Directory -Force -Path $bin | Out-Null
+   v -o "$bin\velo.exe" tools\velo
+   $env:PATH = "$bin;$env:PATH"
+
 The engine is found at VELO_HOME if set, otherwise at the repo velo was built from.
 The repo directory must be named "velo" (it is the `velo` module: velo/core, velo/app, ...).'
 
