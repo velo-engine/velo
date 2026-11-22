@@ -192,12 +192,17 @@ pub fn (mut a App) run() {
 		a.ctx.window.gl.minor_version = 0
 	}
 	precise_timers(true) // Windows: 1 ms sleep granularity for gg's frame pacing (timer_windows.c.v)
+	android_gc_pause() // resumed in on_init, once gg's font is pinned
 	a.ctx.run()
 	precise_timers(false)
+	// On Android ctx.run() returns at once (sokol's render thread drives the game from here on).
+	android_gc_release_ui_thread()
 }
 
 fn on_init(mut a App) {
 	android_gc_register_thread()
+	android_gc_pin_fonts(a.ctx)
+	android_gc_resume()
 	$if android {
 		C.velo_android_hide_nav_bar(sapp.android_get_native_activity())
 	}

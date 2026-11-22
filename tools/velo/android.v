@@ -209,8 +209,10 @@ fn build_android(home string, p Project, o MobileOptions) {
 		extra,
 		'-o',
 		output,
+		// Boehm GC, like desktop/iOS/web. `-gc none` never frees anything: every string built per frame leaked
+		// (~50 MB/min in gameplay), so phones froze under memory pressure and the OS killed and restarted the game.
 		'-gc',
-		'none',
+		'boehm',
 	]
 	if o.release {
 		args << '-prod'
