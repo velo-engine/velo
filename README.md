@@ -25,6 +25,29 @@ velo run ios-sim   # or: velo run android — see "Android and iOS"
 velo run webgl     # in a browser — see "WebGL"
 ```
 
+On Windows (PowerShell), build `velo.exe` and add a bin directory to `PATH`:
+
+```powershell
+$bin = Join-Path $env:USERPROFILE ".local\bin"
+New-Item -ItemType Directory -Force -Path $bin | Out-Null
+v -o "$bin\velo.exe" tools\velo
+
+$env:PATH = "$bin;$env:PATH"
+[Environment]::SetEnvironmentVariable(
+    'PATH',
+    "$bin;$([Environment]::GetEnvironmentVariable('PATH', 'User'))",
+    'User'
+)
+
+velo --help
+```
+
+Open a new terminal if `velo` is not found. Alternatively, build to a directory that is already on `PATH`:
+
+```powershell
+v -o C:\Tools\velo.exe tools\velo
+```
+
 `velo` runs `v -path "@vlib|<parent of the repo>|@vmodules" ...`, so projects find `velo.*` without symlinks or copies
 (the repo directory must therefore be named `velo`).
 The engine location is baked in when `velo` is built; set `VELO_HOME` to override it.
