@@ -2,8 +2,9 @@ module render
 
 import math
 import sokol.gfx
-import sokol.sgl
 import sokol.sapp
+import gg
+import gg.render as gr
 import velo.core
 
 // Drawing for core.Lighting / core.Light2D. Each frame the lights are drawn (added together, on top of the ambient
@@ -17,9 +18,9 @@ struct LightGpu {
 mut:
 	inited  bool
 	ok      bool
-	ctx     sgl.Context  // draws the lights into the light map (same format as the target)
-	add_pip sgl.Pipeline // additive blend, made inside `ctx`
-	mul_pip sgl.Pipeline // multiply blend, made inside the default context
+	ctx     &gr.Context = unsafe { nil } // draws the lights into the light map (same format as the target)
+	add_pip gr.Pipeline // additive blend, made inside `ctx`
+	mul_pip gr.Pipeline // multiply blend, made inside the main context
 	// the light map
 	img  gfx.Image
 	smp  gfx.Sampler
@@ -44,15 +45,12 @@ fn (mut r Renderer) light_init() bool {
 		return r.light.ok
 	}
 	r.light.inited = true
-	mut cd := zeroed[sgl.ContextDesc]()
-	cd.color_format = .rgba8
-	cd.depth_format = .none
-	cd.sample_count = 1
-	r.light.ctx = sgl.make_context(&cd)
-	if r.light.ctx.id == 0 {
-		eprintln('[render] lighting: cannot create the light map context')
-		return false
-	}
+	// a second render context: the lights are recorded into it and drawn into the light map
+	r.light.ctx = gr.new_context(gr.Desc{
+		color_format: .rgba8
+		depth_format: .none
+		sample_count: 1
+	})
 	mut sd := gfx.SamplerDesc{
 		min_filter: .linear
 		mag_filter: .linear
@@ -63,7 +61,6 @@ fn (mut r Renderer) light_init() bool {
 	r.light.smp = gfx.make_sampler(&sd)
 	r.light.point = make_light_texture(0)
 	// additive: the light map keeps what it has and adds color * falloff
-	sgl.set_context(r.light.ctx)
 	mut pd := zeroed[gfx.PipelineDesc]()
 	pd.label = c'velo-light-add'
 	pd.colors[0] = gfx.ColorTargetState{
@@ -73,8 +70,7 @@ fn (mut r Renderer) light_init() bool {
 			dst_factor_rgb: .one
 		}
 	}
-	r.light.add_pip = sgl.make_pipeline(&pd)
-	sgl.set_context(sgl.default_context())
+	r.light.add_pip = r.light.ctx.make_pipeline(pd)
 	// multiply the world by the light map
 	mut md := zeroed[gfx.PipelineDesc]()
 	md.label = c'velo-light-multiply'
@@ -87,7 +83,7 @@ fn (mut r Renderer) light_init() bool {
 			dst_factor_alpha: .one
 		}
 	}
-	r.light.mul_pip = sgl.make_pipeline(&md)
+	r.light.mul_pip = r.ctx.r.make_pipeline(md)
 	r.light.ok = true
 	return true
 }
@@ -178,13 +174,14 @@ fn (mut r Renderer) apply_lighting(scene &core.Scene, window core.Affine2) {
 	t := scene.time
 
 	// 1. the lights, into the light context
-	sgl.set_context(r.light.ctx)
-	sgl.defaults()
-	sgl.matrix_mode_projection()
-	sgl.ortho(0.0, f32(pw), f32(ph), 0.0, -1.0, 1.0)
-	sgl.viewport(0, 0, r.light.w, r.light.h, true)
-	sgl.load_pipeline(r.light.add_pip)
-	sgl.enable_texture()
+	lc := r.light.ctx
+	lc.rewind()
+	lc.defaults()
+	lc.matrix_mode_projection()
+	lc.ortho(0.0, f32(pw), f32(ph), 0.0, -1.0, 1.0)
+	lc.viewport(0, 0, r.light.w, r.light.h, true)
+	lc.load_pipeline(r.light.add_pip)
+	lc.enable_texture()
 	for l in scene.lights {
 		if !l.enabled || l.node == unsafe { nil } || l.node.destroyed
 			|| !l.node.is_active_in_hierarchy() || l.radius <= 0 {
@@ -200,12 +197,12 @@ fn (mut r Renderer) apply_lighting(scene &core.Scene, window core.Affine2) {
 		rad := l.radius * f32(math.max(math.abs(sc.x), math.abs(sc.y)))
 		rot := f32(m.rotation_deg() * math.pi / 180.0)
 		img := if l.kind == 'spot' { r.spot_texture(l.cone) } else { r.light.point }
-		sgl.texture(img, r.light.tex_smp)
+		lc.texture(img, r.light.tex_smp)
 		passes := int(math.ceil(strength))
 		each := strength / f32(passes)
 		cr, cg, cb := u8(f32(l.color.r) * each), u8(f32(l.color.g) * each), u8(f32(l.color.b) * each)
 		for _ in 0 .. passes {
-			sgl.begin_quads()
+			lc.begin_quads()
 			// the square around the light, turned by the node's rotation (it matters for spots)
 			cs, sn := f32(math.cos(rot)), f32(math.sin(rot))
 			for uv in [[f32(0), f32(0)], [f32(1), f32(0)], [f32(1), f32(1)],
@@ -214,12 +211,12 @@ fn (mut r Renderer) apply_lighting(scene &core.Scene, window core.Affine2) {
 				ly := (uv[1] * 2 - 1) * rad
 				x := c.x + lx * cs - ly * sn
 				y := c.y + lx * sn + ly * cs
-				sgl.v2f_t2f_c4b(x * s, y * s, uv[0], uv[1], cr, cg, cb, 255)
+				lc.v2f_t2f_c4b(x * s, y * s, uv[0], uv[1], cr, cg, cb, 255)
 			}
-			sgl.end()
+			lc.end()
 		}
 	}
-	sgl.disable_texture()
+	lc.disable_texture()
 	// 2. the light map pass: start from the ambient color, add the recorded lights
 	a := lighting.ambient
 	mut pass := zeroed[gfx.Pass]()
@@ -230,26 +227,26 @@ fn (mut r Renderer) apply_lighting(scene &core.Scene, window core.Affine2) {
 	pass.attachments = r.light.atts
 	pass.label = c'velo-light-pass'
 	gfx.begin_pass(&pass)
-	sgl.context_draw(r.light.ctx)
+	lc.draw()
 	gfx.end_pass()
-	sgl.set_context(sgl.default_context())
+	lc.rewind()
 
 	// 3. multiply the world drawn so far by the light map
 	r.set_scissor(r.base_rect())
-	sgl.load_pipeline(r.light.mul_pip)
-	sgl.enable_texture()
-	sgl.texture(r.light.img, r.light.smp)
-	sgl.begin_quads()
+	r.ctx.r.load_pipeline(r.light.mul_pip)
+	r.ctx.r.enable_texture()
+	r.ctx.r.texture(r.light.img, r.light.smp)
+	r.ctx.r.begin_quads()
 	w, h := f32(pw), f32(ph)
 	flip := !gfx.query_features().origin_top_left // GL render targets are upside down compared to Metal/D3D
 	v0, v1 := if flip { f32(1), f32(0) } else { f32(0), f32(1) }
-	sgl.v2f_t2f_c4b(0, 0, 0, v0, 255, 255, 255, 255)
-	sgl.v2f_t2f_c4b(w, 0, 1, v0, 255, 255, 255, 255)
-	sgl.v2f_t2f_c4b(w, h, 1, v1, 255, 255, 255, 255)
-	sgl.v2f_t2f_c4b(0, h, 0, v1, 255, 255, 255, 255)
-	sgl.end()
-	sgl.disable_texture()
-	sgl.load_default_pipeline()
+	r.ctx.r.v2f_t2f_c4b(0, 0, 0, v0, 255, 255, 255, 255)
+	r.ctx.r.v2f_t2f_c4b(w, 0, 1, v0, 255, 255, 255, 255)
+	r.ctx.r.v2f_t2f_c4b(w, h, 1, v1, 255, 255, 255, 255)
+	r.ctx.r.v2f_t2f_c4b(0, h, 0, v1, 255, 255, 255, 255)
+	r.ctx.r.end()
+	r.ctx.r.disable_texture()
+	r.ctx.r.load_default_pipeline()
 	r.set_scissor(r.clip)
 	r.draw_calls++
 }

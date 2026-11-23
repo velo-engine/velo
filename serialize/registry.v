@@ -52,7 +52,7 @@ fn create_component[T]() core.IComponent {
 
 fn apply_component[T](mut c core.IComponent, props map[string]Value) ! {
 	if mut c is T {
-		set_fields[T](mut c, props)!
+		set_fields[T](mut *c, props)!
 		return
 	}
 	return error('component is not of type ${T.name}')

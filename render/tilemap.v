@@ -2,7 +2,6 @@ module render
 
 import gg
 import math
-import sokol.sgl
 import velo.core
 import velo.assets
 
@@ -560,10 +559,10 @@ fn (mut r Renderer) draw_tilemap(tm &TileMap, m core.Affine2) {
 	eu, ev := f32(0.01) / tw, f32(0.01) / th
 	s := r.ctx.scale
 	col := tm.color
-	sgl.load_pipeline(r.ctx.pipeline.alpha)
-	sgl.enable_texture()
-	sgl.texture(img.simg, img.ssmp)
-	sgl.begin_quads()
+	r.ctx.r.load_pipeline(r.ctx.pipeline.alpha)
+	r.ctx.r.enable_texture()
+	r.ctx.r.texture(img.simg, img.ssmp)
+	r.ctx.r.begin_quads()
 	for i in sc.cells {
 		c, row := i % tm.columns, i / tm.columns
 		t0 := tm.get(c, row)
@@ -583,13 +582,13 @@ fn (mut r Renderer) draw_tilemap(tm &TileMap, m core.Affine2) {
 		b := m.apply(core.vec2(x + cs.x, y))
 		d := m.apply(core.vec2(x + cs.x, y + cs.y))
 		e := m.apply(core.vec2(x, y + cs.y))
-		sgl.v2f_t2f_c4b(a.x * s, a.y * s, u0, v0, col.r, col.g, col.b, col.a)
-		sgl.v2f_t2f_c4b(b.x * s, b.y * s, u1, v0, col.r, col.g, col.b, col.a)
-		sgl.v2f_t2f_c4b(d.x * s, d.y * s, u1, v1, col.r, col.g, col.b, col.a)
-		sgl.v2f_t2f_c4b(e.x * s, e.y * s, u0, v1, col.r, col.g, col.b, col.a)
+		r.ctx.r.v2f_t2f_c4b(a.x * s, a.y * s, u0, v0, col.r, col.g, col.b, col.a)
+		r.ctx.r.v2f_t2f_c4b(b.x * s, b.y * s, u1, v0, col.r, col.g, col.b, col.a)
+		r.ctx.r.v2f_t2f_c4b(d.x * s, d.y * s, u1, v1, col.r, col.g, col.b, col.a)
+		r.ctx.r.v2f_t2f_c4b(e.x * s, e.y * s, u0, v1, col.r, col.g, col.b, col.a)
 	}
-	sgl.end()
-	sgl.disable_texture()
+	r.ctx.r.end()
+	r.ctx.r.disable_texture()
 	r.draw_calls++
 }
 
@@ -626,16 +625,16 @@ pub fn (mut r Renderer) draw_tile_ghost(tm &TileMap, m core.Affine2, tile int, x
 	b := m.apply(core.vec2(x + w, y))
 	d := m.apply(core.vec2(x + w, y + h))
 	e := m.apply(core.vec2(x, y + h))
-	sgl.load_pipeline(r.ctx.pipeline.alpha)
-	sgl.enable_texture()
-	sgl.texture(img.simg, img.ssmp)
-	sgl.begin_quads()
-	sgl.v2f_t2f_c4b(a.x * s, a.y * s, u0, v0, c.r, c.g, c.b, c.a)
-	sgl.v2f_t2f_c4b(b.x * s, b.y * s, u1, v0, c.r, c.g, c.b, c.a)
-	sgl.v2f_t2f_c4b(d.x * s, d.y * s, u1, v1, c.r, c.g, c.b, c.a)
-	sgl.v2f_t2f_c4b(e.x * s, e.y * s, u0, v1, c.r, c.g, c.b, c.a)
-	sgl.end()
-	sgl.disable_texture()
+	r.ctx.r.load_pipeline(r.ctx.pipeline.alpha)
+	r.ctx.r.enable_texture()
+	r.ctx.r.texture(img.simg, img.ssmp)
+	r.ctx.r.begin_quads()
+	r.ctx.r.v2f_t2f_c4b(a.x * s, a.y * s, u0, v0, c.r, c.g, c.b, c.a)
+	r.ctx.r.v2f_t2f_c4b(b.x * s, b.y * s, u1, v0, c.r, c.g, c.b, c.a)
+	r.ctx.r.v2f_t2f_c4b(d.x * s, d.y * s, u1, v1, c.r, c.g, c.b, c.a)
+	r.ctx.r.v2f_t2f_c4b(e.x * s, e.y * s, u0, v1, c.r, c.g, c.b, c.a)
+	r.ctx.r.end()
+	r.ctx.r.disable_texture()
 }
 
 // ---------- Assets ----------

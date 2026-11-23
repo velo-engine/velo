@@ -2,7 +2,10 @@
 // V's prebuilt object file cannot be linked (iOS, Android, the web). Guarded: V can emit a #include more than once.
 #ifndef VELO_STB_VORBIS_C
 #define VELO_STB_VORBIS_C
+// V's `error()` (IError) lives in the same C file: rename stb_vorbis' static `error` so the two do not clash.
+#define error velo_vorbis_error
 #include "stb_vorbis.c"
+#undef error
 // stb_vorbis leaves its internal macros defined (even `L`, `C`, `R`), which breaks headers included after it
 // in the same C file (Box2D's `b2Transform C;`). Undefine them (standard names such as NULL, malloc or
 // TRUE stay: stb_vorbis only defines those when they are missing, and later code may rely on them).

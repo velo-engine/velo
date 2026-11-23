@@ -564,11 +564,12 @@ fn (mut a App) on_touch(e &gg.Event) {
 			continue
 		}
 		pos := a.to_screen(t.pos_x / scale, t.pos_y / scale)
+		id := u64(t.identifier)
 		match e.typ {
-			.touches_began { a.input.touch_begin(t.identifier, pos) }
-			.touches_moved { a.input.touch_move(t.identifier, pos) }
-			.touches_ended { a.input.touch_end(t.identifier, pos, false) }
-			else { a.input.touch_end(t.identifier, pos, true) }
+			.touches_began { a.input.touch_begin(id, pos) }
+			.touches_moved { a.input.touch_move(id, pos) }
+			.touches_ended { a.input.touch_end(id, pos, false) }
+			else { a.input.touch_end(id, pos, true) }
 		}
 	}
 }

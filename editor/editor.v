@@ -798,12 +798,11 @@ fn (mut e Editor) apply_edit(t EditTarget, text string) ! {
 			return error('${t.field} must be at least 1')
 		}
 		e.doc.checkpoint()!
-		mut c := n.components[t.comp]
-		if mut c is render.TileMap {
+		if mut tm := n.get_component[render.TileMap]() {
 			if t.field == 'columns' {
-				c.resize(size, c.rows)
+				tm.resize(size, tm.rows)
 			} else {
-				c.resize(c.columns, size)
+				tm.resize(tm.columns, size)
 			}
 		}
 	} else {

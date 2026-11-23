@@ -1,6 +1,6 @@
 module render
 
-import sokol.sgl
+import gg
 import velo.core
 import velo.assets
 
@@ -45,27 +45,27 @@ pub fn (mut r Renderer) draw_mesh(mesh TexturedMesh, m core.Affine2) {
 	s := r.ctx.scale
 	c := mesh.color
 	per_vertex := mesh.colors.len >= nverts
-	sgl.load_pipeline(if mesh.additive { r.ctx.pipeline.add } else { r.ctx.pipeline.alpha })
+	r.ctx.r.load_pipeline(if mesh.additive { r.ctx.pipeline.add } else { r.ctx.pipeline.alpha })
 	if textured {
 		img := r.image_for(mesh.texture) or { return }
 		if !img.simg_ok {
 			return
 		}
-		sgl.enable_texture()
-		sgl.texture(img.simg, img.ssmp)
+		r.ctx.r.enable_texture()
+		r.ctx.r.texture(img.simg, img.ssmp)
 	}
-	sgl.begin_triangles()
+	r.ctx.r.begin_triangles()
 	for i in mesh.indices[..mesh.indices.len - mesh.indices.len % 3] {
 		p := m.apply(core.vec2(mesh.positions[i * 2], mesh.positions[i * 2 + 1]))
 		vc := if per_vertex { mul_color(c, mesh.colors[i]) } else { c }
 		u, v := if textured { mesh.uvs[i * 2], mesh.uvs[i * 2 + 1] } else { f32(0), f32(0) }
-		sgl.v2f_t2f_c4b(p.x * s, p.y * s, u, v, vc.r, vc.g, vc.b, vc.a)
+		r.ctx.r.v2f_t2f_c4b(p.x * s, p.y * s, u, v, vc.r, vc.g, vc.b, vc.a)
 	}
-	sgl.end()
+	r.ctx.r.end()
 	if textured {
-		sgl.disable_texture()
+		r.ctx.r.disable_texture()
 	}
-	sgl.load_pipeline(r.ctx.pipeline.alpha)
+	r.ctx.r.load_pipeline(r.ctx.pipeline.alpha)
 	r.draw_calls++
 	if r.debug {
 		mut x0, mut y0 := f32(1e9), f32(1e9)

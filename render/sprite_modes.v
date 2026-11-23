@@ -1,8 +1,8 @@
 module render
 
 import gg
+import gg.render as gr
 import math
-import sokol.sgl
 import velo.core
 
 // Sliced (9-slice) and tiled Sprites. The frame is cut by the four `border_*` lines into a 3x3 grid:
@@ -197,7 +197,7 @@ fn (s &Sprite) flipped(x f32, y f32, w f32, h f32, sx Seg, sy Seg) SpriteQuad {
 }
 
 // draw_sprite_shaded draws any sprite (simple, sliced or tiled) through a shader pipeline (see shader.v).
-fn (mut r Renderer) draw_sprite_shaded(s &Sprite, m core.Affine2, pip sgl.Pipeline) {
+fn (mut r Renderer) draw_sprite_shaded(s &Sprite, m core.Affine2, pip gr.Pipeline) {
 	tex := s.tex
 	fx, fy, fw, fh := tex.frame_rect(s.frame)
 	tw, th := f32(tex.width), f32(tex.height)
@@ -211,7 +211,7 @@ fn (mut r Renderer) draw_sprite_shaded(s &Sprite, m core.Affine2, pip sgl.Pipeli
 
 // draw_sprite_batch draws the sprite's quads with `pip`; `uniforms` (16 floats, or none) go in sokol_gl's
 // texture matrix, which a velo shader reads as its built-ins.
-fn (mut r Renderer) draw_sprite_batch(s &Sprite, m core.Affine2, pip sgl.Pipeline, uniforms []f32) {
+fn (mut r Renderer) draw_sprite_batch(s &Sprite, m core.Affine2, pip gr.Pipeline, uniforms []f32) {
 	tex := s.tex
 	if tex.width <= 0 || tex.height <= 0 {
 		return
@@ -228,33 +228,33 @@ fn (mut r Renderer) draw_sprite_batch(s &Sprite, m core.Affine2, pip sgl.Pipelin
 	tw, th := f32(tex.width), f32(tex.height)
 	sc := r.ctx.scale
 	col := s.color
-	sgl.load_pipeline(pip)
+	r.ctx.r.load_pipeline(pip)
 	if uniforms.len == 16 {
-		sgl.matrix_mode_texture()
-		sgl.push_matrix()
-		sgl.load_matrix(uniforms)
+		r.ctx.r.matrix_mode_texture()
+		r.ctx.r.push_matrix()
+		r.ctx.r.load_matrix(uniforms)
 	}
-	sgl.enable_texture()
-	sgl.texture(img.simg, img.ssmp)
-	sgl.begin_quads()
+	r.ctx.r.enable_texture()
+	r.ctx.r.texture(img.simg, img.ssmp)
+	r.ctx.r.begin_quads()
 	for q in qs.quads {
 		u0, v0, u1, v1 := q.u0 / tw, q.v0 / th, q.u1 / tw, q.v1 / th
 		a := m.apply(core.vec2(q.x, q.y))
 		b := m.apply(core.vec2(q.x + q.w, q.y))
 		d := m.apply(core.vec2(q.x + q.w, q.y + q.h))
 		e := m.apply(core.vec2(q.x, q.y + q.h))
-		sgl.v2f_t2f_c4b(a.x * sc, a.y * sc, u0, v0, col.r, col.g, col.b, col.a)
-		sgl.v2f_t2f_c4b(b.x * sc, b.y * sc, u1, v0, col.r, col.g, col.b, col.a)
-		sgl.v2f_t2f_c4b(d.x * sc, d.y * sc, u1, v1, col.r, col.g, col.b, col.a)
-		sgl.v2f_t2f_c4b(e.x * sc, e.y * sc, u0, v1, col.r, col.g, col.b, col.a)
+		r.ctx.r.v2f_t2f_c4b(a.x * sc, a.y * sc, u0, v0, col.r, col.g, col.b, col.a)
+		r.ctx.r.v2f_t2f_c4b(b.x * sc, b.y * sc, u1, v0, col.r, col.g, col.b, col.a)
+		r.ctx.r.v2f_t2f_c4b(d.x * sc, d.y * sc, u1, v1, col.r, col.g, col.b, col.a)
+		r.ctx.r.v2f_t2f_c4b(e.x * sc, e.y * sc, u0, v1, col.r, col.g, col.b, col.a)
 	}
-	sgl.end()
-	sgl.disable_texture()
+	r.ctx.r.end()
+	r.ctx.r.disable_texture()
 	if uniforms.len == 16 {
 		// back to the identity texture matrix the default shader needs, and to the projection mode gg leaves set
-		sgl.pop_matrix()
-		sgl.matrix_mode_projection()
-		sgl.load_pipeline(r.ctx.pipeline.alpha)
+		r.ctx.r.pop_matrix()
+		r.ctx.r.matrix_mode_projection()
+		r.ctx.r.load_pipeline(r.ctx.pipeline.alpha)
 	}
 	r.draw_calls++
 	if r.debug {

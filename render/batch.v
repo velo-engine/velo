@@ -1,7 +1,6 @@
 module render
 
 import gg
-import sokol.sgl
 import velo.core
 
 // Sprite batching: sprites without a shader (simple, sliced or tiled) are written straight into one open sokol_gl
@@ -66,11 +65,11 @@ fn (mut r Renderer) batch_sprite(s &Sprite, m core.Affine2, img_id int, fx f32, 
 	}
 	r.batch_use(img_id, img)
 	k := r.ctx.scale // gg draws in window points; sokol_gl works in framebuffer pixels
-	sgl.c4b(s.color.r, s.color.g, s.color.b, s.color.a)
-	sgl.v2f_t2f(ax * k, ay * k, u0, v0)
-	sgl.v2f_t2f(bx * k, by * k, u1, v0)
-	sgl.v2f_t2f(cx * k, cy * k, u1, v1)
-	sgl.v2f_t2f(dx * k, dy * k, u0, v1)
+	r.ctx.r.c4b(s.color.r, s.color.g, s.color.b, s.color.a)
+	r.ctx.r.v2f_t2f(ax * k, ay * k, u0, v0)
+	r.ctx.r.v2f_t2f(bx * k, by * k, u1, v0)
+	r.ctx.r.v2f_t2f(cx * k, cy * k, u1, v1)
+	r.ctx.r.v2f_t2f(dx * k, dy * k, u0, v1)
 }
 
 // batch_sliced draws a sliced or tiled sprite (no shader) into the open run, so it batches with plain sprites on
@@ -103,15 +102,15 @@ fn (mut r Renderer) batch_sliced(s &Sprite, m core.Affine2, img_id int, ox int, 
 	ih := f32(img.height)
 	fox, foy := f32(ox), f32(oy)
 	k := r.ctx.scale
-	sgl.c4b(s.color.r, s.color.g, s.color.b, s.color.a)
+	r.ctx.r.c4b(s.color.r, s.color.g, s.color.b, s.color.a)
 	for q in qs.quads {
 		u0, v0 := (q.u0 + fox) / iw, (q.v0 + foy) / ih
 		u1, v1 := (q.u1 + fox) / iw, (q.v1 + foy) / ih
 		x0, y0, x1, y1 := q.x, q.y, q.x + q.w, q.y + q.h
-		sgl.v2f_t2f((m.a * x0 + m.c * y0 + m.tx) * k, (m.b * x0 + m.d * y0 + m.ty) * k, u0, v0)
-		sgl.v2f_t2f((m.a * x1 + m.c * y0 + m.tx) * k, (m.b * x1 + m.d * y0 + m.ty) * k, u1, v0)
-		sgl.v2f_t2f((m.a * x1 + m.c * y1 + m.tx) * k, (m.b * x1 + m.d * y1 + m.ty) * k, u1, v1)
-		sgl.v2f_t2f((m.a * x0 + m.c * y1 + m.tx) * k, (m.b * x0 + m.d * y1 + m.ty) * k, u0, v1)
+		r.ctx.r.v2f_t2f((m.a * x0 + m.c * y0 + m.tx) * k, (m.b * x0 + m.d * y0 + m.ty) * k, u0, v0)
+		r.ctx.r.v2f_t2f((m.a * x1 + m.c * y0 + m.tx) * k, (m.b * x1 + m.d * y0 + m.ty) * k, u1, v0)
+		r.ctx.r.v2f_t2f((m.a * x1 + m.c * y1 + m.tx) * k, (m.b * x1 + m.d * y1 + m.ty) * k, u1, v1)
+		r.ctx.r.v2f_t2f((m.a * x0 + m.c * y1 + m.tx) * k, (m.b * x0 + m.d * y1 + m.ty) * k, u0, v1)
 	}
 }
 
@@ -122,10 +121,10 @@ fn (mut r Renderer) batch_use(img_id int, img &gg.Image) {
 		return
 	}
 	r.flush_sprites()
-	sgl.load_pipeline(r.ctx.pipeline.alpha)
-	sgl.enable_texture()
-	sgl.texture(img.simg, img.ssmp)
-	sgl.begin_quads()
+	r.ctx.r.load_pipeline(r.ctx.pipeline.alpha)
+	r.ctx.r.enable_texture()
+	r.ctx.r.texture(img.simg, img.ssmp)
+	r.ctx.r.begin_quads()
 	r.batch.open = true
 	r.batch.img_id = img_id
 	r.draw_calls++ // one per run: what sokol_gl actually issues
@@ -150,7 +149,7 @@ fn (mut r Renderer) check_sgl_overflow() {
 	if r.sgl_warned {
 		return
 	}
-	err := sgl.error()
+	err := r.ctx.r.error()
 	if err in [.vertices_full, .commands_full, .uniforms_full] {
 		eprintln('[render] sokol_gl ${err}: the frame was not drawn (too many quads; see batch.v)')
 		r.sgl_warned = true
@@ -162,7 +161,7 @@ fn (mut r Renderer) flush_sprites() {
 	if !r.batch.open {
 		return
 	}
-	sgl.end()
-	sgl.disable_texture()
+	r.ctx.r.end()
+	r.ctx.r.disable_texture()
 	r.batch.open = false
 }

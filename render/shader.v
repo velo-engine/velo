@@ -1,7 +1,8 @@
 module render
 
 import sokol.gfx
-import sokol.sgl
+import gg
+import gg.render as gr
 import velo.core
 import velo.assets
 
@@ -225,7 +226,7 @@ pub fn shader_time(n &core.Node) f32 {
 
 struct GpuShader {
 	shd     gfx.Shader
-	pip     sgl.Pipeline
+	pip     gr.Pipeline
 	version int
 	ok      bool // false: failed to compile (not retried until the file changes)
 }
@@ -241,14 +242,14 @@ fn backend_lang() ?ShaderLang {
 
 // pipeline_for compiles the shader on first use, and again when the file changes (hot reload).
 // none = it does not compile (the error is printed once); the sprite is then drawn without it.
-fn (mut r Renderer) pipeline_for(s &assets.Shader) ?sgl.Pipeline {
+fn (mut r Renderer) pipeline_for(s &assets.Shader) ?gr.Pipeline {
 	if g := r.shaders[s.id] {
 		if g.version == s.version {
 			return if g.ok { g.pip } else { none }
 		}
 		r.release_shader(s.id)
 	}
-	g := make_gpu_shader(s) or {
+	g := make_gpu_shader(r.ctx.r, s) or {
 		eprintln('[render] shader ${s.path}: ${err}')
 		r.shaders[s.id] = GpuShader{
 			version: s.version
@@ -259,7 +260,7 @@ fn (mut r Renderer) pipeline_for(s &assets.Shader) ?sgl.Pipeline {
 	return g.pip
 }
 
-fn make_gpu_shader(s &assets.Shader) !GpuShader {
+fn make_gpu_shader(gl &gr.Context, s &assets.Shader) !GpuShader {
 	lang := backend_lang() or {
 		return error('not supported by the ${gfx.query_backend()} backend')
 	}
@@ -308,7 +309,7 @@ fn make_gpu_shader(s &assets.Shader) !GpuShader {
 	}
 	return GpuShader{
 		shd:     shd
-		pip:     sgl.make_pipeline(&pd)
+		pip:     gl.make_pipeline_with_shader(pd, shd)
 		version: s.version
 		ok:      true
 	}
@@ -317,7 +318,7 @@ fn make_gpu_shader(s &assets.Shader) !GpuShader {
 fn (mut r Renderer) release_shader(id string) {
 	if g := r.shaders[id] {
 		if g.ok {
-			sgl.destroy_pipeline(g.pip)
+			r.ctx.r.destroy_pipeline(g.pip)
 			gfx.destroy_shader(g.shd)
 		}
 		r.shaders.delete(id)
