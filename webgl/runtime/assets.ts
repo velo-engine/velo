@@ -3,6 +3,7 @@
 // `preload` downloads everything before the game starts, so loading stays synchronous like on desktop.
 
 import * as V from './v.ts'
+import type { AtlasInfo } from './gfx.ts'
 
 export type AssetKind = 'unknown' | 'texture' | 'audio' | 'scene' | 'text' | 'font' | 'shader'
 
@@ -254,6 +255,7 @@ export interface ManifestEntry {
 
 export interface Manifest {
 	entries: ManifestEntry[]
+	atlas?: AtlasInfo // the prebuilt texture atlas (see Gfx.set_atlas)
 }
 
 // Preloaded — what the browser downloaded before the game started, by asset ID.
@@ -262,6 +264,8 @@ export class Preloaded {
 	images = new Map<string, TexImageSource & { width: number; height: number }>()
 	bytes = new Map<string, ArrayBuffer>()
 	fonts = new Map<string, string>() // id -> CSS family
+	atlas: AtlasInfo | undefined
+	atlas_images: (TexImageSource | null)[] = [] // one per atlas page
 }
 
 export class AssetDatabase {
@@ -521,13 +525,27 @@ export async function preload(root: string, on_progress: (done: number, total: n
 	if (!res.ok) throw new Error(`cannot download ${root}/assets.json (${res.status})`)
 	const manifest = (await res.json()) as Manifest
 	const data = new Preloaded()
-	const total = manifest.entries.length
+	const pages = manifest.atlas?.pages ?? []
+	data.atlas = manifest.atlas
+	data.atlas_images = pages.map(() => null)
+	const total = manifest.entries.length + pages.length
 	let done = 0
 	const tick = () => {
 		done++
 		on_progress(done, total)
 	}
-	const url = (e: ManifestEntry) => `${root}/${e.path.split('/').map(encodeURIComponent).join('/')}?v=${e.hash}`
+	const url = (e: { path: string; hash: number }) => `${root}/${e.path.split('/').map(encodeURIComponent).join('/')}?v=${e.hash}`
+	const page_jobs = pages.map(async (p, i) => {
+		try {
+			const r = await fetch(url(p))
+			if (!r.ok) throw new Error(`HTTP ${r.status}`)
+			data.atlas_images[i] = await createImageBitmap(await r.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+		} catch (err) {
+			console.error(`[assets] cannot download atlas page ${p.path}: ${err}`) // its textures draw on their own
+		} finally {
+			tick()
+		}
+	})
 	const jobs = manifest.entries.map(async (e) => {
 		try {
 			switch (kind_from_str(e.kind)) {
@@ -569,6 +587,6 @@ export async function preload(root: string, on_progress: (done: number, total: n
 			tick()
 		}
 	})
-	await Promise.all(jobs)
+	await Promise.all([...jobs, ...page_jobs])
 	return new AssetDatabase(root, manifest, data)
 }

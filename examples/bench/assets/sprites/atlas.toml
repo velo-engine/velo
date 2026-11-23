@@ -1,0 +1,10 @@
+# Texture atlas: `velo build` / `velo run <mobile or web target>` pack the images of this folder into shared
+# pages, so sprites that alternate between them draw in one batch (much faster on phones). Packed images are
+# drawn from the pages by plain sprites; shaders, meshes and tile maps still use the image files, which are shipped
+# too. A subfolder with its own atlas.toml is a separate atlas. `velo atlas` shows what gets packed.
+
+recursive = true       # also pack the images of subfolders
+exclude = []           # glob patterns (path relative to this folder, or file name), e.g. ["backgrounds/*", "*_big.png"]
+max_size = 512         # images wider or taller than this keep their own texture
+page_size = 2048       # largest page (pages are trimmed to what they hold); 2048 is safe on every phone
+padding = 1            # edge pixels repeated around each image, so filtering never pulls in a neighbour

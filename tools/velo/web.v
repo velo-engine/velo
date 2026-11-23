@@ -25,7 +25,7 @@ fn find_emcc() string {
 
 fn build_web(home string, p Project, o MobileOptions) {
 	emcc := find_emcc()
-	prepare_mobile_build(home, p)
+	gen := prepare_mobile_build(home, p)
 	if uses_physics(p) {
 		fail('velo.physics is not supported on the web yet (Box2D is not built for Emscripten)')
 	}
@@ -58,6 +58,7 @@ fn build_web(home string, p Project, o MobileOptions) {
 		os.mkdir_all(os.dir(dst)) or { fail(err.msg()) }
 		os.cp(os.join_path(p.assets_dir(), rel), dst) or { fail(err.msg()) }
 	}
+	copy_gen_files(gen, staged)
 
 	optimize := if o.release { '-O3' } else { '-O2' }
 	cflags := [

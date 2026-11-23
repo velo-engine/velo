@@ -37,8 +37,9 @@ fn uses_physics(p Project) bool {
 	return false
 }
 
-// prepare_mobile_build runs the steps every packaged build needs before compiling.
-fn prepare_mobile_build(home string, p Project) {
+// prepare_mobile_build runs the steps every packaged build needs before compiling. Returns the generated files
+// to ship with the assets (the texture atlases).
+fn prepare_mobile_build(home string, p Project) []GenFile {
 	// Opening the database creates any missing .meta files — the packaged copy is read-only, so the IDs
 	// must exist (and be committed) before packaging. `check` also stops the build on broken references.
 	step('checking assets')
@@ -48,15 +49,18 @@ fn prepare_mobile_build(home string, p Project) {
 	if uses_physics(p) {
 		ensure_box2d(home)
 	}
+	return build_atlases(home, p)
 }
 
-// packaged_assets lists the asset files to ship, relative to assets/ with '/' separators (hidden files excluded).
+// packaged_assets lists the asset files to ship, relative to assets/ with '/' separators (hidden files, the
+// library/ cache and atlas.toml settings excluded; build_atlases makes what ships in library/atlas/).
 fn packaged_assets(p Project) []string {
 	root := p.assets_dir()
 	mut out := []string{}
 	for f in os.walk_ext(root, '') {
 		rel := f.all_after(root).trim_left('/\\').replace('\\', '/')
-		if rel.split('/').any(it.starts_with('.')) || rel.starts_with('library/') {
+		if rel.split('/').any(it.starts_with('.')) || rel.starts_with('library/')
+			|| os.file_name(rel) == atlas_config {
 			continue
 		}
 		out << rel

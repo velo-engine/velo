@@ -384,7 +384,8 @@ fn (mut db AssetDatabase) sync() {
 	}
 	for rel in rels {
 		name := os.file_name(rel)
-		if name.starts_with('.') || rel.ends_with('.meta') || rel.starts_with('library/') {
+		// atlas.toml: the settings of a prebuilt texture atlas (see velo.atlas), read by the build only
+		if name.starts_with('.') || name == 'atlas.toml' || rel.ends_with('.meta') || rel.starts_with('library/') {
 			continue
 		}
 		id := db.import_file(rel) or {

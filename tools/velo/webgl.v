@@ -216,15 +216,45 @@ fn (b WebglBuild) sync_assets() int {
 		keep[rel] = true
 		entries << manifest_entry(src, rel)
 	}
+	// the texture atlases: their pages are not assets, assets.json lists them apart (see Gfx.atlas_slot)
+	gen := build_atlases(b.home, b.p)
+	copy_gen_files(gen, assets_out)
+	for g in gen {
+		keep[g.rel] = true
+	}
 	os.mkdir_all(assets_out) or { fail(err.msg()) }
 	for f in os.walk_ext(assets_out, '') {
-		if f.all_after(assets_out + os.path_separator) !in keep {
+		if f.all_after(assets_out + os.path_separator).replace('\\', '/') !in keep {
 			os.rm(f) or {}
 		}
 	}
 	os.write_file(os.join_path(assets_out, 'assets.json'), '{"entries": [\n' + entries.join(',\n') +
-		'\n]}\n') or { fail(err.msg()) }
+		'\n],\n"atlas": ${atlas_json(gen)}}\n') or { fail(err.msg()) }
 	return entries.len
+}
+
+// atlas_json turns the atlas manifest (see velo.atlas) into the `atlas` field of assets.json:
+//   {"pages": [{"path", "hash", "width", "height", "nearest"}], "regions": {"<texture ID>": [page, x, y, w, h]}}
+fn atlas_json(gen []GenFile) string {
+	manifest := gen.filter(it.rel.ends_with('/atlas.txt'))
+	if manifest.len == 0 {
+		return '{"pages": [], "regions": {}}'
+	}
+	dir := os.dir(manifest[0].rel)
+	src_dir := os.dir(manifest[0].src)
+	mut pages := []string{}
+	mut regions := []string{}
+	lines := os.read_lines(manifest[0].src) or { fail(err.msg()) }
+	for line in lines {
+		f := line.fields()
+		if f.len == 5 && f[0] == 'page' {
+			data := os.read_bytes(os.join_path(src_dir, f[1])) or { fail(err.msg()) }
+			pages << '{"path": ${json_str(dir + '/' + f[1])}, "hash": ${fnv1a.sum32(data)}, "width": ${f[2].int()}, "height": ${f[3].int()}, "nearest": ${f[4] == 'nearest'}}'
+		} else if f.len == 7 && f[0] == 'tex' {
+			regions << '${json_str(f[1])}: [${f[2..].map(it.int().str()).join(', ')}]'
+		}
+	}
+	return '{"pages": [\n  ${pages.join(',\n  ')}\n], "regions": {\n  ${regions.join(',\n  ')}\n}}'
 }
 
 // serve_and_watch serves the build on localhost:8080 (module scripts and fetch() do not work from file://),

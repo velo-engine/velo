@@ -5,7 +5,7 @@ import * as V from './v.ts'
 import * as core from './core.ts'
 import * as assets from './assets.ts'
 import * as serialize from './serialize.ts'
-import { Gfx, SPRITE_ATLAS, type GfxColor, type HAlign, type VAlign } from './gfx.ts'
+import { Gfx, type GfxColor, type HAlign, type VAlign } from './gfx.ts'
 
 type FieldSpec = core.FieldSpec
 const { Vec2, Affine2, vec2, rgba } = core
@@ -2302,7 +2302,7 @@ export class Renderer {
 	db: assets.AssetDatabase
 	debug = false
 	show_shapes = false
-	// Pack small textures into shared pages for sprites without an effect (see Gfx.atlas_slot). Off: every texture
+	// Draw sprites without an effect from the prebuilt atlas pages (see Gfx.atlas_slot). Off: every texture
 	// is its own GPU texture.
 	atlas_on = true
 	quad_scratch = new QuadScratch() // draw_sprite's quads of sliced sprites, reused every frame
@@ -2453,13 +2453,13 @@ export class Renderer {
 		const col = s.color
 		const sh = s.shader_data
 		const fx = sh !== null ? this.gfx.effect(sh.id, sh.version, sh.source, sh.path) : null
-		// sprites without an effect draw from the sprite atlas when their texture fits (see Gfx.atlas_slot);
+		// sprites without an effect draw from the sprite atlas when their texture is packed (see Gfx.atlas_slot);
 		// tw, th is then the page's size and ox, oy where the texture's pixels start in it
 		const slot = fx === null && this.atlas_on ? this.gfx.atlas_slot(tex) : null
 		const gtex = slot !== null ? slot.tex : this.gfx.texture(tex)
 		if (gtex === null) return
-		const tw = slot !== null ? SPRITE_ATLAS : tex.width
-		const th = slot !== null ? SPRITE_ATLAS : tex.height
+		const tw = slot !== null ? slot.page_w : tex.width
+		const th = slot !== null ? slot.page_h : tex.height
 		const ox = slot !== null ? slot.x : 0
 		const oy = slot !== null ? slot.y : 0
 		if (fx !== null) {

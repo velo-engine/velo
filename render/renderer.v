@@ -38,7 +38,8 @@ mut:
 	sgl_warned   bool
 pub mut:
 	debug bool // F1: draw node bounds + center
-	// Pack small textures into shared pages for plain sprites (see atlas.v). Off: every texture is its own GPU image.
+	// Draw plain sprites from the prebuilt atlas pages when the game ships them (see atlas.v). Off: every texture is
+	// its own GPU image.
 	atlas_on bool = true
 	// Draw DebugShape outlines (colliders) even when `debug` is off (the editor turns it on).
 	show_shapes bool
@@ -51,10 +52,12 @@ pub mut:
 }
 
 pub fn new_renderer(ctx &gg.Context, db &assets.AssetDatabase) &Renderer {
-	return &Renderer{
+	mut r := &Renderer{
 		ctx: ctx
 		db:  db
 	}
+	r.atlas_load()
+	return r
 }
 
 // draw_scene draws the scene; `window` maps screen units to window points (see core.ScreenFit.to_window).

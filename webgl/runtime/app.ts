@@ -33,7 +33,7 @@ export class Config {
 	save_file = ''
 	// Language used when neither the saved choice nor the browser's language has a table in `locales/` (see core.Locale).
 	language = 'en'
-	// Pack small textures into shared pages so sprites on different textures draw as one batch (see Gfx.atlas_slot).
+	// Draw sprites from the atlas pages `velo build webgl` made (see Gfx.atlas_slot), so sprites on different textures draw as one batch.
 	atlas = true
 	on_scene_loaded: ((a: App) => void) | null = null
 }
@@ -156,6 +156,7 @@ export class App {
 		document.title = this.cfg.title
 		const canvas = canvas_el ?? make_canvas()
 		this.gfx = new Gfx(canvas)
+		this.gfx.set_atlas(this.db.data.atlas, this.db.data.atlas_images)
 		this.renderer = render.new_renderer(this.gfx, this.db)
 		this.renderer.atlas_on = this.cfg.atlas
 		audio.start()

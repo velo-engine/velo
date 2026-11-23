@@ -39,7 +39,7 @@ fn build_ios(home string, p Project, o MobileOptions, sim bool) {
 			'-isysroot', capture(xcrun, ['--sdk', sdk, '--show-sdk-path'])]
 		dir:     p.build_dir(if sim { 'ios-sim' } else { 'ios' })
 	}
-	prepare_mobile_build(home, p)
+	gen := prepare_mobile_build(home, p)
 	os.mkdir_all(os.join_path(b.dir, 'obj')) or { fail(err.msg()) }
 
 	step('building ${p.name} for ${if sim { 'the iOS Simulator' } else { 'iOS' }} (${if o.release {
@@ -49,7 +49,7 @@ fn build_ios(home string, p Project, o MobileOptions, sim bool) {
 	}})')
 	app := if sim && o.output != '' { o.output } else { os.join_path(b.dir, '${p.bin}.app') }
 	b.compile(home, os.join_path(app, p.bin))
-	b.bundle(app)
+	b.bundle(app, gen)
 	if sim {
 		must('codesign', ['--force', '--sign', '-', '--timestamp=none', app])
 		step('built ${app}')
@@ -344,7 +344,7 @@ fn insert_before_return(src string, fn_head string, ret string, code string) str
 
 // ---------- bundle ----------
 
-fn (b IosBuild) bundle(app string) {
+fn (b IosBuild) bundle(app string, gen []GenFile) {
 	p := b.p
 	assets := os.join_path(app, 'assets')
 	os.rmdir_all(assets) or {}
@@ -353,6 +353,7 @@ fn (b IosBuild) bundle(app string) {
 		os.mkdir_all(os.dir(dst)) or { fail(err.msg()) }
 		os.cp(os.join_path(p.assets_dir(), rel), dst) or { fail(err.msg()) }
 	}
+	copy_gen_files(gen, assets)
 	plist := os.join_path(app, 'Info.plist')
 	os.write_file(plist, b.info_plist()) or { fail(err.msg()) }
 	if p.icon != '' {

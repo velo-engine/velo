@@ -64,6 +64,7 @@ The optional `physics` module (used by the demo) needs [Box2D](https://box2d.org
 velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   core/       Node, Component, Scene, Camera/Canvas, Input, Vec2/Color/Affine2       (no graphics dependency)
   assets/     AssetDatabase: .meta, stable IDs, AssetRef[T], reference counting, dependency graph, hot reload
+  atlas/      prebuilt texture atlases (`velo atlas`, packed by `velo build`): packer, page border, manifest
   serialize/  .scene format, parser, reflection, Registry, SceneLoader (prefab + override), writer
   render/     Renderer (gg): draw order (z_index, y_sort, Canvas), Sprite (+ GLSL shader effects), SpriteAnimator, Label, ParticleSystem, TileMap, UI components (Button, ScrollView, Widget, Layout, ...)
   audio/      AudioSource, Mixer (buses, fades, streaming .ogg), output device (sokol_audio)
@@ -1101,17 +1102,36 @@ if '--editor' in os.args {
 
 ## Texture atlas
 
-Plain sprites (simple draw mode, no shader) on textures up to 512x512 are packed together into shared 2048x2048 pages,
-so sprites that alternate between many textures do not switch GPU textures. Nothing to configure: textures are
-packed when first drawn or preloaded, each with a 1 pixel edge border so filtering never pulls in a neighbour.
-Sliced and tiled sprites, meshes and tile maps keep their texture on its own (they need repeat or their own UVs).
-`atlas: false` in `app.new` turns it off.
+Images that are drawn together can be packed into shared pages, so sprites that alternate between them do not switch
+GPU textures. Atlases are built ahead of time by the build, never at runtime:
+
+```bash
+cd assets/sprites && velo atlas    # or: velo atlas assets/sprites — writes assets/sprites/atlas.toml
+```
+
+`velo atlas [dir]` marks a folder of `assets/` (the current one by default; a project folder means its whole
+`assets/`) with an `atlas.toml`, or keeps the one already there, and lists the images it packs. Every packaged build
+(`velo build` for any target, and `velo run` for mobile and web) then packs each such folder into pages in
+`build/atlas/`, shipped as `assets/library/atlas/` (`<folder>_0.png`, ... and the manifest `atlas.txt`); a game run
+from its project (`velo run`, the editor) draws every texture on its own. The settings, all optional:
+
+```toml
+recursive = true       # also pack the images of subfolders (a subfolder with its own atlas.toml is a separate atlas)
+exclude = []           # glob patterns, on the path relative to the folder or the file name: ["bg/*", "*_big.png"]
+max_size = 512         # images wider or taller than this keep their own texture
+page_size = 2048       # largest page; pages are trimmed to what they hold
+padding = 1            # edge pixels repeated around each image, so filtering never pulls in a neighbour
+```
+
+Textures with `filter: nearest` and `linear` go on separate pages. Sprites without a shader (sliced and tiled ones
+included) draw from the pages; shaded sprites, meshes and tile maps use the image file, which is shipped too. A page
+is uploaded when a sprite on one of its textures is first drawn or preloaded, and freed when none of its textures is
+loaded any more. A texture whose file changed since the build (other size, or hot-reloaded) draws on its own.
+`atlas: false` in `app.new` turns the atlas off.
 
 Why: on Android (BlueStacks, arm64) `examples/bench` with 20000 sprites on 16 alternating textures took 53 ms per
 frame, against 19.6 ms on one texture; with the atlas both take 18.4 ms. On desktop and the iOS Simulator the
-difference was only about 5%, so this matters most on phones. Limits: the space of an unloaded texture is only
-reclaimed when no texture is left in the atlas (a scene change that keeps one persistent texture does not clean up),
-and adding a texture uploads its whole page again.
+difference was only about 5%, so this matters most on phones.
 
 ## Shipping a desktop game
 

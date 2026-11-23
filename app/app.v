@@ -29,7 +29,8 @@ pub:
 	language string = 'en'
 	// The developer tools: F1 overlay, F2 profiler, ` console (see core.Console). Turn off for the shipped game.
 	debug_tools bool = true
-	// Pack small textures into shared pages so sprites on different textures draw as one batch (see render/atlas.v).
+	// Draw sprites from the atlas pages `velo build` made (folders with an atlas.toml, see `velo atlas`), so sprites
+	// on different textures draw as one batch (see render/atlas.v). Off: every texture is its own GPU image.
 	atlas bool = true
 	// Names the save data folder (see open_store); '' = made from the title. Keep it once the game ships.
 	app_id string

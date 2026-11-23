@@ -10,6 +10,8 @@ Usage:
   velo build [target] [dir] [options]    build the game for distribution
   velo editor [dir]                      open the scene/prefab editor
   velo assets [dir] <command>            asset tool (list, deps, users, unused, check)
+  velo atlas [dir]                       make a folder of assets/ a texture atlas (writes its atlas.toml; dir
+                                         defaults to .), packed by every build; shows what it packs
   velo deps                              download sources for mobile builds (Box2D)
   velo doctor                            check the toolchains for every target
   velo home                              print the engine directory
@@ -102,6 +104,9 @@ fn main() {
 		'assets' {
 			dir, rest := split_dir(args[1..])
 			exit(assetdb(home, os.join_path(dir, 'assets'), rest))
+		}
+		'atlas' {
+			exit(atlas_cmd(home, args[1..]))
 		}
 		'deps' {
 			ensure_box2d(home)

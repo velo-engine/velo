@@ -57,7 +57,8 @@ fn shipped_assets(p Project) []string {
 	})
 }
 
-fn copy_assets(p Project, dest string) (int, i64) {
+// copy_assets copies the shipped assets and the generated files (texture atlases) into `dest`.
+fn copy_assets(p Project, gen []GenFile, dest string) (int, i64) {
 	mut count := 0
 	mut bytes := i64(0)
 	root := p.assets_dir()
@@ -67,6 +68,10 @@ fn copy_assets(p Project, dest string) (int, i64) {
 		os.cp(os.join_path(root, rel), dst) or { fail('copy ${rel}: ${err}') }
 		count++
 		bytes += os.file_size(os.join_path(root, rel))
+	}
+	copy_gen_files(gen, dest)
+	for g in gen {
+		bytes += os.file_size(g.src)
 	}
 	return count, bytes
 }
@@ -88,6 +93,7 @@ fn build_desktop(home string, dir string, rest []string) int {
 	if assetdb(home, p.assets_dir(), ['check']) != 0 {
 		fail('fix the asset errors above before building (see `velo assets check`)')
 	}
+	gen := build_atlases(home, p)
 	out := if o.output != '' { o.output } else { p.build_dir('desktop') }
 	stage := os.join_path(out, '.stage')
 	os.rmdir_all(stage) or {}
@@ -115,9 +121,9 @@ fn build_desktop(home string, dir string, rest []string) int {
 
 	mut pkg := ''
 	if host_os() == 'macos' {
-		pkg = package_macos(p, out, exe)
+		pkg = package_macos(p, gen, out, exe)
 	} else {
-		pkg = package_folder(p, out, exe, exe_name)
+		pkg = package_folder(p, gen, out, exe, exe_name)
 	}
 	os.rmdir_all(stage) or {}
 	if o.zip {
@@ -127,18 +133,18 @@ fn build_desktop(home string, dir string, rest []string) int {
 	return 0
 }
 
-fn package_folder(p Project, out string, exe string, exe_name string) string {
+fn package_folder(p Project, gen []GenFile, out string, exe string, exe_name string) string {
 	dest := os.join_path(out, p.bin)
 	os.rmdir_all(dest) or {}
 	os.mkdir_all(dest) or { fail(err.msg()) }
 	os.cp(exe, os.join_path(dest, exe_name)) or { fail(err.msg()) }
 	os.chmod(os.join_path(dest, exe_name), 0o755) or {}
-	n, bytes := copy_assets(p, os.join_path(dest, 'assets'))
+	n, bytes := copy_assets(p, gen, os.join_path(dest, 'assets'))
 	step('packaged ${n} assets (${bytes / 1024} KB)')
 	return dest
 }
 
-fn package_macos(p Project, out string, exe string) string {
+fn package_macos(p Project, gen []GenFile, out string, exe string) string {
 	app := os.join_path(out, '${p.name}.app')
 	os.rmdir_all(app) or {}
 	macos_dir := os.join_path(app, 'Contents', 'MacOS')
@@ -147,7 +153,7 @@ fn package_macos(p Project, out string, exe string) string {
 	os.mkdir_all(res) or { fail(err.msg()) }
 	os.cp(exe, os.join_path(macos_dir, p.bin)) or { fail(err.msg()) }
 	os.chmod(os.join_path(macos_dir, p.bin), 0o755) or {}
-	n, bytes := copy_assets(p, os.join_path(res, 'assets'))
+	n, bytes := copy_assets(p, gen, os.join_path(res, 'assets'))
 	step('packaged ${n} assets (${bytes / 1024} KB)')
 	icon := if p.icon != '' { make_icns(p.icon, res, out) } else { '' }
 	os.write_file(os.join_path(app, 'Contents', 'Info.plist'), macos_plist(p, icon)) or { fail(err.msg()) }

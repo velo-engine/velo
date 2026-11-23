@@ -173,7 +173,7 @@ fn build_android(home string, p Project, o MobileOptions) {
 	ensure_vactivity(vab)
 	load_android_env(p)
 	ensure_java_home()
-	prepare_mobile_build(home, p)
+	gen := prepare_mobile_build(home, p)
 
 	build_dir := p.build_dir('android')
 	extra := os.join_path(build_dir, 'apk_assets')
@@ -184,6 +184,12 @@ fn build_android(home string, p Project, o MobileOptions) {
 		// the hash makes the manifest (and so the app's re-extraction check) change whenever any file does
 		data := os.read_bytes(os.join_path(p.assets_dir(), rel)) or { fail(err.msg()) }
 		manifest << '${data.len} ${fnv1a.sum64(data).hex()} ${rel}'
+	}
+	// the texture atlases are not in the project's assets/: they go into the APK from the extra folder
+	copy_gen_files(gen, extra)
+	for g in gen {
+		data := os.read_bytes(g.src) or { fail(err.msg()) }
+		manifest << '${data.len} ${fnv1a.sum64(data).hex()} ${g.rel}'
 	}
 	os.write_file(os.join_path(extra, 'velo_assets.txt'), manifest.join('\n') + '\n') or {
 		fail(err.msg())

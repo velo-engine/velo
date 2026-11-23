@@ -64,8 +64,18 @@ pub fn (mut r Renderer) adopt_image(t &assets.Texture, decoded DecodedImage) {
 		free_decoded(decoded)
 		return
 	}
-	if r.atlas_fits(t) && r.atlas_add(t, decoded) {
-		return
+	if reg := r.atlas_match(t) {
+		// preloaded from image_source: the pixels of its atlas page
+		info := r.atlas.pages[reg.page].info
+		if decoded.width == info.width && decoded.height == info.height {
+			if r.atlas.pages[reg.page].has_gpu {
+				free_decoded(decoded)
+			} else {
+				r.atlas_upload(reg.page, decoded)
+			}
+			r.atlas.pages[reg.page].users[t.id] = true
+			return
+		}
 	}
 	r.release_gpu(t.id)
 	mut img := gg.Image{

@@ -54,6 +54,7 @@ mut:
 	textures map[string]&assets.Texture // held (one reference each) until release()
 	clips    map[string]&assets.AudioClip
 	queue    []LoadJob // not handed to the pool yet
+	sources  map[string]bool // files queued since the last release (textures on one atlas page share it)
 	pending  int       // handed to the pool, result not back yet
 	total    int
 	clock    time.StopWatch
@@ -72,11 +73,13 @@ fn (mut p Preloader) start(mut db assets.AssetDatabase, r &render.Renderer, key 
 		if e.kind == .texture && dep !in p.textures {
 			t := db.load[assets.Texture](dep) or { continue }
 			p.textures[dep] = t
-			if !r.has_image(t) {
+			src := r.image_source(t) // its atlas page, when it is packed
+			if !r.has_image(t) && src !in p.sources {
+				p.sources[src] = true
 				p.queue << LoadJob{
 					id:      dep
 					version: t.version
-					path:    t.path
+					path:    src
 				}
 			}
 		} else if e.kind == .audio && dep !in p.clips {
@@ -162,6 +165,7 @@ fn (mut p Preloader) release(mut db assets.AssetDatabase) {
 	}
 	p.textures.clear()
 	p.clips.clear()
+	p.sources.clear()
 	p.queue.clear() // a cancelled preload; results already in flight are dropped by finish
 	p.total = 0
 }
