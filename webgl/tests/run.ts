@@ -394,10 +394,57 @@ function source_rules_test() {
 	check('runtime: class number fields have an initial value (` = 0`)', offenders.length === 0, offenders.join('\n'))
 }
 
+// ---------- 3. 3D: math, primitives and FBX import (the same checks as tests/model3d_test.v) ----------
+
+async function model3d_tests() {
+	const core = await import('../runtime/core.ts')
+	const model3d = await import('../runtime/model3d.ts')
+	const close = (a: number, b: number) => Math.abs(a - b) < 1e-4
+	const close3 = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => close(a.x, b.x) && close(a.y, b.y) && close(a.z, b.z)
+	const q = core.Quat.axis_angle(core.vec3(0, 1, 0), 90)
+	const m = core.Mat4.trs(core.vec3(1, 2, 3), q, core.vec3(2, 0.5, 1.5))
+	const id = m.op_mul(m.inverse())
+	check('3d: Mat4 * inverse = identity', [...id.m].every((x, i) => close(x, core.Mat4.identity().m[i])))
+	const [t, r, s] = m.decompose()
+	check('3d: Mat4.decompose', close3(t, core.vec3(1, 2, 3)) && close3(s, core.vec3(2, 0.5, 1.5)) && close3(r.rotate(core.vec3(1, 0, 0)), q.rotate(core.vec3(1, 0, 0))))
+	check('3d: Quat matches its matrix', close3(q.rotate(core.vec3(0, 0, 1)), core.vec3(1, 0, 0)) && close3(core.Mat4.rotation(q).transform_dir(core.vec3(0, 0, 1)), core.vec3(1, 0, 0)))
+	const view = core.Mat4.look_at(core.vec3(0, 0, 5), core.vec3(0, 0, 0), core.vec3(0, 1, 0))
+	check('3d: look_at', close3(view.transform_point(core.vec3(0, 0, 0)), core.vec3(0, 0, -5)))
+	for (const name of model3d.primitive_names) {
+		const p = model3d.primitive(name)!
+		check(`3d: primitive ${name}`, p.indices.length % 3 === 0 && p.normals.length === p.positions.length && p.uvs.length / 2 === p.positions.length / 3)
+	}
+	check('3d: unknown primitive', model3d.primitive('nope') === null)
+	const path = join(home, 'examples', 'demo3d', 'assets', 'models', 'than_dieu_run.fbx')
+	if (existsSync(path)) {
+		const data = readFileSync(path)
+		const fbx = await model3d.import_fbx(new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
+		check('3d: FBX meshes, skeleton, clip, texture', fbx.meshes.length === 1 && fbx.meshes[0].is_skinned() && fbx.bones.length === 41 && fbx.bone_index('Hips') === 0 && fbx.clips.length === 1 && fbx.clips[0].frame_count() === 17 && fbx.textures.length === 1 && fbx.textures[0].bytes.length > 1000, `${fbx.meshes.length} meshes, ${fbx.bones.length} bones, ${fbx.clips.length} clips`)
+		check('3d: FBX size and up axis', fbx.min.y > -0.01 && fbx.max.y > 1.6 && fbx.max.y < 2, `${fbx.min.str()} .. ${fbx.max.str()}`)
+		const g: InstanceType<typeof core.Mat4>[] = []
+		fbx.globals(fbx.rest_pose(), g)
+		const sk: InstanceType<typeof core.Mat4>[] = []
+		fbx.skin_matrices(g, sk)
+		check('3d: FBX rest pose skins to the identity', [...sk[0].m].every((x, i) => Math.abs(x - core.Mat4.identity().m[i]) < 1e-3))
+		const me = fbx.meshes[0]
+		let ok = true
+		for (let v = 0; v < me.vertex_count(); v++) ok &&= Math.abs(me.weights[v * 4] + me.weights[v * 4 + 1] + me.weights[v * 4 + 2] + me.weights[v * 4 + 3] - 1) < 1e-3
+		check('3d: FBX skin weights sum to 1', ok)
+	}
+	let rejected = false
+	try {
+		await model3d.parse_fbx(new TextEncoder().encode('hello'))
+	} catch {
+		rejected = true
+	}
+	check('3d: not an FBX file', rejected)
+}
+
 const only = process.argv[2]
 if (!only || only === 'runtime') {
 	source_rules_test()
 	await runtime_tests()
+	await model3d_tests()
 }
 if ((!only || only === 'lang') && existsSync(join(webgl, 'node_modules', '.bin', 'esbuild'))) language_test()
 console.log(`${passes} passed, ${failures} failed`)

@@ -88,6 +88,10 @@ export class App {
 	running = false
 	text_el: HTMLInputElement | null = null
 	safe_probe: HTMLDivElement | null = null
+	// A renderer for a 3D world (velo.render3d's install sets it): called every frame after the 2D world (a backdrop)
+	// and before Canvas nodes (the HUD), with the canvas size in pixels.
+	world_draw: ((data: unknown, scene: core.Scene, width: number, height: number) => void) | null = null
+	world_data: unknown = null
 
 	constructor(cfg: Config, db: assets.AssetDatabase) {
 		this.cfg = cfg
@@ -202,6 +206,11 @@ export class App {
 		const bg = this.cfg.background
 		gfx.begin(w.x, w.y, Math.min(window.devicePixelRatio || 1, MAX_DPR), bg)
 		this.renderer.base_clip = new render.Rect(this.fit.area_pos.x, this.fit.area_pos.y, this.fit.area_size.x, this.fit.area_size.y)
+		const wd = this.world_draw
+		if (wd !== null) {
+			const scene = this.scene
+			this.renderer.world_hook = () => wd(this.world_data, scene, gfx.canvas.width, gfx.canvas.height)
+		}
 		this.renderer.draw_scene(this.scene, this.fit.to_window())
 		this.draw_fade()
 		this.draw_bars()

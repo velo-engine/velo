@@ -288,6 +288,40 @@ export class Gfx {
 		this.flush()
 	}
 
+	// restore_state puts back the GL state the 2D batcher relies on, after another renderer (velo.render3d) used the
+	// context: program, buffers, vertex layout, blending, viewport and scissor.
+	restore_state() {
+		const gl = this.gl
+		this.nverts = 0
+		this.nidx = 0
+		gl.useProgram(this.prog)
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.vbuf)
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibuf)
+		const max = gl.getParameter(gl.MAX_VERTEX_ATTRIBS) as number
+		for (let i = 0; i < Math.min(max, 8); i++) if (!this.attribs.includes(i)) gl.disableVertexAttribArray(i)
+		const stride = FLOATS_PER_VERT * 4
+		const [a_pos, a_uv, a_color] = this.attribs
+		gl.enableVertexAttribArray(a_pos)
+		gl.vertexAttribPointer(a_pos, 2, gl.FLOAT, false, stride, 0)
+		gl.enableVertexAttribArray(a_uv)
+		gl.vertexAttribPointer(a_uv, 2, gl.FLOAT, false, stride, 8)
+		gl.enableVertexAttribArray(a_color)
+		gl.vertexAttribPointer(a_color, 4, gl.UNSIGNED_BYTE, true, stride, 16)
+		gl.enable(gl.BLEND)
+		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+		gl.disable(gl.DEPTH_TEST)
+		gl.disable(gl.CULL_FACE)
+		gl.activeTexture(gl.TEXTURE0)
+		gl.viewport(0, 0, this.canvas.width, this.canvas.height)
+		if (this.scissor_on) {
+			gl.enable(gl.SCISSOR_TEST)
+		} else {
+			gl.disable(gl.SCISSOR_TEST)
+		}
+		this.cur_tex = null
+		this.cur_additive = false
+	}
+
 	// ---------- Batching ----------
 
 	flush() {

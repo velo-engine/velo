@@ -66,6 +66,11 @@ export function Value__as_vec2(v: Value): core.Vec2 {
 	return core.vec2(n[0], n[1])
 }
 
+export function Value__as_vec3(v: Value): core.Vec3 {
+	const n = Value__as_numbers(v, 3)
+	return core.vec3(n[0], n[1], n[2])
+}
+
 export function Value__as_color(v: Value): core.Color {
 	const n = Value__as_number_list(v)
 	if (n.length === 3) return core.rgba(V.u8(n[0]), V.u8(n[1]), V.u8(n[2]), 255)
@@ -75,6 +80,10 @@ export function Value__as_color(v: Value): core.Color {
 
 export function vec2_value(p: core.Vec2): Value {
 	return [p.x, p.y]
+}
+
+export function vec3_value(p: core.Vec3): Value {
+	return [p.x, p.y, p.z]
 }
 
 export function color_value(c: core.Color): Value {
@@ -360,6 +369,7 @@ const asset_classes: Record<string, V.TypeDesc> = {
 	text: assets.TextAsset,
 	font: assets.Font,
 	shader: assets.Shader,
+	model: assets.Model,
 }
 
 // fields_of: the serializable fields of a component class (see core.FieldSpec).
@@ -401,6 +411,9 @@ export function set_fields(t: V.TypeDesc, obj: any, props: Map<string, Value>) {
 			case 'Vec2':
 				obj[field.name] = Value__as_vec2(v)
 				break
+			case 'Vec3':
+				obj[field.name] = Value__as_vec3(v)
+				break
 			case 'Color':
 				obj[field.name] = Value__as_color(v)
 				break
@@ -434,6 +447,9 @@ export function dump_fields(t: V.TypeDesc, obj: any): Map<string, Value> {
 				break
 			case 'Vec2':
 				out.set(field.name, vec2_value(x))
+				break
+			case 'Vec3':
+				out.set(field.name, vec3_value(x))
 				break
 			case 'Color':
 				out.set(field.name, color_value(x))

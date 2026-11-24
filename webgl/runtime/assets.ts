@@ -5,7 +5,7 @@
 import * as V from './v.ts'
 import type { AtlasInfo } from './gfx.ts'
 
-export type AssetKind = 'unknown' | 'texture' | 'audio' | 'scene' | 'text' | 'font' | 'shader'
+export type AssetKind = 'unknown' | 'texture' | 'audio' | 'scene' | 'text' | 'font' | 'shader' | 'model'
 
 export function kind_from_ext(path: string): AssetKind {
 	const ext = V.S.all_after_last(path, '.').toLowerCase()
@@ -34,12 +34,14 @@ export function kind_from_ext(path: string): AssetKind {
 		case 'glsl':
 		case 'frag':
 			return 'shader'
+		case 'fbx':
+			return 'model'
 	}
 	return 'unknown'
 }
 
 export function kind_from_str(s: string): AssetKind {
-	return s === 'texture' || s === 'audio' || s === 'scene' || s === 'text' || s === 'font' || s === 'shader' ? s : 'unknown'
+	return s === 'texture' || s === 'audio' || s === 'scene' || s === 'text' || s === 'font' || s === 'shader' || s === 'model' ? s : 'unknown'
 }
 
 // AssetRef[T] — a typed asset reference, stored as a stable ID. `type` is the asset class (Texture, ...).
@@ -151,6 +153,16 @@ export class Shader {
 	version = 0
 }
 
+// Model — a 3D model file (.fbx) for velo.render3d (`model` fields); velo.model3d parses `data`.
+export class Model {
+	static __vname = 'assets.Model'
+	id = ''
+	path = ''
+	version = 0
+	// the file's bytes
+	data: ArrayBuffer | null = null
+}
+
 export class AudioClip {
 	static __vname = 'assets.AudioClip'
 	id = ''
@@ -219,9 +231,10 @@ export class AssetEntry {
 	audio: AudioClip | null = null
 	font: Font | null = null
 	shader: Shader | null = null
+	model: Model | null = null
 
 	is_loaded(): boolean {
-		return this.texture !== null || this.scene !== null || this.text !== null || this.audio !== null || this.font !== null || this.shader !== null
+		return this.texture !== null || this.scene !== null || this.text !== null || this.audio !== null || this.font !== null || this.shader !== null || this.model !== null
 	}
 }
 
@@ -395,6 +408,18 @@ export class AssetDatabase {
 			e.refs++
 			return e.audio as T
 		}
+		if (t === Model) {
+			this.expect_kind(e, 'model', 'Model')
+			if (e.model === null) {
+				const m = new Model()
+				m.id = e.id
+				m.path = this.abs_path(e)
+				m.data = this.data.bytes.get(e.id) ?? null
+				e.model = m
+			}
+			e.refs++
+			return e.model as T
+		}
 		throw new V.VError(`unsupported asset type: ${V.type_name(t)}`)
 	}
 
@@ -414,6 +439,7 @@ export class AssetDatabase {
 			e.audio = null
 			e.font = null
 			e.shader = null
+			e.model = null
 			this.events.push(new AssetEvent('unloaded', e.id, e.path))
 		}
 	}
@@ -566,7 +592,8 @@ export async function preload(root: string, on_progress: (done: number, total: n
 					data.images.set(e.id, bmp)
 					break
 				}
-				case 'audio': {
+				case 'audio':
+				case 'model': {
 					const r = await fetch(url(e))
 					if (!r.ok) throw new Error(`HTTP ${r.status}`)
 					data.bytes.set(e.id, await r.arrayBuffer())
@@ -588,5 +615,11 @@ export async function preload(root: string, on_progress: (done: number, total: n
 		}
 	})
 	await Promise.all([...jobs, ...page_jobs])
-	return new AssetDatabase(root, manifest, data)
+	const db = new AssetDatabase(root, manifest, data)
+	for (const hook of preload_hooks) await hook(db)
+	return db
 }
+
+// preload_hooks run once every asset is downloaded, before the game starts: modules that need asynchronous work
+// on assets (velo.render3d inflates and parses its models, and decodes their textures) register one.
+export const preload_hooks: ((db: AssetDatabase) => Promise<void>)[] = []

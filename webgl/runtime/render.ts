@@ -477,6 +477,8 @@ export class Label extends core.Component {
 	static __fields: FieldSpec[] = [
 		{ name: 'text', type: 'string' },
 		{ name: 'text_key', type: 'string' },
+		{ name: 'bind', type: 'string' },
+		{ name: 'bind_format', type: 'string' },
 		{ name: 'size', type: 'int' },
 		{ name: 'color', type: 'Color' },
 		{ name: 'align', type: 'string', choices: ['left', 'center', 'right'] },
@@ -494,6 +496,10 @@ export class Label extends core.Component {
 	// A key of the game's texts (`locales/<language>.txt`): the label shows its translation instead of `text`
 	// and follows language changes. `text` stays as the placeholder when the key is unknown.
 	text_key = ''
+	// Shows a value of the saved data (`scene.store`) and follows it: `bind = "coins"`, `bind_format = "Coins: {}"`
+	// (`{}` is replaced by the value). Wins over `text` and `text_key` while the key exists.
+	bind = ''
+	bind_format = ''
 	size = 20
 	color = core.white.clone()
 	align = 'left'
@@ -515,9 +521,18 @@ export class Label extends core.Component {
 	on_load() {
 		this.font_data = load_font(this.node, this.font)
 		this.apply_translation()
+		this.apply_bind()
 	}
 	update(_dt: number) {
 		this.apply_translation()
+		this.apply_bind()
+	}
+	// apply_bind sets `text` from the stored value of `bind` (when it exists).
+	apply_bind() {
+		if (this.bind === '' || !this.node || !this.node.scene) return
+		const v = this.node.scene.store.get_display(this.bind)
+		if (v === null) return
+		this.text = this.bind_format.includes('{}') ? this.bind_format.split('{}').join(v) : v
 	}
 	// apply_translation sets `text` from `text_key` when the key or the language changed.
 	apply_translation() {
@@ -962,6 +977,9 @@ export class ProgressBar extends core.Component {
 		{ name: 'fill_color', type: 'Color' },
 		{ name: 'back_color', type: 'Color' },
 		{ name: 'radius', type: 'f32' },
+		{ name: 'bind', type: 'string' },
+		{ name: 'bind_max', type: 'f32' },
+		{ name: 'bind_max_key', type: 'string' },
 	]
 	progress = 0.5
 	direction = 'horizontal'
@@ -969,6 +987,20 @@ export class ProgressBar extends core.Component {
 	fill_color = rgba(90, 200, 120, 255)
 	back_color = rgba(0, 0, 0, 120)
 	radius = 0
+	// Fills from a number in the saved data (`scene.store`): progress = value / `bind_max` (a number, or the value of
+	// the key `bind_max_key` when set). Missing keys leave `progress` alone.
+	bind = ''
+	bind_max = 1
+	bind_max_key = ''
+	update(_dt: number) {
+		if (this.bind === '' || !this.node || !this.node.scene) return
+		const st = this.node.scene.store
+		const v = st.get_number(this.bind)
+		if (v === null) return
+		let max = this.bind_max
+		if (this.bind_max_key !== '') max = st.get_number(this.bind_max_key) ?? max
+		if (max > 0) this.progress = clamp01(v / max)
+	}
 	fill_rect(r: Rect): Rect {
 		const k = clamp01(this.progress)
 		if (this.direction === 'vertical') {
@@ -2313,6 +2345,9 @@ export class Renderer {
 	clip = new Rect()
 	// draw_tree's draw list, kept between frames (null while a draw_tree uses it: a nested one makes its own)
 	draw_list: DrawItem[] | null = []
+	// A 3D world (velo.render3d, see App.world_draw), drawn by the next draw_tree between the 2D world and the first
+	// Canvas node (the HUD).
+	world_hook: (() => void) | null = null
 
 	constructor(gfx: Gfx, db: assets.AssetDatabase) {
 		this.gfx = gfx
@@ -2341,14 +2376,21 @@ export class Renderer {
 		const list = this.draw_list ?? []
 		this.draw_list = null
 		const count = collect_draw_items(list, root, view, camera, base)
+		let world = this.world_hook
+		this.world_hook = null
 		for (let i = 0; i < count; i++) {
 			const it = list[i]
+			if (world !== null && it.canvas) {
+				this.draw_world(world)
+				world = null
+			}
 			if (it.clip !== this.clip && !it.clip.op_eq(this.clip)) {
 				this.clip = it.clip
 				this.set_scissor(this.clip)
 			}
 			this.draw_node(it.node, it.m)
 		}
+		if (world !== null) this.draw_world(world)
 		// pooled items past this frame's would keep removed nodes (a previous scene) alive
 		for (let i = count; i < list.length && list[i].node !== null; i++) {
 			list[i].node = null as unknown as core.Node
@@ -2357,6 +2399,12 @@ export class Renderer {
 		this.draw_list = list
 		this.clip = base
 		this.set_scissor(base)
+	}
+
+	draw_world(world: () => void) {
+		this.gfx.flush()
+		world()
+		this.set_scissor(this.clip)
 	}
 
 	base_rect(): Rect {

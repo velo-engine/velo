@@ -5,6 +5,8 @@ import v.ast
 // Runtime structs whose constructor takes the fields in order (fast, allocation-light value types).
 const positional_types = {
 	'velo.core.Vec2':         ['x', 'y']
+	'velo.core.Vec3':         ['x', 'y', 'z']
+	'velo.core.Quat':         ['x', 'y', 'z', 'w']
 	'velo.core.Color':        ['r', 'g', 'b', 'a']
 	'velo.core.Insets':       ['left', 'top', 'right', 'bottom']
 	'velo.core.Affine2':      ['a', 'b', 'c', 'd', 'tx', 'ty']
@@ -426,6 +428,7 @@ fn (g &Gen) field_spec(t ast.Type) string {
 		'string' { return 'string' }
 		'[]int' { return '[]int' }
 		'velo.core.Vec2' { return 'Vec2' }
+		'velo.core.Vec3' { return 'Vec3' }
 		'velo.core.Color' { return 'Color' }
 		'velo.assets.AssetRef[velo.assets.Texture]' { return 'asset:texture' }
 		'velo.assets.AssetRef[velo.assets.SceneAsset]' { return 'asset:scene' }
@@ -433,6 +436,7 @@ fn (g &Gen) field_spec(t ast.Type) string {
 		'velo.assets.AssetRef[velo.assets.TextAsset]' { return 'asset:text' }
 		'velo.assets.AssetRef[velo.assets.Font]' { return 'asset:font' }
 		'velo.assets.AssetRef[velo.assets.Shader]' { return 'asset:shader' }
+		'velo.assets.AssetRef[velo.assets.Model]' { return 'asset:model' }
 		else { return '' }
 	}
 }

@@ -57,6 +57,373 @@ export function vec2(x: number, y: number): Vec2 {
 	return new Vec2(x, y)
 }
 
+// ---------- 3D math (core/math3d.v: velo.render3d, velo.model3d) ----------
+// Right-handed, y up, -z forward. Angles in degrees unless stated otherwise. Matrices are column-major
+// (m[col * 4 + row]) and act on column vectors: p' = M * p.
+
+// Vec3 — 3D vector.
+export class Vec3 {
+	static __vname = 'core.Vec3'
+	x = 0
+	y = 0
+	z = 0
+	constructor(x = 0, y = 0, z = 0) {
+		this.x = x
+		this.y = y
+		this.z = z
+	}
+	clone(): Vec3 {
+		return new Vec3(this.x, this.y, this.z)
+	}
+	op_add(b: Vec3): Vec3 {
+		return new Vec3(this.x + b.x, this.y + b.y, this.z + b.z)
+	}
+	op_sub(b: Vec3): Vec3 {
+		return new Vec3(this.x - b.x, this.y - b.y, this.z - b.z)
+	}
+	// component-wise multiplication (used for scale)
+	op_mul(b: Vec3): Vec3 {
+		return new Vec3(this.x * b.x, this.y * b.y, this.z * b.z)
+	}
+	op_eq(b: Vec3): boolean {
+		return this.x === b.x && this.y === b.y && this.z === b.z
+	}
+	mul(s: number): Vec3 {
+		return new Vec3(this.x * s, this.y * s, this.z * s)
+	}
+	neg(): Vec3 {
+		return new Vec3(-this.x, -this.y, -this.z)
+	}
+	dot(b: Vec3): number {
+		return this.x * b.x + this.y * b.y + this.z * b.z
+	}
+	cross(b: Vec3): Vec3 {
+		return new Vec3(this.y * b.z - this.z * b.y, this.z * b.x - this.x * b.z, this.x * b.y - this.y * b.x)
+	}
+	length(): number {
+		return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z)
+	}
+	distance(b: Vec3): number {
+		const dx = this.x - b.x
+		const dy = this.y - b.y
+		const dz = this.z - b.z
+		return Math.sqrt(dx * dx + dy * dy + dz * dz)
+	}
+	normalized(): Vec3 {
+		const l = this.length()
+		if (l < 1e-8) return new Vec3()
+		return new Vec3(this.x / l, this.y / l, this.z / l)
+	}
+	lerp(b: Vec3, t: number): Vec3 {
+		return new Vec3(this.x + (b.x - this.x) * t, this.y + (b.y - this.y) * t, this.z + (b.z - this.z) * t)
+	}
+	// xz: the ground-plane part (x, z) as a Vec2, for top-down logic on a 3D world.
+	xz(): Vec2 {
+		return new Vec2(this.x, this.z)
+	}
+	str(): string {
+		return `(${V.fstr(this.x)}, ${V.fstr(this.y)}, ${V.fstr(this.z)})`
+	}
+}
+
+export function vec3(x: number, y: number, z: number): Vec3 {
+	return new Vec3(x, y, z)
+}
+
+// Quat — a rotation (unit quaternion). Quat{} is the identity (w = 1).
+export class Quat {
+	static __vname = 'core.Quat'
+	x = 0
+	y = 0
+	z = 0
+	w = 1
+	constructor(x = 0, y = 0, z = 0, w = 1) {
+		this.x = x
+		this.y = y
+		this.z = z
+		this.w = w
+	}
+	clone(): Quat {
+		return new Quat(this.x, this.y, this.z, this.w)
+	}
+	op_eq(b: Quat): boolean {
+		return this.x === b.x && this.y === b.y && this.z === b.z && this.w === b.w
+	}
+	static identity(): Quat {
+		return new Quat(0, 0, 0, 1)
+	}
+	// axis_angle: a rotation of `deg` degrees around `axis` (right-hand rule).
+	static axis_angle(axis: Vec3, deg: number): Quat {
+		const a = axis.normalized()
+		const h = (deg * Math.PI) / 360
+		const s = Math.sin(h)
+		return new Quat(a.x * s, a.y * s, a.z * s, Math.cos(h))
+	}
+	// euler: X first, then Y, then Z — the matrix Rz * Ry * Rx.
+	static euler(e: Vec3): Quat {
+		const qx = Quat.axis_angle(new Vec3(1, 0, 0), e.x)
+		const qy = Quat.axis_angle(new Vec3(0, 1, 0), e.y)
+		const qz = Quat.axis_angle(new Vec3(0, 0, 1), e.z)
+		return qz.mul(qy).mul(qx)
+	}
+	// yaw: a rotation around +y by `deg` degrees.
+	static yaw(deg: number): Quat {
+		return Quat.axis_angle(new Vec3(0, 1, 0), deg)
+	}
+	// mul: q * r = apply r first, then q.
+	mul(r: Quat): Quat {
+		const q = this
+		return new Quat(
+			q.w * r.x + q.x * r.w + q.y * r.z - q.z * r.y,
+			q.w * r.y - q.x * r.z + q.y * r.w + q.z * r.x,
+			q.w * r.z + q.x * r.y - q.y * r.x + q.z * r.w,
+			q.w * r.w - q.x * r.x - q.y * r.y - q.z * r.z,
+		)
+	}
+	normalized(): Quat {
+		const l = Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z + this.w * this.w)
+		if (l < 1e-12) return Quat.identity()
+		return new Quat(this.x / l, this.y / l, this.z / l, this.w / l)
+	}
+	conjugate(): Quat {
+		return new Quat(-this.x, -this.y, -this.z, this.w)
+	}
+	rotate(v: Vec3): Vec3 {
+		const u = new Vec3(this.x, this.y, this.z)
+		const t = u.cross(v).mul(2)
+		return v.op_add(t.mul(this.w)).op_add(u.cross(t))
+	}
+	// nlerp: normalized linear blend along the shorter arc.
+	nlerp(b: Quat, t: number): Quat {
+		const a = this
+		const d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
+		const s = d < 0 ? -1 : 1
+		return new Quat(a.x + (b.x * s - a.x) * t, a.y + (b.y * s - a.y) * t, a.z + (b.z * s - a.z) * t, a.w + (b.w * s - a.w) * t).normalized()
+	}
+	// slerp: constant-speed spherical blend along the shorter arc.
+	slerp(b: Quat, t: number): Quat {
+		const a = this
+		let d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
+		let bb = b
+		if (d < 0) {
+			d = -d
+			bb = new Quat(-b.x, -b.y, -b.z, -b.w)
+		}
+		if (d > 0.9995) return a.nlerp(bb, t)
+		const th = Math.acos(d)
+		const sn = Math.sin(th)
+		const wa = Math.sin((1 - t) * th) / sn
+		const wb = Math.sin(t * th) / sn
+		return new Quat(a.x * wa + bb.x * wb, a.y * wa + bb.y * wb, a.z * wa + bb.z * wb, a.w * wa + bb.w * wb)
+	}
+}
+
+// Mat4 — column-major 4x4 matrix (the layout GPUs take as is). Mat4{} is all zeros, like in V.
+export class Mat4 {
+	static __vname = 'core.Mat4'
+	m: Float32Array
+	constructor(m?: ArrayLike<number>) {
+		this.m = new Float32Array(16)
+		if (m) this.m.set(m)
+	}
+	clone(): Mat4 {
+		return new Mat4(this.m)
+	}
+	op_eq(b: Mat4): boolean {
+		for (let i = 0; i < 16; i++) if (this.m[i] !== b.m[i]) return false
+		return true
+	}
+	static identity(): Mat4 {
+		const r = new Mat4()
+		r.m[0] = r.m[5] = r.m[10] = r.m[15] = 1
+		return r
+	}
+	static translation(t: Vec3): Mat4 {
+		const r = Mat4.identity()
+		r.m[12] = t.x
+		r.m[13] = t.y
+		r.m[14] = t.z
+		return r
+	}
+	static scaling(s: Vec3): Mat4 {
+		const r = Mat4.identity()
+		r.m[0] = s.x
+		r.m[5] = s.y
+		r.m[10] = s.z
+		return r
+	}
+	static rotation(q: Quat): Mat4 {
+		const { x, y, z, w } = q
+		return new Mat4([
+			1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w), 0,
+			2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w), 0,
+			2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y), 0,
+			0, 0, 0, 1,
+		])
+	}
+	// trs: translation * rotation * scale.
+	static trs(t: Vec3, r: Quat, s: Vec3): Mat4 {
+		const o = Mat4.rotation(r)
+		const m = o.m
+		m[0] *= s.x
+		m[1] *= s.x
+		m[2] *= s.x
+		m[4] *= s.y
+		m[5] *= s.y
+		m[6] *= s.y
+		m[8] *= s.z
+		m[9] *= s.z
+		m[10] *= s.z
+		m[12] = t.x
+		m[13] = t.y
+		m[14] = t.z
+		return o
+	}
+	// perspective: right-handed, depth mapped to -1..1 (`fov_y` in degrees).
+	static perspective(fov_y: number, aspect: number, near: number, far: number): Mat4 {
+		const f = 1 / Math.tan((fov_y * Math.PI) / 360)
+		const r = new Mat4()
+		r.m[0] = f / aspect
+		r.m[5] = f
+		r.m[10] = (far + near) / (near - far)
+		r.m[11] = -1
+		r.m[14] = (2 * far * near) / (near - far)
+		return r
+	}
+	// look_at: the view matrix of a camera at `eye` looking at `target`.
+	static look_at(eye: Vec3, target: Vec3, up: Vec3): Mat4 {
+		const f = target.op_sub(eye).normalized()
+		let s = f.cross(up).normalized()
+		if (s.length() < 1e-6) s = f.cross(new Vec3(0, 0, 1)).normalized()
+		const u = s.cross(f)
+		const r = Mat4.identity()
+		r.m[0] = s.x
+		r.m[4] = s.y
+		r.m[8] = s.z
+		r.m[1] = u.x
+		r.m[5] = u.y
+		r.m[9] = u.z
+		r.m[2] = -f.x
+		r.m[6] = -f.y
+		r.m[10] = -f.z
+		r.m[12] = -s.dot(eye)
+		r.m[13] = -u.dot(eye)
+		r.m[14] = f.dot(eye)
+		return r
+	}
+	// from_f64: a column-major matrix of doubles (as FBX stores them).
+	static from_f64(a: ArrayLike<number>): Mat4 {
+		const r = Mat4.identity()
+		if (a.length >= 16) for (let i = 0; i < 16; i++) r.m[i] = a[i]
+		return r
+	}
+	op_mul(b: Mat4): Mat4 {
+		const r = new Mat4()
+		mat4_mul_into(r.m, this.m, b.m)
+		return r
+	}
+	transform_point(p: Vec3): Vec3 {
+		const m = this.m
+		return new Vec3(m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12], m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13], m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14])
+	}
+	// transform_dir: rotation and scale only (no translation).
+	transform_dir(d: Vec3): Vec3 {
+		const m = this.m
+		return new Vec3(m[0] * d.x + m[4] * d.y + m[8] * d.z, m[1] * d.x + m[5] * d.y + m[9] * d.z, m[2] * d.x + m[6] * d.y + m[10] * d.z)
+	}
+	// project: a point through a projection matrix, divided by w. Returns [ndc, w] (V's multiple return).
+	project(p: Vec3): [Vec3, number] {
+		const m = this.m
+		const x = m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12]
+		const y = m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13]
+		const z = m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14]
+		const w = m[3] * p.x + m[7] * p.y + m[11] * p.z + m[15]
+		if (w === 0) return [new Vec3(), 0]
+		return [new Vec3(x / w, y / w, z / w), w]
+	}
+	translation_part(): Vec3 {
+		return new Vec3(this.m[12], this.m[13], this.m[14])
+	}
+	// axis: column `i` (0 = x, 1 = y, 2 = z) as a vector.
+	axis(i: number): Vec3 {
+		return new Vec3(this.m[i * 4], this.m[i * 4 + 1], this.m[i * 4 + 2])
+	}
+	transposed(): Mat4 {
+		const r = new Mat4()
+		for (let c = 0; c < 4; c++) for (let row = 0; row < 4; row++) r.m[row * 4 + c] = this.m[c * 4 + row]
+		return r
+	}
+	// inverse: the general 4x4 inverse (identity if the matrix is singular).
+	inverse(): Mat4 {
+		const m = this.m
+		const inv = new Float64Array(16)
+		inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] + m[9] * m[7] * m[14] + m[13] * m[6] * m[11] - m[13] * m[7] * m[10]
+		inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] - m[8] * m[7] * m[14] - m[12] * m[6] * m[11] + m[12] * m[7] * m[10]
+		inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] + m[8] * m[7] * m[13] + m[12] * m[5] * m[11] - m[12] * m[7] * m[9]
+		inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] - m[8] * m[6] * m[13] - m[12] * m[5] * m[10] + m[12] * m[6] * m[9]
+		inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] - m[9] * m[3] * m[14] - m[13] * m[2] * m[11] + m[13] * m[3] * m[10]
+		inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] + m[8] * m[3] * m[14] + m[12] * m[2] * m[11] - m[12] * m[3] * m[10]
+		inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] - m[8] * m[3] * m[13] - m[12] * m[1] * m[11] + m[12] * m[3] * m[9]
+		inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] + m[8] * m[2] * m[13] + m[12] * m[1] * m[10] - m[12] * m[2] * m[9]
+		inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] + m[5] * m[3] * m[14] + m[13] * m[2] * m[7] - m[13] * m[3] * m[6]
+		inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] - m[4] * m[3] * m[14] - m[12] * m[2] * m[7] + m[12] * m[3] * m[6]
+		inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] + m[4] * m[3] * m[13] + m[12] * m[1] * m[7] - m[12] * m[3] * m[5]
+		inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] - m[4] * m[2] * m[13] - m[12] * m[1] * m[6] + m[12] * m[2] * m[5]
+		inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] - m[5] * m[3] * m[10] - m[9] * m[2] * m[7] + m[9] * m[3] * m[6]
+		inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] + m[4] * m[3] * m[10] + m[8] * m[2] * m[7] - m[8] * m[3] * m[6]
+		inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] - m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5]
+		inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] + m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5]
+		const det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12]
+		if (Math.abs(det) < 1e-20) return Mat4.identity()
+		const r = new Mat4()
+		for (let i = 0; i < 16; i++) r.m[i] = inv[i] / det
+		return r
+	}
+	// decompose: translation, rotation and scale of an affine matrix without shear.
+	decompose(): [Vec3, Quat, Vec3] {
+		const t = this.translation_part()
+		const ax = this.axis(0)
+		const ay = this.axis(1)
+		const az = this.axis(2)
+		let sx = ax.length()
+		const sy = ay.length()
+		const sz = az.length()
+		if (ax.cross(ay).dot(az) < 0) sx = -sx
+		if (sx === 0 || sy === 0 || sz === 0) return [t, Quat.identity(), new Vec3(sx, sy, sz)]
+		const a = this.m
+		const m00 = a[0] / sx, m10 = a[1] / sx, m20 = a[2] / sx
+		const m01 = a[4] / sy, m11 = a[5] / sy, m21 = a[6] / sy
+		const m02 = a[8] / sz, m12 = a[9] / sz, m22 = a[10] / sz
+		const tr = m00 + m11 + m22
+		let q: Quat
+		if (tr > 0) {
+			const s = Math.sqrt(tr + 1) * 2
+			q = new Quat((m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, 0.25 * s)
+		} else if (m00 > m11 && m00 > m22) {
+			const s = Math.sqrt(1 + m00 - m11 - m22) * 2
+			q = new Quat(0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s)
+		} else if (m11 > m22) {
+			const s = Math.sqrt(1 + m11 - m00 - m22) * 2
+			q = new Quat((m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s)
+		} else {
+			const s = Math.sqrt(1 + m22 - m00 - m11) * 2
+			q = new Quat((m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s)
+		}
+		return [t, q.normalized(), new Vec3(sx, sy, sz)]
+	}
+}
+
+// mat4_mul_into: out = a * b (column-major); `out` must not alias a or b.
+export function mat4_mul_into(out: Float32Array, a: Float32Array, b: Float32Array) {
+	for (let c = 0; c < 4; c++) {
+		const b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3]
+		out[c * 4] = a[0] * b0 + a[4] * b1 + a[8] * b2 + a[12] * b3
+		out[c * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9] * b2 + a[13] * b3
+		out[c * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3
+		out[c * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3
+	}
+}
+
 // Insets — distances in from each edge of a rectangle.
 export class Insets {
 	static __vname = 'core.Insets'
@@ -1580,6 +1947,29 @@ export class Store {
 	}
 	keys(): string[] {
 		return [...this.values.keys()].sort()
+	}
+	// get_display: the value as text for a label (a whole number as is, a decimal without trailing zeros, true/false,
+	// or the string); null when the key is missing.
+	get_display(key: string): string | null {
+		const v = this.values.get(key)
+		if (!v) return null
+		switch (v.t) {
+			case 'int':
+				return String(v.v)
+			case 'f64': {
+				let t = v.v.toFixed(3)
+				while (t.includes('.') && (t.endsWith('0') || t.endsWith('.'))) t = t.slice(0, -1)
+				return t
+			}
+			case 'bool':
+				return v.v ? 'true' : 'false'
+		}
+		return v.v
+	}
+	// get_number: the value as a decimal when it is a number (a whole number counts), else null.
+	get_number(key: string): number | null {
+		const v = this.values.get(key)
+		return v && (v.t === 'int' || v.t === 'f64') ? v.v : null
 	}
 	get_int(key: string, def: number): number {
 		const v = this.values.get(key)

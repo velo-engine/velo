@@ -1096,7 +1096,8 @@ Skinning runs on the GPU. `model3d` has no GPU dependency, so tools and tests ca
 (`model3d.load_fbx(path)`, `model.sample(clip, time, looping, mut pose)`).
 
 Limits for now: no real-time shadow maps (round blob shadows instead), no normal maps or PBR materials, one UV set,
-ASCII FBX and glTF are not read, the editor's scene view does not show the 3D world, and the WebGL runtime has no 3D.
+ASCII FBX and glTF are not read, and the editor's scene view does not show the 3D world. The WebGL runtime
+(`velo build webgl`) runs 3D too: `examples/demo3d` works in a browser (see "WebGL").
 
 ## Asset management
 
@@ -1324,11 +1325,13 @@ How it works:
 - `webgl/runtime/` is the engine ported to TypeScript with the same names and fields: `core` (nodes, scenes,
   tweens, timers, input, store), `serialize` (.scene parser, prefabs and overrides, registry), `assets`, `render`
   (sprites, sliced/tiled sprites, shader effects, labels, UI, particles, tile maps; batched WebGL with an atlas for text),
-  `audio` (WebAudio), `physics` and `kine2d`. Scenes, prefabs and `.meta` files are used as they are.
+  `audio` (WebAudio), `physics`, `kine2d`, and `model3d` + `render3d` (3D: the same components and shaders, GLSL ES 3.0,
+  rewritten to GLSL ES 1.0 on WebGL 1). Scenes, prefabs and `.meta` files are used as they are.
 - V meets JavaScript like this: structs are classes (value structs are copied where V copies them), `?T` is the
   value or `null`, `!T` errors are exceptions, enums are their names (`'quad_out'`), maps are `Map`. Components
   list their serializable fields (what `$for field in T.fields` sees on desktop) in a generated `static __fields`.
-- Assets are downloaded before the game starts (`assets.json` lists them), so loading stays synchronous; sounds
+- Assets are downloaded before the game starts (`assets.json` lists them), so loading stays synchronous; FBX models
+  are parsed then too (their arrays are zlib-compressed and browsers only inflate asynchronously); sounds
   are decoded up front. Text uses the browser's fonts (any language), and `.ttf`/`.otf` font assets work.
   Saved data goes to `localStorage`, like `velo build web`.
 

@@ -704,8 +704,8 @@ fn (g &Gen) is_int32(t ast.Type) bool {
 
 // has_runtime_op_eq: engine value types implement `==` as op_eq (faster than V.eq).
 fn (g &Gen) has_runtime_op_eq(t ast.Type) bool {
-	return g.sym(g.unwrap_alias(t)).name in ['velo.core.Vec2', 'velo.core.Color', 'velo.core.Affine2',
-		'velo.assets.AssetRef']
+	return g.sym(g.unwrap_alias(t)).name in ['velo.core.Vec2', 'velo.core.Vec3', 'velo.core.Quat',
+		'velo.core.Mat4', 'velo.core.Color', 'velo.core.Affine2', 'velo.assets.AssetRef']
 }
 
 fn (mut g Gen) enum_ints_ref(t ast.Type) string {
