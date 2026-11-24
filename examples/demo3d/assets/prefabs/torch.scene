@@ -1,0 +1,25 @@
+# A brazier: a stone post with fire, embers, smoke and a flickering light.
+node Torch {
+  Transform3D { }
+  node Post {
+    Transform3D { position = [0, 0.6, 0]  scale = [0.35, 1.2, 0.35] }
+    MeshRenderer3D { mesh = "cylinder"  color = [110, 100, 95]  pattern = "noise"  shadow = true  shadow_size = 0.4 }
+  }
+  node Bowl {
+    Transform3D { position = [0, 1.25, 0]  rotation = [180, 0, 0]  scale = [0.7, 0.3, 0.7] }
+    MeshRenderer3D { mesh = "cone"  color = [70, 60, 55] }
+  }
+  node Fire {
+    Transform3D { position = [0, 1.4, 0] }
+    Particles3D { preset = "fire" }
+    PointLight3D { color = [255, 150, 60]  intensity = 2.2  range = 7  flicker = 0.6 }
+  }
+  node Embers {
+    Transform3D { position = [0, 1.5, 0] }
+    Particles3D { preset = "embers" }
+  }
+  node Smoke {
+    Transform3D { position = [0, 2.3, 0] }
+    Particles3D { preset = "smoke"  rate = 5 }
+  }
+}

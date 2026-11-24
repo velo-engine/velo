@@ -9,6 +9,7 @@ but with a simpler Scene/Prefab model and stricter asset management.
 v run examples/demo          # coin collector demo: title screen, then arrows/WASD, R more coins, P pause, M menu, Esc quits
 v run examples/demo --editor # scene/prefab editor (see the "Editor" section)
 v run examples/kine2d        # skeletal animations exported from the Kine2D editor (see "Kine2D animation")
+v run examples/demo3d        # 3D: an FBX character, other characters, particles and lights (see "3D")
 v test tests/                # unit tests for core, asset, serialize, scenedoc, physics (no GPU needed)
 v run tools/assetdb.v examples/demo/assets list
 ```
@@ -70,11 +71,14 @@ velo/         repo root = the `velo` module (import velo.core, velo.app, ...)
   audio/      AudioSource, Mixer (buses, fades, streaming .ogg), output device (sokol_audio)
   physics/    Box2D v3 bindings: PhysicsWorld, RigidBody, Box/Circle/CapsuleCollider (optional, no GPU needed)
   kine2d/     plays Kine2D editor exports (.skel.json + .atlas.json + .png): the Kine2D component (optional)
+  model3d/    3D model data, GPU free: binary FBX import (mesh, skeleton, skin, clips, textures), primitives
+  render3d/   3D renderer + components: Transform3D, Camera3D, lights, MeshRenderer3D, SkinnedModel3D, Particles3D (optional)
   app/        game loop, input, hot reload
   scenedoc/   scene/prefab editing model: undo/redo, prefab rules, diff-style saving (no GPU needed)
   editor/     editor UI (gg): Hierarchy, Scene view, Inspector, Assets, Play
   examples/demo/  sample game + assets (sprites, prefabs, scenes)
   examples/kine2d/  Kine2D animation sample (three exported characters)
+  examples/demo3d/  3D sample: an FBX hero, slimes, drones, a golem, echo runners, fire, magic and a portal
   tools/          velo CLI (velo/), asset tool (assetdb.v), V -> JavaScript translator (v2js/)
   webgl/          WebGL runtime: the engine ported to TypeScript, for `velo build webgl` (see "WebGL")
   tests/          unit tests
@@ -120,7 +124,7 @@ Common APIs: `node.get_component[T]()`, `node.add_component(&T{...})`, `node.fin
 `scene.instantiate('prefabs/coin.scene', mut parent)`.
 
 V's reflection (`$for field in T.fields`) handles reading/writing fields, so **no serialization code is needed**.
-Supported field types: `f32 f64 int bool string []int core.Vec2 core.Color assets.AssetRef[...]`.
+Supported field types: `f32 f64 int bool string []int core.Vec2 core.Vec3 core.Color assets.AssetRef[...]`.
 
 ## Scenes and saved data
 
@@ -1032,6 +1036,67 @@ packs; poses match the official spine-core 4.2 runtime within 0.01 px.
 Limits: IK, transform and physics constraints and event keys are not applied yet for Kine2D exports (bake them into keys before exporting);
 the binary export (`.skel.bin`) is not read, only the JSON one; the editor cannot click-select a skeleton in the scene view
 (select it in the Hierarchy); `velo assets unused` does not know that the atlas uses its image.
+
+## 3D
+
+`velo.render3d` adds a 3D world under the 2D one: 2D nodes outside a Canvas are drawn first (a backdrop), then the
+3D world, then Canvas nodes (the HUD) on top. Install it in `main`, then use its components in `.scene` files:
+
+```v
+mut game := app.new(title: 'My 3D game', assets_dir: 'assets', scene: 'scenes/main.scene')!
+render3d.install(mut game) // registers the 3D components and draws the 3D pass every frame
+game.run()
+```
+
+```
+node Main {
+  Environment3D { sky = [150, 165, 220]  ground = [95, 85, 90]  ambient = 0.85  fog_density = 0.02 }
+  node Sun { DirectionalLight3D { direction = [-0.5, -1, -0.35]  intensity = 1 } }
+  node Camera {
+    Transform3D { position = [0, 4, -8]  rotation = [-20, 180, 0] }
+    Camera3D { fov = 55 }                                 # or target = "Hero" to look at a node
+  }
+  node Ground {
+    Transform3D { scale = [100, 1, 100] }
+    MeshRenderer3D { mesh = "grid"  grid_cells = 50  color = [90, 150, 90]  pattern = "noise" }
+  }
+  node Hero {
+    Transform3D { }
+    SkinnedModel3D { model = @asset("a3d0f8b1")  clip = "mixamo.com"  rim = 0.25 }   # an .fbx file
+  }
+  node Torch {
+    Transform3D { position = [3, 1.4, 2] }
+    Particles3D { preset = "fire" }
+    PointLight3D { color = [255, 150, 60]  intensity = 2  range = 7  flicker = 0.6 }
+  }
+}
+```
+
+Units are meters, y is up and models face +z. `Transform3D` holds a node's 3D position, rotation (euler degrees,
+yaw = `rotation.y`) and scale; nested nodes combine them (`render3d.world_matrix(node)`, `t.forward()`,
+`t.face(dir)`, `t.turn_toward(dir, deg)`).
+
+| Component | What it does |
+|---|---|
+| `Camera3D` | the view: `fov`, `near`, `far`, `target` (a node to look at); `world_to_screen`, `screen_ray` for HUD markers and picking |
+| `DirectionalLight3D` | the sun: `direction`, `color`, `intensity` |
+| `PointLight3D` | light from the node, fading out at `range`; `flicker` for fire (up to 4 at once) |
+| `Environment3D` | sky / ground ambient light and distance fog (the background is a sky gradient of the fog color) |
+| `MeshRenderer3D` | a built-in shape (`cube sphere cylinder cone capsule plane torus ring disc grid`) or a model: `texture` or a built-in `pattern`, `color`, `emissive`, `rim`, `blend` (opaque, alpha, additive), `unlit`, `uv_scale`, `uv_scroll`, `shadow` |
+| `SkinnedModel3D` | an animated model: `clip`, `speed`, `looping`, `in_place` (drops the clip's root motion), `fade` (cross-fade on `play(name)`), `color`, `emissive`, `rim`, `hit_flash()`, `bone_world(name)` |
+| `BoneAttach3D` | keeps a child node at a bone (weapons, hand effects) |
+| `Particles3D` | camera-facing particles; presets `fire smoke sparkle magic dust explosion fireflies portal snow rain heal embers`, or every field by hand; `emit(n)` for bursts |
+| `Trail3D` | a ribbon left behind a moving node (dashes, swords, missiles) |
+
+**Models.** `.fbx` files are `model` assets (binary FBX 7.x — Mixamo, Blender, Maya, the FBX SDK). `velo.model3d`
+imports the meshes (triangulated, per material), the skeleton, skin weights (4 bones per vertex, up to 64 bones),
+every animation stack (baked to 30 fps clips) and base color textures, embedded or next to the file; it converts
+units to meters and z-up files to y-up. Parsing happens once per file and is shared by every node showing it.
+Skinning runs on the GPU. `model3d` has no GPU dependency, so tools and tests can read models too
+(`model3d.load_fbx(path)`, `model.sample(clip, time, looping, mut pose)`).
+
+Limits for now: no real-time shadow maps (round blob shadows instead), no normal maps or PBR materials, one UV set,
+ASCII FBX and glTF are not read, the editor's scene view does not show the 3D world, and the WebGL runtime has no 3D.
 
 ## Asset management
 

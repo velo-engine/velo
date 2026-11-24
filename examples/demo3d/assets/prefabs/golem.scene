@@ -1,0 +1,60 @@
+# A stone golem built from boxes: GolemWalk swings the limbs while it patrols.
+node Golem {
+  Transform3D { }
+  GolemWalk { }
+  node Hips {
+    Transform3D { position = [0, 1.15, 0] }
+    node Torso {
+      Transform3D { position = [0, 0.55, 0]  scale = [1.1, 1, 0.75] }
+      MeshRenderer3D { mesh = "cube"  color = [140, 130, 120]  pattern = "noise"  shadow = true  shadow_size = 1.1 }
+      node Rune {
+        Transform3D { position = [0, 0.1, 0.51]  scale = [0.3, 0.3, 0.02] }
+        MeshRenderer3D { mesh = "cube"  color = [255, 150, 60]  emissive = [255, 110, 20]  unlit = true }
+        Pulse3D { min = 0.4  max = 1  speed = 3 }
+      }
+      node Head {
+        Transform3D { position = [0, 0.75, 0.05]  scale = [0.55, 0.45, 0.5] }
+        MeshRenderer3D { mesh = "cube"  color = [120, 112, 105]  pattern = "noise" }
+        node EyeL {
+          Transform3D { position = [-0.22, 0.05, 0.5]  scale = [0.18, 0.12, 0.05] }
+          MeshRenderer3D { mesh = "cube"  color = [255, 200, 80]  emissive = [255, 160, 30]  unlit = true }
+        }
+        node EyeR {
+          Transform3D { position = [0.22, 0.05, 0.5]  scale = [0.18, 0.12, 0.05] }
+          MeshRenderer3D { mesh = "cube"  color = [255, 200, 80]  emissive = [255, 160, 30]  unlit = true }
+        }
+      }
+      node ArmL {
+        Transform3D { position = [-0.75, 0.35, 0] }
+        node Mesh {
+          Transform3D { position = [0, -0.55, 0]  scale = [0.38, 1.1, 0.38] }
+          MeshRenderer3D { mesh = "cube"  color = [130, 120, 112]  pattern = "noise" }
+        }
+      }
+      node ArmR {
+        Transform3D { position = [0.75, 0.35, 0] }
+        node Mesh {
+          Transform3D { position = [0, -0.55, 0]  scale = [0.38, 1.1, 0.38] }
+          MeshRenderer3D { mesh = "cube"  color = [130, 120, 112]  pattern = "noise" }
+        }
+      }
+    }
+    node LegL {
+      Transform3D { position = [-0.3, 0, 0] }
+      node Mesh {
+        Transform3D { position = [0, -0.55, 0]  scale = [0.42, 1.1, 0.42] }
+        MeshRenderer3D { mesh = "cube"  color = [110, 102, 96]  pattern = "noise" }
+      }
+    }
+    node LegR {
+      Transform3D { position = [0.3, 0, 0] }
+      node Mesh {
+        Transform3D { position = [0, -0.55, 0]  scale = [0.42, 1.1, 0.42] }
+        MeshRenderer3D { mesh = "cube"  color = [110, 102, 96]  pattern = "noise" }
+      }
+    }
+  }
+  node Dust {
+    Particles3D { preset = "dust"  speed = 1.2 }
+  }
+}

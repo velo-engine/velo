@@ -1,0 +1,27 @@
+# A hovering drone: a metal body, a spinning rotor ring, a blue eye light and an exhaust of sparks.
+node Drone {
+  Transform3D { position = [0, 2.2, 0] }
+  DroneHover { }
+  PointLight3D { color = [90, 180, 255]  intensity = 1.6  range = 5 }
+  node Body {
+    Transform3D { scale = [0.6, 0.45, 0.6] }
+    MeshRenderer3D { mesh = "sphere"  color = [170, 180, 200]  rim = 0.25  pattern = "stripes"  shadow = true  shadow_size = 0.5 }
+  }
+  node Eye {
+    Transform3D { position = [0, 0, 0.27]  scale = [0.22, 0.22, 0.08] }
+    MeshRenderer3D { mesh = "sphere"  color = [120, 220, 255]  emissive = [60, 160, 255]  unlit = true }
+  }
+  node Rotor {
+    Transform3D { position = [0, 0.3, 0] }
+    Spin3D { speed = [0, 720, 0] }
+    MeshRenderer3D { mesh = "ring"  color = [120, 200, 255, 200]  blend = "additive"  unlit = true }
+    node Blade {
+      Transform3D { scale = [0.9, 0.03, 0.1] }
+      MeshRenderer3D { mesh = "cube"  color = [60, 60, 70] }
+    }
+  }
+  node Exhaust {
+    Transform3D { position = [0, -0.25, 0] }
+    Particles3D { rate = 30  lifetime = 0.5  speed = 1.5  direction = [0, -1, 0]  spread = 15  size_start = 0.15  size_end = 0  shape = "spark"  color_start = [130, 210, 255]  color_alt = [200, 240, 255]  color_end = [60, 80, 255, 0] }
+  }
+}

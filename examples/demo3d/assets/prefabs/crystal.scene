@@ -1,0 +1,21 @@
+# A glowing crystal cluster with a soft halo.
+node Crystal {
+  Transform3D { }
+  Pulse3D { min = 0.6  max = 1.2  speed = 1.5 }
+  PointLight3D { color = [150, 110, 255]  intensity = 1.4  range = 5 }
+  node A {
+    Transform3D { position = [0, 0.8, 0]  rotation = [0, 0, 8]  scale = [0.45, 1.6, 0.45] }
+    MeshRenderer3D { mesh = "cone"  color = [170, 130, 255]  emissive = [70, 30, 160]  rim = 0.8 }
+  }
+  node B {
+    Transform3D { position = [0.35, 0.5, 0.15]  rotation = [10, 0, -25]  scale = [0.3, 1, 0.3] }
+    MeshRenderer3D { mesh = "cone"  color = [150, 160, 255]  emissive = [40, 50, 160]  rim = 0.8 }
+  }
+  node C {
+    Transform3D { position = [-0.3, 0.45, -0.1]  rotation = [-12, 0, 22]  scale = [0.28, 0.9, 0.28] }
+    MeshRenderer3D { mesh = "cone"  color = [200, 140, 255]  emissive = [80, 40, 170]  rim = 0.8 }
+  }
+  node Glow {
+    Particles3D { preset = "sparkle"  rate = 4  radius = 0.8  offset = [0, 0.8, 0]  color_start = [200, 170, 255]  color_alt = [140, 120, 255]  color_end = [120, 80, 255, 0] }
+  }
+}

@@ -41,6 +41,8 @@ pub mut:
 	// Draw plain sprites from the prebuilt atlas pages when the game ships them (see atlas.v). Off: every texture is
 	// its own GPU image.
 	atlas_on bool = true
+	// Put Canvas nodes on sokol_gl layer 1 (velo.app draws a 3D world between layer 0 and 1, see layers.c.v).
+	hud_layer bool
 	// Draw DebugShape outlines (colliders) even when `debug` is off (the editor turns it on).
 	show_shapes bool
 	draw_calls  int
@@ -90,11 +92,22 @@ pub fn (mut r Renderer) draw_tree(root &core.Node, view core.Affine2, camera cor
 	mut list := if r.draw_list != unsafe { nil } { r.draw_list } else { &DrawList{} }
 	r.draw_list = unsafe { nil }
 	collect_draw_items(mut list, root, view, camera, base)
+	mut on_hud := false
+	if r.hud_layer {
+		use_world_layer()
+	}
 	for it in list.items {
 		if !lit && it.canvas {
 			lit = true // the world is done: light it before the HUD draws
 			r.flush_sprites()
 			r.apply_lighting(r.light_scene, r.light_window)
+		}
+		if r.hud_layer && !on_hud && it.canvas {
+			// a 3D world draws between here and the HUD
+			r.flush_sprites()
+			on_hud = true
+			use_hud_layer()
+			r.set_scissor(r.clip)
 		}
 		if it.clip != r.clip {
 			r.clip = it.clip

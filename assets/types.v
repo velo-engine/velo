@@ -9,6 +9,7 @@ pub enum AssetKind {
 	text
 	font
 	shader
+	model // a 3D model (.fbx), read by velo.model3d
 }
 
 pub fn kind_from_ext(path string) AssetKind {
@@ -20,6 +21,7 @@ pub fn kind_from_ext(path string) AssetKind {
 		'txt', 'json', 'md', 'csv', 'anim', 'tilerules', 'atlas' { .text } // .atlas: Spine/libGDX texture atlas
 		'ttf', 'otf' { .font }
 		'glsl', 'frag' { .shader }
+		'fbx' { .model }
 		else { .unknown }
 	}
 }
@@ -32,6 +34,7 @@ pub fn kind_from_str(s string) AssetKind {
 		'text' { .text }
 		'font' { .font }
 		'shader' { .shader }
+		'model' { .model }
 		else { .unknown }
 	}
 }
@@ -149,5 +152,15 @@ pub mut:
 	// From .meta: `stream: true` decodes while playing (long music), `false` decodes it all up front;
 	// '' = automatic (streams .ogg files longer than 20 seconds).
 	stream  string
+	version int
+}
+
+// Model — a 3D model file (.fbx) for velo.render3d (`model` fields). velo.model3d parses it on first use; only the
+// path is kept here, so the asset layer stays free of 3D code.
+pub struct Model {
+pub:
+	id   string
+	path string // absolute path of the model file
+pub mut:
 	version int
 }

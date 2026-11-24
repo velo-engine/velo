@@ -1,0 +1,24 @@
+# A glowing orb to collect: a bright core, a soft additive shell, sparkles, and a little light.
+node Orb {
+  Transform3D { position = [0, 1, 0] }
+  Bob3D { amplitude = 0.25  speed = 2.5 }
+  Spin3D { speed = [0, 90, 0] }
+  OrbPickup { radius = 1.1  value = 1 }
+  PointLight3D { color = [255, 210, 90]  intensity = 1.2  range = 3.5 }
+  node Core {
+    Transform3D { scale = [0.35, 0.35, 0.35] }
+    MeshRenderer3D { mesh = "sphere"  color = [255, 220, 120]  emissive = [255, 170, 40]  unlit = true }
+  }
+  node Shell {
+    Transform3D { scale = [0.62, 0.62, 0.62] }
+    MeshRenderer3D { mesh = "sphere"  color = [255, 170, 60, 60]  blend = "additive"  unlit = true }
+  }
+  node Ring {
+    Transform3D { rotation = [70, 0, 0]  scale = [1.2, 1.2, 1.2] }
+    Spin3D { speed = [0, 0, 160] }
+    MeshRenderer3D { mesh = "ring"  color = [255, 230, 150, 200]  blend = "additive"  unlit = true }
+  }
+  node Sparkles {
+    Particles3D { preset = "sparkle"  rate = 8  radius = 0.5 }
+  }
+}

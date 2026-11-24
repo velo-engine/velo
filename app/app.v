@@ -1,6 +1,7 @@
 module app
 
 import gg
+import sokol.gfx
 import sokol.sapp
 import time
 import velo.core
@@ -64,6 +65,10 @@ pub mut:
 	// `console.register('cmd', 'help', fn (args []string) string {...})` adds a console command.
 	console  &core.Console  = &core.Console{}
 	profiler &core.Profiler = &core.Profiler{}
+	// A renderer for a 3D world (velo.render3d's install sets it): called every frame inside the render pass,
+	// after the 2D world (a backdrop) and before Canvas nodes (the HUD), with the framebuffer size in pixels.
+	world_draw fn (data voidptr, scene &core.Scene, width int, height int) = unsafe { nil }
+	world_data voidptr
 mut:
 	keyboard_shown bool
 	fade           SceneFade
@@ -267,12 +272,21 @@ fn on_frame(mut a App) {
 	a.renderer.base_clip =
 		render.Rect{a.fit.area_pos.x, a.fit.area_pos.y, a.fit.area_size.x, a.fit.area_size.y}
 	a.profiler.begin('render')
+	has_world := a.world_draw != unsafe { nil }
+	a.renderer.hud_layer = has_world
 	a.renderer.draw_scene(a.scene, a.fit.to_window())
 	a.profiler.end('render')
+	if has_world {
+		render.use_hud_layer() // fades and overlays go over the 3D world too
+	}
 	a.draw_fade()
 	a.draw_bars()
 	a.draw_debug_overlay()
-	a.ctx.end()
+	if has_world {
+		a.end_with_world()
+	} else {
+		a.ctx.end()
+	}
 	a.profiler.end('draw')
 	a.profiler.new_frame(dt * 1000)
 
@@ -293,6 +307,20 @@ fn on_frame(mut a App) {
 			android_gc_collect()
 		}
 	}
+}
+
+// end_with_world: gg's end of frame, with the 3D world drawn between the 2D world (sgl layer 0) and the HUD
+// (layer 1).
+fn (mut a App) end_with_world() {
+	pass := gg.create_default_pass(a.ctx.clear_pass)
+	gfx.begin_pass(&pass)
+	render.draw_layer(0)
+	a.profiler.begin('render3d')
+	a.world_draw(a.world_data, a.scene, sapp.width(), sapp.height())
+	a.profiler.end('render3d')
+	render.draw_layer(1)
+	gfx.end_pass()
+	gfx.commit()
 }
 
 // sync_keyboard shows the phone's on-screen keyboard while a text field is being edited.

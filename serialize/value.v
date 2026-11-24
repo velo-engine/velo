@@ -69,6 +69,11 @@ pub fn (v Value) as_vec2() !core.Vec2 {
 	return core.vec2(f32(n[0]), f32(n[1]))
 }
 
+pub fn (v Value) as_vec3() !core.Vec3 {
+	n := v.as_numbers(3)!
+	return core.vec3(f32(n[0]), f32(n[1]), f32(n[2]))
+}
+
 // as_color accepts [r, g, b] or [r, g, b, a].
 pub fn (v Value) as_color() !core.Color {
 	n := v.as_number_list()!
@@ -83,6 +88,10 @@ pub fn (v Value) as_color() !core.Color {
 
 pub fn vec2_value(p core.Vec2) Value {
 	return Value([Value(f64(p.x)), Value(f64(p.y))])
+}
+
+pub fn vec3_value(p core.Vec3) Value {
+	return Value([Value(f64(p.x)), Value(f64(p.y)), Value(f64(p.z))])
 }
 
 pub fn color_value(c core.Color) Value {

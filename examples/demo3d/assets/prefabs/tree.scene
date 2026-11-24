@@ -1,0 +1,20 @@
+# A low-poly pine: a trunk and three stacked cones.
+node Tree {
+  Transform3D { }
+  node Trunk {
+    Transform3D { position = [0, 0.6, 0]  scale = [0.35, 1.2, 0.35] }
+    MeshRenderer3D { mesh = "cylinder"  color = [110, 75, 50]  shadow = true  shadow_size = 1.4 }
+  }
+  node Low {
+    Transform3D { position = [0, 1.6, 0]  scale = [2.2, 1.6, 2.2] }
+    MeshRenderer3D { mesh = "cone"  color = [50, 120, 70] }
+  }
+  node Mid {
+    Transform3D { position = [0, 2.5, 0]  scale = [1.7, 1.4, 1.7] }
+    MeshRenderer3D { mesh = "cone"  color = [60, 140, 80] }
+  }
+  node Top {
+    Transform3D { position = [0, 3.3, 0]  scale = [1.1, 1.2, 1.1] }
+    MeshRenderer3D { mesh = "cone"  color = [75, 160, 90] }
+  }
+}

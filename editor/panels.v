@@ -634,6 +634,7 @@ fn (mut e Editor) draw_assets(r Rect) {
 			.text { 'text', c_dim }
 			.font { 'font', c_text }
 			.shader { 'glsl', c_slice }
+			.model { '3d', c_ok }
 			.unknown { '?', c_dim }
 		}
 

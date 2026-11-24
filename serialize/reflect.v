@@ -5,8 +5,8 @@ import velo.assets
 
 // Automatic serialization via V's comptime reflection: NO need to write read/write code for each component.
 //
-// Supported field types: f32, f64, int, bool, string, []int, core.Vec2, core.Color,
-// assets.AssetRef[Texture | SceneAsset | AudioClip | TextAsset | Font | Shader].
+// Supported field types: f32, f64, int, bool, string, []int, core.Vec2, core.Vec3, core.Color,
+// assets.AssetRef[Texture | SceneAsset | AudioClip | TextAsset | Font | Shader | Model].
 // Fields of other types (pointers, maps, ...) are skipped automatically. Hide a field with the @[hide] attribute:
 //
 //   velocity core.Vec2 @[hide]
@@ -41,6 +41,8 @@ pub fn set_fields[T](mut obj T, props map[string]Value) ! {
 					obj.$(field.name) = v.as_number_list()!.map(int(it))
 				} $else $if field.typ is core.Vec2 {
 					obj.$(field.name) = v.as_vec2()!
+				} $else $if field.typ is core.Vec3 {
+					obj.$(field.name) = v.as_vec3()!
 				} $else $if field.typ is core.Color {
 					obj.$(field.name) = v.as_color()!
 				} $else $if field.typ is assets.AssetRef[assets.Texture] {
@@ -65,6 +67,10 @@ pub fn set_fields[T](mut obj T, props map[string]Value) ! {
 					}
 				} $else $if field.typ is assets.AssetRef[assets.Shader] {
 					obj.$(field.name) = assets.AssetRef[assets.Shader]{
+						id: v.as_asset()!
+					}
+				} $else $if field.typ is assets.AssetRef[assets.Model] {
+					obj.$(field.name) = assets.AssetRef[assets.Model]{
 						id: v.as_asset()!
 					}
 				} $else {
@@ -99,6 +105,8 @@ pub fn dump_fields[T](obj T) map[string]Value {
 				out[field.name] = Value(obj.$(field.name).map(Value(f64(it))))
 			} $else $if field.typ is core.Vec2 {
 				out[field.name] = vec2_value(obj.$(field.name))
+			} $else $if field.typ is core.Vec3 {
+				out[field.name] = vec3_value(obj.$(field.name))
 			} $else $if field.typ is core.Color {
 				out[field.name] = color_value(obj.$(field.name))
 			} $else $if field.typ is assets.AssetRef[assets.Texture] {
@@ -112,6 +120,8 @@ pub fn dump_fields[T](obj T) map[string]Value {
 			} $else $if field.typ is assets.AssetRef[assets.Font] {
 				out[field.name] = Value(AssetId{obj.$(field.name).id})
 			} $else $if field.typ is assets.AssetRef[assets.Shader] {
+				out[field.name] = Value(AssetId{obj.$(field.name).id})
+			} $else $if field.typ is assets.AssetRef[assets.Model] {
 				out[field.name] = Value(AssetId{obj.$(field.name).id})
 			}
 		}
@@ -160,6 +170,8 @@ pub fn describe_fields[T]() []FieldInfo {
 			kinds[field.name] = .font
 		} $else $if field.typ is assets.AssetRef[assets.Shader] {
 			kinds[field.name] = .shader
+		} $else $if field.typ is assets.AssetRef[assets.Model] {
+			kinds[field.name] = .model
 		}
 	}
 	mut out := []FieldInfo{}
