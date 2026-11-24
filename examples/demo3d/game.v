@@ -25,7 +25,7 @@ fn set_renderer(r &render3d.Renderer3D) {
 
 // ---------- The hero ----------
 
-// HeroController — runs relative to the camera, dashes, kicks up dust, gets knocked back by slimes.
+// HeroController — runs relative to the camera, dashes, kicks up dust (Health knocks it back through `knock`).
 pub struct HeroController {
 	core.Component
 pub mut:
@@ -43,7 +43,6 @@ pub mut:
 	idle_time  f32 = -1       @[hide]
 	dust_acc   f32       @[hide]
 	knock      core.Vec3 @[hide]
-	invuln     f32       @[hide]
 	// After this many seconds without input the hero runs to the nearest orb by itself (0 = never).
 	autopilot  f32 = 5
 	idle_input f32 @[hide]
@@ -127,7 +126,6 @@ pub fn (mut h HeroController) update(dt f32) {
 		}
 	}
 	h.cooldown -= dt
-	h.invuln -= dt
 	if (inp.was_pressed(.space) || inp.was_pressed(.left_shift)) && h.cooldown <= 0 {
 		h.dash_left = h.dash_time
 		h.cooldown = h.dash_cooldown
@@ -194,24 +192,6 @@ fn (mut h HeroController) puff(n int) {
 	}
 }
 
-// hit: knocked back from `from`, flashes, and drops an orb.
-pub fn (mut h HeroController) hit(from core.Vec3) {
-	if h.invuln > 0 {
-		return
-	}
-	h.invuln = 1
-	tr := render3d.transform3d(mut h.node)
-	mut d := tr.position - from
-	d.y = 0
-	h.knock = d.normalized().mul(9)
-	if mut sk := h.node.get_component[render3d.SkinnedModel3D]() {
-		sk.hit_flash()
-	}
-	mut st := h.scene().store
-	st.set_int('orbs', int(math.max(0, st.get_int('orbs', 0) - 1)))
-	h.puff(10)
-}
-
 fn child_component[T](n &core.Node, name string) ?&T {
 	ch := n.find(name) or { return none }
 	return ch.get_component[T]()
@@ -221,8 +201,12 @@ fn hero(s &core.Scene) ?&core.Node {
 	return s.find('World/Hero')
 }
 
+// hero_pos: where the hero stands (none while it is dead).
 fn hero_pos(s &core.Scene) ?core.Vec3 {
 	h := hero(s)?
+	if !h.active {
+		return none
+	}
 	t := h.get_component[render3d.Transform3D]()?
 	return t.position
 }
@@ -371,11 +355,11 @@ pub fn (mut s SlimeHop) update(dt f32) {
 	}
 	// bump the hero
 	if hn := hero(s.scene()) {
-		if mut h := hn.get_component[HeroController]() {
+		if mut h := hn.get_component[Health]() {
 			if hp := hero_pos(s.scene()) {
 				if hp.distance(core.vec3(tr.position.x, 0, tr.position.z)) < 0.9 * sc
 					&& tr.position.y < 0.6 {
-					h.hit(tr.position)
+					h.damage(1, tr.position, 9)
 				}
 			}
 		}
@@ -416,6 +400,7 @@ pub mut:
 	distance f32 = 8
 	speed    f32 = 1.3
 	swing    f32 = 28 // degrees
+	paused   bool      @[hide] // stands still (GolemSlam is attacking)
 	start_p  core.Vec3 @[hide]
 	t        f32       @[hide]
 	dir      f32 = 1       @[hide]
@@ -434,6 +419,11 @@ fn set_swing(n &core.Node, path string, deg f32) {
 }
 
 pub fn (mut g GolemWalk) update(dt f32) {
+	if g.paused {
+		set_swing(g.node, 'Hips/LegL', 0)
+		set_swing(g.node, 'Hips/LegR', 0)
+		return
+	}
 	mut tr := render3d.transform3d(mut g.node)
 	g.t += dt
 	g.moved += g.speed * dt

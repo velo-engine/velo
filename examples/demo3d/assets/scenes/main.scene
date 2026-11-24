@@ -51,6 +51,7 @@ node Main {
         MeshRenderer3D { mesh = "cylinder"  color = [120, 230, 150]  emissive = [20, 90, 40]  rim = 0.6 }
       }
       Particles3D { preset = "heal" }
+      HealZone { radius = 1.4 }
       PointLight3D { color = [120, 255, 150]  intensity = 1.2  range = 5 }
     }
     node Torch1 from @asset("d3a10006") { Transform3D { position = [5.5, 0, 5.5] } }
@@ -113,6 +114,8 @@ node Main {
       Transform3D { }
       SkinnedModel3D { model = @asset("a3d0f8b1")  rim = 0.25 }
       HeroController { }
+      Health { max = 8  team = "hero" }
+      HeroCombat { }
       node Trail {
         Trail3D { offset = [0, 1, 0]  width = 0.6  duration = 0.35  emitting = false }
       }
@@ -133,15 +136,31 @@ node Main {
       Label { text = "Orbs: 0"  bind = "orbs"  bind_format = "Orbs: {}"  size = 30  shadow_color = [0, 0, 0, 160]  shadow_offset = [1, 2] }
       Widget { align_left = true  left = 20  align_top = true  top = 16 }
     }
+    node HpLabel {
+      position = [20, 58]
+      Label { text = "HP"  size = 18  color = [255, 200, 200]  shadow_color = [0, 0, 0, 160]  shadow_offset = [1, 1] }
+      Widget { align_left = true  left = 20  align_top = true  top = 58 }
+    }
+    node HpBar {
+      position = [150, 68]
+      UITransform { size = [220, 16] }
+      ProgressBar { bind = "hp"  bind_max_key = "max_hp"  progress = 1  fill_color = [235, 70, 80, 255]  back_color = [0, 0, 0, 140]  radius = 6 }
+      Widget { align_left = true  left = 50  align_top = true  top = 60 }
+    }
+    node Kills {
+      position = [290, 16]
+      Label { text = "Defeated: 0"  bind = "kills"  bind_format = "Defeated: {}"  size = 22  color = [255, 220, 160]  shadow_color = [0, 0, 0, 160]  shadow_offset = [1, 2] }
+      Widget { align_left = true  left = 200  align_top = true  top = 22 }
+    }
     node Stats {
-      position = [20, 56]
+      position = [20, 92]
       Label { text = ""  size = 16  color = [220, 230, 255, 220]  shadow_color = [0, 0, 0, 160]  shadow_offset = [1, 1] }
-      Widget { align_left = true  left = 20  align_top = true  top = 56 }
+      Widget { align_left = true  left = 20  align_top = true  top = 92 }
       StatsLabel { }
     }
     node Help {
       position = [20, 526]
-      Label { text = "WASD / arrows: run    Shift or Space: dash    Q / E or drag: orbit camera    Esc: quit"  size = 18  color = [255, 255, 255, 230]  valign = "bottom"  shadow_color = [0, 0, 0, 160]  shadow_offset = [1, 2] }
+      Label { text = "WASD / arrows: run    J or click: slash    K: magic bolt    Shift / Space: dash    Q / E or drag: orbit camera    Esc: quit"  size = 18  color = [255, 255, 255, 230]  valign = "bottom"  shadow_color = [0, 0, 0, 160]  shadow_offset = [1, 2] }
       Widget { align_left = true  left = 20  align_bottom = true  bottom = 14 }
     }
   }

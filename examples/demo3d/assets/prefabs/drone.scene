@@ -2,6 +2,8 @@
 node Drone {
   Transform3D { position = [0, 2.2, 0] }
   DroneHover { }
+  DroneGun { }
+  Health { max = 2  bar_height = 0.75  respawn = 8 }
   PointLight3D { color = [90, 180, 255]  intensity = 1.6  range = 5 }
   node Body {
     Transform3D { scale = [0.6, 0.45, 0.6] }

@@ -2,6 +2,8 @@
 node Golem {
   Transform3D { }
   GolemWalk { }
+  GolemSlam { }
+  Health { max = 8  bar_height = 3  respawn = 10 }
   node Hips {
     Transform3D { position = [0, 1.15, 0] }
     node Torso {

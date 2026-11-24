@@ -34,6 +34,13 @@ fn main() {
 	game.registry.register[Spin3D]()
 	game.registry.register[Pulse3D]()
 	game.registry.register[StatsLabel]()
+	game.registry.register[Health]()
+	game.registry.register[HeroCombat]()
+	game.registry.register[Projectile]()
+	game.registry.register[GolemSlam]()
+	game.registry.register[DroneGun]()
+	game.registry.register[HealZone]()
 	game.store.set_int('orbs', 0)
+	game.store.set_int('kills', 0)
 	game.run()
 }
