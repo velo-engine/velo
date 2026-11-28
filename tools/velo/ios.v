@@ -526,8 +526,8 @@ fn (b IosBuild) sign_device(app string) {
 	decoded := os.join_path(b.dir, 'profile.plist')
 	os.write_file(decoded, capture('security', ['cms', '-D', '-i', profile])) or { fail(err.msg()) }
 	ents := os.join_path(b.dir, 'entitlements.plist')
-	os.write_file(ents, capture('/usr/libexec/PlistBuddy', ['-x', '-c', 'Print :Entitlements',
-		decoded])) or { fail(err.msg()) }
+	xml := capture('/usr/libexec/PlistBuddy', ['-x', '-c', 'Print :Entitlements', decoded])
+	os.write_file(ents, expand_wildcard_entitlements(xml, b.p.id)) or { fail(err.msg()) }
 	os.cp(profile, os.join_path(app, 'embedded.mobileprovision')) or { fail(err.msg()) }
 	step('signing with "${identity}" and ${os.file_name(profile)}')
 	mut sign_args := ['--force', '--sign', identity, '--entitlements', ents]
@@ -538,6 +538,19 @@ fn (b IosBuild) sign_device(app string) {
 	}
 	sign_args << app
 	must('codesign', sign_args)
+}
+
+// expand_wildcard_entitlements replaces the wildcard app ID of a profile ("TEAMID.*") with "TEAMID.<id>"
+// everywhere it appears. A profile only states what it allows; the signature must name the app itself,
+// or the App Store rejects the upload (error 90046).
+fn expand_wildcard_entitlements(xml string, id string) string {
+	app_id :=
+		xml.all_after('<key>application-identifier</key>').all_after('<string>').all_before('</string>')
+	if !app_id.ends_with('*') {
+		return xml
+	}
+	team := app_id.all_before('.')
+	return xml.replace('<string>${app_id}</string>', '<string>${team}.${id}</string>')
 }
 
 fn default_identity(release bool) string {
